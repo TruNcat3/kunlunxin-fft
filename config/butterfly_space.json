@@ -26,7 +26,11 @@
     },
     "stage_fusion": {
       "level": [1],
-      "level_note": "One global-memory round trip per stage. On-chip multi-stage fusion is blocked: the Triton 3.0.0 XPU build rejects gather/scatter (x[idx]), so an in-place shared-memory FFT cannot be expressed in SSA form. See docs/device-stack.md."
+      "level_note": "M0 baseline: one global-memory round trip per stage",
+      "fused_tiles": [1, 64],
+      "fused_tiles_note": "M1 candidate axis: compile-time local micro-FFT tile. tile=1 is the M0 baseline (no fusion); tile=64 fuses the first log2(64)=6 block-local stages into one kernel. Stages n < tile are block-local (pairs (i,i+n) stay inside a tile-aligned block), so the fused kernel needs no cross-program barrier.",
+      "gather_scatter_status": "blocked-in-tested-lowering",
+      "gather_scatter_note": "The tested Triton 3.0.0 XPU lowering rejects SSA tensor gather (x[idx]); M1 avoids it by using only global pointer tl.load/tl.store, which the lowering accepts."
     }
   },
 

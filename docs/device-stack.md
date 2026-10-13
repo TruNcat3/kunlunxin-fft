@@ -93,23 +93,55 @@ only as a host-side reference. This is the finding that determines the repositor
 The Kunlunxin XHPC / `xpucc` compiler SDK is not present in the reference container, so
 the vendor's own device-code toolchain is unavailable. Ruled out by absence.
 
-## Dead end 4: on-chip multi-stage fusion (gather/scatter)
+## Limitation 4: SSA gather/scatter form is not lowered (scoped, not "impossible")
 
 The performance baseline is one global-memory round trip and one kernel launch per
-stage (see [Results](results.md)). The natural fix is to fuse all `log2(N)` stages into
-one kernel running against on-chip (shared-memory) storage, which would touch global
-memory exactly twice. This **cannot be expressed** on this toolchain:
+stage (see [Results](results.md)). Register/UB residence (holding intermediate values
+for several stages without touching memory) would express the butterfly as, per stage,
 
-* An in-place shared-memory FFT needs, at each stage, to gather both members of a
-  butterfly pair and scatter both results — in SSA form that is
-  `new_tensor = where(is_low, a+b, (a-b)*w)` built from `tensor[idx]` gathers.
-* The Triton 3.0.0 XPU build **rejects `x[idx]` gather** with
-  `ValueError: Did you forget to add @triton.jit?` (the advanced-indexing path is not
-  wired for this backend). Confirmed with a minimal `X[idx]` kernel.
+```text
+new_tensor = where(is_low, a+b, (a-b)*w)   # built from tensor[idx] gathers
+```
 
-Without gather/scatter, each stage must re-read and re-write global memory, so the data
-stays memory-bound. This is the specific, recorded blocker between the current baseline
-and the cuButterfly fused/blocked dataflow.
+**Finding (scoped precisely).** The *tested* Triton 3.0.0 XPU lowering **failed to
+legally generate this form**: `tensor[idx]` advanced indexing raises
+`ValueError: Did you forget to add @triton.jit?` (the gather path is not wired for
+this backend). This was confirmed with a minimal `X[idx]` kernel. This is a statement
+about the **current lowering of one indexing form on one shape**, not a proof that the
+architecture or the algorithm is impossible.
+
+**What is distinguished:**
+
+```text
+algorithmically possible          yes — the block-local DIT stages are well defined
+hardware-lowerable in this compiler  partial — global-pointer tl.load/tl.store yes;
+                                   SSA tensor gather no (tested)
+implemented and measured           M1 local-fused-tile: yes (global-pointer form);
+                                   register/UB residence: not yet
+```
+
+**Alternative legal forms to try before declaring a toolchain blocker** (ladder from
+the migration convergence plan; only step 1 is measured so far):
+
+1. compile-time / static index tables for small tiles — **M1 `local-fused-tile` does
+   this**: it fuses the first `log2(TILE)` block-local stages using only global-pointer
+   `tl.load`/`tl.store` (no SSA gather), and is correct at every tested size.
+2. contiguous tile loads followed by register permutation;
+3. ping-pong registers or UB with explicit stage-local permutations;
+4. multiple legal subgraphs connected by explicit boundaries (execution groups);
+5. only then classify the remaining form as a toolchain blocker.
+
+**Why M1 still regresses at large N (measured cause).** The M1 fused kernel updates a
+tile **in place** across stages, which requires a `tl.debug_barrier()` between stages —
+removing it produces races at every size (rel err ~0.9, confirmed). The mandatory
+barrier plus the in-place store→load dependency serializes the memory pipeline that the
+M0 out-of-place stages keep fully independent, so M1 wins where launches dominate
+(`N <= 1024`, geometric mean ~1.6x) and loses where memory time dominates
+(`N >= 4096`, geometric mean ~0.7x). Overcoming this barrier cost is exactly what
+register/UB residence (M2) avoids — by never round-tripping through memory — but M2
+depends on the SSA gather form above, which is the *currently-not-lowered* item. This is
+the specific, recorded gap between the current baseline and the full cuButterfly
+mixed space-time dataflow.
 
 ## Dangerous-operation notes
 

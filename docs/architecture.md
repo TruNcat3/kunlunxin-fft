@@ -30,16 +30,28 @@ kunlunxin-fft/
 
 ## Device path (`src/xpu/`)
 
-### Split real/imaginary (planar) layout
+### Public layout vs internal lowering (planar SoA)
 
-The Triton XPU backend has **no `complex64` argument type** (it raises
-`KeyError: 'complex64'` in `type_canonicalisation_dict`). Every kernel therefore takes
-two `float32` pointers for data (`Xr`, `Xi`) and two for the twiddle table (`Wr`, `Wi`).
-This is the same planar (SoA) convention real GPU FFTs use.
+The **public API accepts and returns `complex64`** (interleaved, the usual torch
+layout). **Planar SoA is an internal kernel ABI only**, not the public contract: the
+Triton XPU backend has **no `complex64` argument type** (it raises
+`KeyError: 'complex64'` in `type_canonicalisation_dict`), so every kernel takes two
+`float32` pointers for data (`Xr`, `Xi`) and two for the twiddle table (`Wr`, `Wi`).
+`fft_dit`/`fft_dif` convert at the boundary (`_as_so` / `_from_so`). Callers never see
+planar. This is the same SoA convention real GPU FFTs use.
 
-### The three building blocks (`kernels.py`)
+### Input validation and device context (Phase 0)
 
-All three kernels share one index mapping, which is also the specification the C++
+Every public entry point runs `validate_input` (rank-1, complex64, contiguous, on the
+XPU device, power-of-two length) and `validate_twiddle` before any launch, so a wrong
+semantic input raises instead of silently entering an incorrect path. Every device
+launch runs inside `xpu_context()`, the single central context manager that establishes
+(and restores) the device context — a launch outside it is a silent no-op on this stack
+(see [Device Stack](device-stack.md)).
+
+### The kernels (`kernels.py`)
+
+All butterfly kernels share one index mapping, which is also the specification the C++
 reference implements. For a stage with butterfly half-span `n` and twiddle stride
 `M = N / (2n)`, for `k` in `[0, N/2)`:
 
@@ -64,28 +76,37 @@ pair (i, i+n), twiddle W[j * M]
   With `BITREV_OUTPUT` set, the **last** stage writes through `bit_reverse(i)` and
   `bit_reverse(i+n)`, folding the output permutation into the final stage.
 
-A full FFT is `log2(N)` stage launches. There is no separate permutation pass; it is
-folded into the first (DIT) or last (DIF) stage.
+* **`dit_fused_kernel`** (M1) — fuses the first `log2(TILE)` block-local DIT stages.
+  For `n < TILE` a pair `(i, i+n)` never crosses a tile boundary, so each program owns one
+  tile and applies those stages **in place** with only global-pointer `tl.load`/`tl.store`
+  (no SSA gather). A `tl.debug_barrier()` between stages is required for correctness.
+  Used by `fft_dit_fused`.
 
-### Driver (`runner.py`)
+For the M0 baseline (`fft_dit`/`fft_dif`), a full FFT is `log2(N)` stage launches with
+the permutation folded into the first (DIT) or last (DIF) stage — no separate pass.
 
-`fft_dit(x)` / `fft_dif(x)` split a complex64 tensor into planar float32 views, build the
-twiddle tables once per size (`twiddle_tables`, `exp(-2*pi*i*idx/N)` for `idx` in
-`[0, N/2)`), then launch `log2(N)` stages ping-ponging between two buffers. `time_call`
-reports the median of device-synchronized wall-clock samples.
+### Driver (`runner.py`): the two flow candidates
 
-The XPU device context is established by importing `torch` and `torch_xmlir`; after that
-`device='cuda'` addresses the P800 and Triton's `xpu` backend compiles and launches.
+| Flow id | Entry point | Launches | Description |
+|---|---|---|---|
+| `baseline-global-stage` (M0) | `fft_dit` / `fft_dif` | `log2(N)` | One global round trip + one launch per stage. The **compatibility baseline**, not a performance claim. |
+| `local-fused-tile` (M1) | `fft_dit_fused` | `1 + 1 + log2(N) - log2(TILE)` | Explicit bit-reversal, then a fused local micro-FFT over `TILE`, then the remaining M0 stages. |
 
-### Why radix-2, and why one global round trip per stage
+Both split a complex64 tensor into planar views, build the twiddle tables once per size
+(`twiddle_tables`), and run inside `xpu_context()`. `time_call` reports median
+synchronized wall time; `time_call_detailed` adds randomized trials and a separate
+device-event kernel-time estimate.
 
-This milestone is correctness-first. Each stage reads global memory, writes global
-memory, and is its own kernel launch. That is memory- and launch-bound — see
-[Results](results.md). The cuButterfly method's contribution (blocking, register
-residency, fused stages) is the identified path to close the gap, but it is **blocked on
-this toolchain**: the Triton 3.0.0 XPU build rejects gather/scatter (`x[idx]`), so an
-in-place shared-memory FFT cannot be expressed in SSA form. See
-[Device Stack](device-stack.md).
+### Why radix-2, and the baseline's limits
+
+This milestone is correctness-first. Each M0 stage reads global memory, writes global
+memory, and is its own kernel launch — memory- and launch-bound (see
+[Results](results.md)). The cuButterfly method's contribution (blocking, register
+residency, fused stages) is the identified path forward. M1 implements the *first* step
+(static local micro-FFT) and is measured below; register/UB residence (M2) is the next
+step and is currently limited by one indexing form the tested Triton lowering does not
+generate — scoped precisely in [Device Stack](device-stack.md), not a claim that the
+method is impossible.
 
 ## Host-side reference (`include/`, `src/host/`)
 

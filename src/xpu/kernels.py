@@ -183,3 +183,64 @@ def dif_stage_kernel(
         tl.store(Yi + i, si, mask=mask)
         tl.store(Yr + i + n, drw, mask=mask)
         tl.store(Yi + i + n, diw, mask=mask)
+
+
+@triton.jit
+def dit_fused_kernel(
+    Xr,
+    Xi,
+    Wr,
+    Wi,
+    N,
+    BITS: tl.constexpr,
+    TILE: tl.constexpr,
+    FUSED_LOG: tl.constexpr,
+    BLOCK: tl.constexpr,
+):
+    """M1: fuse the first FUSED_LOG = log2(TILE) block-local DIT stages.
+
+    Stages with butterfly half-span n < TILE are **block-local**: a pair
+    (i, i+n) with i in a TILE-aligned block stays inside that block, so there is
+    no cross-program edge and the stages need no inter-program barrier. Each
+    program therefore owns one TILE-block and applies the first log2(TILE)
+    stages in place using only global pointer tl.load/tl.store (the form the
+    tested Triton XPU lowering accepts — no SSA gather).
+
+    Reads the bit-reversed input (the caller runs bitrev_kernel first) and
+    leaves the block in place for the remaining stages. ``BLOCK`` == ``TILE``.
+    """
+    pid = tl.program_id(0)
+    base = pid * TILE
+
+    half_tile = TILE >> 1
+    off = tl.arange(0, BLOCK)
+    # butterfly index t in [0, TILE/2); only these lanes do work
+    kmask = off < half_tile
+
+    for s in range(FUSED_LOG):
+        n = 1 << s
+        M = N // (n << 1)
+        # within the TILE-block: subblock m = t // n, lane j = t % n
+        m = off // n
+        j = off % n
+        i = base + (m << 1) * n + j
+        hi = i + n
+        w = j * M
+
+        wr = tl.load(Wr + w, mask=kmask)
+        wi = tl.load(Wi + w, mask=kmask)
+        ar = tl.load(Xr + i, mask=kmask)
+        ai = tl.load(Xi + i, mask=kmask)
+        br = tl.load(Xr + hi, mask=kmask)
+        bi = tl.load(Xi + hi, mask=kmask)
+
+        brw = br * wr - bi * wi
+        biw = br * wi + bi * wr
+
+        tl.store(Xr + i, ar + brw, mask=kmask)
+        tl.store(Xi + i, ai + biw, mask=kmask)
+        tl.store(Xr + hi, ar - brw, mask=kmask)
+        tl.store(Xi + hi, ai - biw, mask=kmask)
+        # compiler + intra-program ordering between stages (blocks are disjoint,
+        # so this does not synchronize across programs)
+        tl.debug_barrier()

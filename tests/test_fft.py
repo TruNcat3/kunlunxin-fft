@@ -1,26 +1,45 @@
-"""Correctness tests: Triton XPU FFT vs torch.fft (vendor baseline)."""
+"""Hardware correctness tests: Triton XPU FFT vs numpy (CPU, complex128).
+
+Marked ``hardware`` (see conftest.py): skipped cleanly when the vendor
+xpytorch stack or a reachable XPU is absent. The reference is numpy because
+the vendor torch.fft.fft caps at N <= 2048 on this device.
+"""
 
 import math
 import sys
-
-import numpy as np
 from pathlib import Path
 
-import torch
+import pytest
+
+np = pytest.importorskip("numpy")
+
+# The vendor stack must be imported torch-first (the xpytorch import hook
+# resolves libtorch_python.so only after `import torch`); importorskip races
+# that order, so use a plain import and skip cleanly on failure.
+try:
+    import torch
+    import torch_xmlir  # noqa: F401
+except Exception as e:  # pragma: no cover - absent in ordinary CI
+    pytest.skip(f"vendor xpytorch stack unavailable: {e}", allow_module_level=True)
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.xpu import device_ready, fft_dif, fft_dit  # noqa: E402
+pytestmark = pytest.mark.hardware
+
+from src.xpu import device_ready, fft_dif, fft_dit, fft_dit_fused  # noqa: E402
+
+if not device_ready():  # pragma: no cover - guarded again by the fixture
+    pytest.skip("XPU device not ready", allow_module_level=True)
 
 
-def max_err(a: torch.Tensor, np_ref: np.ndarray) -> float:
+def max_err(a, np_ref) -> float:
     """Max abs error against a numpy complex128 reference."""
     ar = a.real.cpu().numpy().astype(np.float64)
     ai = a.imag.cpu().numpy().astype(np.float64)
     return float(np.maximum(np.abs(ar - np_ref.real), np.abs(ai - np_ref.imag)).max())
 
 
-def max_mag(np_ref: np.ndarray) -> float:
+def max_mag(np_ref) -> float:
     return float(np.abs(np_ref).max())
 
 
@@ -52,29 +71,28 @@ def test_bitrev_only():
     xr = x.real.to(torch.int64)
     yr = y.real.to(torch.int64)
     assert torch.equal(yr, xr[expect]), "bit-reversal mismatch"
-    print("bitrev OK")
 
 
-def test_dit_sizes(sizes=(8, 16, 64, 256, 1024, 4096, 65536, 1048576)):
-    for n in sizes:
-        x, ref = make_input(n, 0)
-        got = fft_dit(x)
-        e = max_err(got, ref)
-        rel = e / max_mag(ref)
-        status = "OK " if rel < 1e-4 else "FAIL"
-        print(f"  dit  N={n:8d} maxerr={e:.3e} rel={rel:.3e} {status}")
-        assert rel < 1e-4, f"DIT failed at N={n}"
+@pytest.mark.parametrize("n", [8, 16, 64, 256, 1024, 4096, 65536, 1048576])
+def test_dit_sizes(n):
+    x, ref = make_input(n, 0)
+    rel = max_err(fft_dit(x), ref) / max_mag(ref)
+    assert rel < 1e-4, f"DIT failed at N={n}: rel={rel:.3e}"
 
 
-def test_dif_sizes(sizes=(8, 16, 64, 256, 1024, 4096, 65536)):
-    for n in sizes:
-        x, ref = make_input(n, 1)
-        got = fft_dif(x)
-        e = max_err(got, ref)
-        rel = e / max_mag(ref)
-        status = "OK " if rel < 1e-4 else "FAIL"
-        print(f"  dif  N={n:8d} maxerr={e:.3e} rel={rel:.3e} {status}")
-        assert rel < 1e-4, f"DIF failed at N={n}"
+@pytest.mark.parametrize("n", [8, 16, 64, 256, 1024, 4096, 65536])
+def test_dif_sizes(n):
+    x, ref = make_input(n, 1)
+    rel = max_err(fft_dif(x), ref) / max_mag(ref)
+    assert rel < 1e-4, f"DIF failed at N={n}: rel={rel:.3e}"
+
+
+@pytest.mark.parametrize("n", [8, 64, 1024, 4096, 65536, 1048576])
+def test_fused_sizes(n):
+    """M1 local-fused-tile candidate must match numpy at every size."""
+    x, ref = make_input(n, 0)
+    rel = max_err(fft_dit_fused(x, tile=64), ref) / max_mag(ref)
+    assert rel < 1e-4, f"fused failed at N={n}: rel={rel:.3e}"
 
 
 def test_known_signals():
@@ -93,7 +111,31 @@ def test_known_signals():
     host = tone.real.cpu().numpy() + 1j * tone.imag.cpu().numpy()
     ref = np.fft.fft(host)
     assert max_err(got, ref) < 1e-4, "tone failed"
-    print("known signals OK")
+
+
+def test_sentinel_output_changes():
+    """Launch-path gate: a non-zero input must produce a changed, finite output."""
+    n = 512
+    base = torch.arange(1.0, n + 1.0, device="cuda")
+    x = torch.complex(base, -base)
+    y = fft_dit(x)
+    assert bool(torch.isfinite(y.real).all())
+    assert not torch.equal(y.real, x.real), "output identical to input: kernel did not run"
+    assert float(y.real.abs().sum()) > 0.0
+
+
+def test_negative_inputs_rejected():
+    """Wrong semantic inputs must raise before any launch."""
+    good = torch.complex(torch.ones(16, device="cuda"), torch.zeros(16, device="cuda"))
+    with pytest.raises(ValueError):
+        fft_dit(good.reshape(4, 4))          # rank
+    with pytest.raises(TypeError):
+        fft_dit(good.real)                   # dtype
+    with pytest.raises(ValueError):
+        fft_dit(torch.complex(torch.ones(12, device="cuda"),
+                              torch.zeros(12, device="cuda")))  # non-pow2
+    with pytest.raises(ValueError):
+        fft_dit(torch.complex(torch.ones(16), torch.zeros(16)))  # device
 
 
 if __name__ == "__main__":
@@ -101,7 +143,13 @@ if __name__ == "__main__":
         print("no XPU device available, skipping")
         sys.exit(0)
     test_bitrev_only()
-    test_dit_sizes()
-    test_dif_sizes()
+    for n in (8, 16, 64, 256, 1024, 4096, 65536, 1048576):
+        test_dit_sizes(n)
+    for n in (8, 16, 64, 256, 1024, 4096, 65536):
+        test_dif_sizes(n)
+    for n in (8, 64, 1024, 4096, 65536, 1048576):
+        test_fused_sizes(n)
     test_known_signals()
+    test_sentinel_output_changes()
+    test_negative_inputs_rejected()
     print("all correctness tests passed")
