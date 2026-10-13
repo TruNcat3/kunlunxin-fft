@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "space_id": "fft_complex_fp32_kunlunxin_p800",
+  "target": "complex-fp32-fft",
+  "target_reference": "torch.fft.fft (xdnn), N <= 2048 only",
+
+  "objects": ["A", "P", "L", "G", "F"],
+
+  "A": {
+    "ud_core": [12],
+    "ud_core_note": "12 clusters x 64 cores, from triton driver get_device_properties(0).device_model=3; torch.cuda.get_device_properties is stubbed and reports 8 MP, which is wrong",
+    "device_code_backend": ["triton"],
+    "device_code_backend_note": "Only Triton compiles to executable device code on this stack. nvcc/PTX cannot run on P800; clang-written device code does not link; the XHPC/xpucc SDK is absent from the container; the XPU ELF loader needs torch's in-process runtime state, which a bare C++ host cannot reproduce (see docs/device-stack.md)."
+  },
+
+  "P": {
+    "radix": [2],
+    "radix_note": "radix-2 only in v0; radix-4/8 are unexplored",
+    "dit_stage_kernel": {
+      "bitrev_input_fold": [true, false],
+      "note": "First DIT stage optionally reads X[bit_reverse(i)] and X[bit_reverse(i)+n], folding the input permutation into stage 0"
+    },
+    "dif_stage_kernel": {
+      "bitrev_output_fold": [true, false],
+      "note": "Last DIF stage optionally writes through bit-reversal, folding the output permutation into the final stage"
+    },
+    "stage_fusion": {
+      "level": [1],
+      "level_note": "One global-memory round trip per stage. On-chip multi-stage fusion is blocked: the Triton 3.0.0 XPU build rejects gather/scatter (x[idx]), so an in-place shared-memory FFT cannot be expressed in SSA form. See docs/device-stack.md."
+    }
+  },
+
+  "L": {
+    "in": ["planar"],
+    "out": ["planar"],
+    "planar_note": "Split real/imag float32 pairs. The Triton XPU backend has no complex64 argument type (KeyError: 'complex64' in type_canonicalisation_dict), so interleaved complex is not an option for kernel arguments."
+  },
+
+  "G": {
+    "twiddle_layout": "planar cos/sin tables of exp(-2*pi*i*idx/N) for idx in [0, N/2); stage reads W[j*M] with M = N/(2n)",
+    "twiddle_source": "global-memory tables built once per size by twiddle_tables(); recomputed per stage by the (unused) on-chip prototype"
+  },
+
+  "F": {
+    "butterfly_count_per_stage": "N/2",
+    "stage_count": "log2(N)",
+    "dft_matrix": [false],
+    "dft_matrix_note": "No matrix-unit / DFT-matrix path; the P800 matrix engine is not reachable from a Triton kernel on this toolchain"
+  },
+
+  "H": {
+    "profile": "config/device.json",
+    "shared_mem_bytes": 262144,
+    "warp_size_reported": 1,
+    "warp_size_note": "Triton reports warp_size=1 and warpSize=1 for this backend",
+    "vendor_fft_max_n": 2048
+  }
+}

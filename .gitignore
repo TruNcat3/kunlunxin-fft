@@ -1,0 +1,28 @@
+# build artifacts
+build/
+*.o
+*.xpubin
+
+# python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+
+# triton / torch caches
+.triton/
+.cache/
+
+# mkdocs
+site/
+
+# editor / os
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# local benchmark scratch (published results live in results/p800/)
+*.log

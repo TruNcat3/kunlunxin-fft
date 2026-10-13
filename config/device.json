@@ -1,0 +1,15 @@
+{
+  "device": "kunlunxin-p800",
+  "board": "P800 OAM",
+  "driver": "515.58",
+  "xpu_arch": 3,
+  "clusters": 12,
+  "cores_per_cluster": 64,
+  "shared_mem_bytes": 262144,
+  "hbm_gib": 96,
+  "device_code_path": "triton -> xmlir -> xpu instructions",
+  "torch_device_key": "cuda",
+  "torch_device_note": "torch.device('cuda') addresses the P800 after importing torch + torch_xmlir; torch.xpu is not enabled in this stack",
+  "baseline": "torch.fft.fft (xdnn), supports N <= 2048 only",
+  "vendor_fft_max_n": 2048
+}

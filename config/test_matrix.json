@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "description": "Predeclared FFT validation suites for the Kunlunxin P800. Correctness is checked against numpy (CPU, complex128) because the vendor torch.fft.fft caps at N <= 2048.",
+  "hardware": {
+    "soc": "kunlunxin-p800",
+    "board": "P800 OAM",
+    "clusters": 12,
+    "cores_per_cluster": 64,
+    "shared_mem_bytes": 262144,
+    "vendor_fft_max_n": 2048
+  },
+  "support": {
+    "precision": "fp32",
+    "layout": "planar split real/imag",
+    "c2c_direction": "forward",
+    "c2c_ns": [8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576],
+    "note": "All powers of two. fft_dit and fft_dif are both exercised at every size."
+  },
+  "profiles": {
+    "smoke": {
+      "id": "smoke",
+      "description": "Fast supported-envelope checks.",
+      "runnable": true,
+      "c2c": {"ns": [8, 16, 64, 256, 1024], "block": 1024},
+      "numeric_patterns": ["random-seeded", "impulse", "single-tone"],
+      "requirements": ["rel_err < 1e-4 vs numpy at every size"]
+    },
+    "full": {
+      "id": "full",
+      "description": "Full published grid including the multi-megabyte sizes the vendor baseline cannot reach.",
+      "runnable": true,
+      "c2c": {"ns": [8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576], "block": 1024},
+      "numeric_patterns": ["random-seeded", "impulse", "single-tone"],
+      "requirements": ["rel_err < 1e-4 vs numpy at every size", "report max_err and rel_err per size"]
+    }
+  }
+}

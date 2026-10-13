@@ -1,0 +1,27 @@
+site_name: Kunlunxin-FFT
+site_description: Triton-mapped FFT operators on Kunlunxin P800
+site_url: https://truncat3.github.io/kunlunxin-fft/
+repo_url: https://github.com/TruNcat3/kunlunxin-fft
+repo_name: TruNcat3/kunlunxin-fft
+edit_uri: edit/master/docs/
+theme:
+  name: material
+  language: en
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - content.code.copy
+plugins:
+  - search:
+      lang: [en]
+markdown_extensions:
+  - tables
+  - fenced_code
+  - toc:
+      permalink: true
+nav:
+  - Home: index.md
+  - Architecture: architecture.md
+  - Device Stack: device-stack.md
+  - Results: results.md

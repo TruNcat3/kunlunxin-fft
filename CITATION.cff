@@ -1,0 +1,31 @@
+cff-version: 1.2.0
+message: "If you use this software or its experimental data, please cite it using the metadata below."
+title: "Kunlunxin-FFT: A Triton-Mapped FFT Operator Library for Kunlunxin P800"
+type: software
+authors:
+  - given-names: "Teng"
+    family-names: "Wang"
+    email: "wangt635@ustc.edu.cn"
+    affiliation: "High Efficient Intelligent Computing Lab, Suzhou Institute for Advanced Research, University of Science and Technology of China, Suzhou, China"
+repository-code: "https://github.com/TruNcat3/kunlunxin-fft"
+url: "https://github.com/TruNcat3/kunlunxin-fft"
+abstract: >-
+  A Triton-mapped FFT operator library and reproducible research artifact for
+  the Kunlunxin P800. It documents the executable device-code path
+  (Triton -> XMLIR -> XPU instructions), records the dead ends that rule out
+  nvcc/PTX, clang-written device code, and bare C++ ELF launching, and ships a
+  correctness-verified radix-2 DIT/DIF complex FFT with a measured baseline
+  against the vendor torch.fft.fft. The current implementation validates fp32
+  C2C forward transforms for power-of-two lengths up to 1048576 on P800 while
+  retaining an extensible design space for additional transforms and dataflow
+  optimizations.
+keywords:
+  - FFT
+  - Kunlunxin
+  - P800
+  - Triton
+  - XMLIR
+  - XPU
+  - butterfly
+  - signal-processing
+license: Apache-2.0
