@@ -30,7 +30,7 @@
       "fused_tiles": [1, 64],
       "fused_tiles_note": "M1 candidate axis: compile-time local micro-FFT tile. tile=1 is the M0 baseline (no fusion); tile=64 fuses the first log2(64)=6 block-local stages into one kernel. Stages n < tile are block-local (pairs (i,i+n) stay inside a tile-aligned block), so the fused kernel needs no cross-program barrier.",
       "gather_scatter_status": "blocked-in-tested-lowering",
-      "gather_scatter_note": "The tested Triton 3.0.0 XPU lowering rejects SSA tensor gather (x[idx]); M1 avoids it by using only global pointer tl.load/tl.store, which the lowering accepts."
+      "gather_scatter_note": "The tested Triton 3.0.0 XPU lowering rejects the tensor-subscript gather Xt[idx_tensor] (ValueError: Did you forget to add @triton.jit?) but ACCEPTS pointer-form gather tl.load(ptr + idx_tensor); canaries: tests/test_fft.py::test_tensor_subscript_gather_blocked / test_pointer_form_gather_lowers. M1 uses only pointer tl.load/tl.store."
     }
   },
 

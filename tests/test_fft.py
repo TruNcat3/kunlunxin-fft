@@ -22,6 +22,9 @@ try:
 except Exception as e:  # pragma: no cover - absent in ordinary CI
     pytest.skip(f"vendor xpytorch stack unavailable: {e}", allow_module_level=True)
 
+import triton  # noqa: E402
+import triton.language as tl  # noqa: E402
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 pytestmark = pytest.mark.hardware
@@ -138,6 +141,51 @@ def test_negative_inputs_rejected():
         fft_dit(torch.complex(torch.ones(16), torch.zeros(16)))  # device
 
 
+@triton.jit
+def _pointer_gather_kernel(X, Y, IDX, N: tl.constexpr):
+    cols = tl.arange(0, N)
+    idx = tl.load(IDX + cols)
+    tl.store(Y + cols, tl.load(X + idx))
+
+
+@triton.jit
+def _tensor_subscript_kernel(X, Y, N: tl.constexpr):
+    cols = tl.arange(0, N)
+    Xt = tl.load(X + cols)
+    tl.store(Y + cols, Xt[cols % N])
+
+
+def test_pointer_form_gather_lowers():
+    """Runtime pointer arithmetic offsets lower on this backend.
+
+    This is the form that keeps register/UB residence (M2) on the ladder of
+    legal alternatives; if this ever starts failing, the ladder itself is
+    blocked and docs/device-stack.md must say so.
+    """
+    x = torch.arange(64, dtype=torch.float32, device="cuda")
+    idx = torch.arange(63, -1, -1, dtype=torch.int32, device="cuda")
+    y = torch.empty_like(x)
+    _pointer_gather_kernel[(1,)](x, y, idx, 64)
+    torch.cuda.synchronize()
+    assert torch.equal(y, x.flip(0)), "pointer-form gather produced wrong values"
+
+
+def test_tensor_subscript_gather_blocked():
+    """Canary for the one indexing form the tested lowering rejects.
+
+    `Xt[idx_tensor]` (gather from an SSA tensor via a tensor index) raises
+    CompilationError/ValueError on the Triton 3.0.0 XPU build. When a future
+    toolchain accepts it, this test FAILS — which is the signal that the
+    register/UB-residence (M2) SSA form has become expressible and the
+    limitation recorded in docs/device-stack.md no longer applies.
+    """
+    x = torch.arange(64, dtype=torch.float32, device="cuda")
+    y = torch.empty_like(x)
+    with pytest.raises(Exception) as exc:
+        _tensor_subscript_kernel[(1,)](x, y, 64)
+    assert "triton.jit" in str(exc.value) or "CompilationError" in str(exc.value)
+
+
 if __name__ == "__main__":
     if not device_ready():
         print("no XPU device available, skipping")
@@ -152,4 +200,6 @@ if __name__ == "__main__":
     test_known_signals()
     test_sentinel_output_changes()
     test_negative_inputs_rejected()
+    test_pointer_form_gather_lowers()
+    test_tensor_subscript_gather_blocked()
     print("all correctness tests passed")

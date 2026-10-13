@@ -103,30 +103,44 @@ for several stages without touching memory) would express the butterfly as, per 
 new_tensor = where(is_low, a+b, (a-b)*w)   # built from tensor[idx] gathers
 ```
 
-**Finding (scoped precisely).** The *tested* Triton 3.0.0 XPU lowering **failed to
-legally generate this form**: `tensor[idx]` advanced indexing raises
-`ValueError: Did you forget to add @triton.jit?` (the gather path is not wired for
-this backend). This was confirmed with a minimal `X[idx]` kernel. This is a statement
-about the **current lowering of one indexing form on one shape**, not a proof that the
-architecture or the algorithm is impossible.
+**Finding (scoped precisely, both canaries in `tests/test_fft.py`).** Two forms were
+probed separately on the Triton 3.0.0 XPU build:
+
+* **Fails — tensor subscript:** gathering from an SSA tensor via a tensor index,
+  `Xt[idx_tensor]`, raises `CompilationError ... ValueError: Did you forget to add
+  @triton.jit?` (`_builder` argument must be provided outside of JIT functions). Canary:
+  `test_tensor_subscript_gather_blocked`, which **fails the moment a future toolchain
+  accepts it** — the signal that this limitation no longer applies.
+* **Works — pointer arithmetic:** `tl.load(X_ptr + idx_tensor)` with runtime integer
+  tensor offsets lowers and produces correct values. Canary:
+  `test_pointer_form_gather_lowers`.
+
+So the blocker is **narrower than "gather is impossible"**: dynamic offsets through
+pointers lower fine; only the *tensor-subscript SSA form* is rejected. This is a
+statement about the current lowering of one indexing form on one shape, not a proof
+that the architecture or the algorithm is impossible.
 
 **What is distinguished:**
 
 ```text
 algorithmically possible          yes — the block-local DIT stages are well defined
-hardware-lowerable in this compiler  partial — global-pointer tl.load/tl.store yes;
-                                   SSA tensor gather no (tested)
-implemented and measured           M1 local-fused-tile: yes (global-pointer form);
+hardware-lowerable in this compiler  partial — pointer-form gather and pointer
+                                   tl.load/tl.store: yes (canary-tested);
+                                   tensor-subscript Xt[idx]: no (canary-tested)
+implemented and measured          M1 local-fused-tile: yes (pointer form);
                                    register/UB residence: not yet
 ```
 
 **Alternative legal forms to try before declaring a toolchain blocker** (ladder from
-the migration convergence plan; only step 1 is measured so far):
+the migration convergence plan; step 1 is measured, steps 2–3 now look reachable given
+the pointer-form result):
 
 1. compile-time / static index tables for small tiles — **M1 `local-fused-tile` does
    this**: it fuses the first `log2(TILE)` block-local stages using only global-pointer
-   `tl.load`/`tl.store` (no SSA gather), and is correct at every tested size.
-2. contiguous tile loads followed by register permutation;
+   `tl.load`/`tl.store`, and is correct at every tested size.
+2. contiguous tile loads followed by register permutation — the load half is proven
+   (pointer form works); the register-side pairing may be expressible with
+   static reshape/slice/concat instead of `Xt[idx]` (untested, next round);
 3. ping-pong registers or UB with explicit stage-local permutations;
 4. multiple legal subgraphs connected by explicit boundaries (execution groups);
 5. only then classify the remaining form as a toolchain blocker.
@@ -137,11 +151,13 @@ removing it produces races at every size (rel err ~0.9, confirmed). The mandator
 barrier plus the in-place store→load dependency serializes the memory pipeline that the
 M0 out-of-place stages keep fully independent, so M1 wins where launches dominate
 (`N <= 1024`, geometric mean ~1.6x) and loses where memory time dominates
-(`N >= 4096`, geometric mean ~0.7x). Overcoming this barrier cost is exactly what
-register/UB residence (M2) avoids — by never round-tripping through memory — but M2
-depends on the SSA gather form above, which is the *currently-not-lowered* item. This is
-the specific, recorded gap between the current baseline and the full cuButterfly
-mixed space-time dataflow.
+(`N >= 4096`, geometric mean ~0.7x). Register/UB residence (M2) avoids this entirely —
+values would never round-trip through memory, so no inter-stage fence exists. The only
+part of M2 the current lowering rejects is the tensor-subscript SSA shape above; how
+much of the register-side permutation can be rebuilt from the proven pointer form and
+static reshape/slice ops is the concrete open question for the next round. This is the
+specific, recorded gap between the current baseline and the full cuButterfly mixed
+space-time dataflow.
 
 ## Dangerous-operation notes
 
