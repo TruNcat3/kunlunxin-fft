@@ -86,7 +86,9 @@ CUDA_VISIBLE_DEVICES=6 python3 scripts/test_correctness.py --profile smoke
 CUDA_VISIBLE_DEVICES=6 python3 scripts/bench.py
 ```
 
-架构见 [Architecture](docs/architecture.md)，实测数据见 [Results](docs/results.md)。
+架构见 [Architecture](docs/architecture.md)，实测数据见 [Results](docs/results.md)。下一阶段的修复、
+性能建模和混合数据流实现要求见
+[Migration Convergence Plan](docs/development/migration-convergence-plan.md)。
 
 ## 目录结构
 

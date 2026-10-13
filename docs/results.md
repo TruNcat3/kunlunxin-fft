@@ -33,7 +33,7 @@ Correctness threshold: `rel_err < 1e-4`. Every size below passes for both `fft_d
 | 524288 | 82.0812 | 79.6325 | n/a | n/a | 5.4e-07 |
 | 1048576 | 177.1069 | 172.7782 | n/a | n/a | 5.8e-07 |
 
-Raw data: [`results/p800/bench_c2c.json`](../results/p800/bench_c2c.json).
+Raw data: [`bench_c2c.json`](https://github.com/TruNcat3/kunlunxin-fft/blob/master/results/p800/bench_c2c.json).
 
 ## Honest reading
 

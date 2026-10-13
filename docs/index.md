@@ -96,4 +96,5 @@ CUDA_VISIBLE_DEVICES=6 python3 scripts/bench.py
 ```
 
 See [Architecture](architecture.md) for how the pieces fit together, and
-[Results](results.md) for the measured data.
+[Results](results.md) for the measured data. The implementation and measurement
+roadmap is documented in the [Migration convergence plan](development/migration-convergence-plan.md).
