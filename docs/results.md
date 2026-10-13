@@ -36,6 +36,10 @@ conservative M0 (`lowest fused_tile`) so M1 must prove itself by measurement.
 
 ## Timing (median api_ms; DIT and DIF errors separate)
 
+The table below is **generated from the raw rows** by
+`scripts/bench.py --markdown` (Phase 2 acceptance: regenerable without hand-editing);
+the JSON/CSV are the source of truth.
+
 | N | M0 dit | M0 dif | M1 fused | vendor | M0 vs vendor | M1 vs M0 | dit_err | dif_err |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | 8 | 0.2103 | 0.2106 | 0.1368 | 0.0393 | 0.19x | **1.54x** | 6.5e-08 | 6.5e-08 |
@@ -102,9 +106,10 @@ gather indexing form the current Triton lowering does not generate. Scoped preci
    conservative default stays M0 (the plan's "never pick slower than the incumbent
    without opt-in" rule).
 
-Reproduce:
+Reproduce (regenerates JSON, CSV, and this page's table):
 
 ```bash
 CUDA_VISIBLE_DEVICES=6 python3 scripts/bench.py --trials 40 --tiles 64 \
-    --json results/p800/bench_phase2.json --csv results/p800/bench_phase2.csv
+    --json results/p800/bench_phase2.json --csv results/p800/bench_phase2.csv \
+    --markdown /tmp/table.md
 ```
