@@ -1,0 +1,20 @@
+# Captured LIVE during the genuine hang (attempt=0, ~19:25-19:28 local),
+# re-sampled 3x over ~3 min with identical frames; GPU: 100% util,
+# 1694MiB/98304MiB, 141W/400W, 49C. Process pid 18540, killed by PID,
+# device recovered to 0% util / 0MiB within seconds.
+#
+# Command: py-spy dump --pid 18540
+Process 18540: python scripts/bench.py --trials 50 --warmup 10 --json results/p800/bench_phase3.json --csv results/p800/bench_phase3.csv --csv-long results/p800/bench_phase3_long.csv
+Python v3.10.18 (/root/miniconda/envs/python310_torch29_cuda/bin/python3.10)
+
+Thread 18540 (active): "MainThread"
+    synchronize (torch/cuda/__init__.py:1083)
+    main (bench.py:330)
+    <module> (bench.py:754)
+
+# bench.py:330 is the per-trial torch.cuda.synchronize() in the interleaved
+# timing loop (after ev_end.record()). One queued kernel never completed.
+# py-spy re-samples at 19:25, 19:27 and 19:28 all showed these exact frames.
+# Note: py-spy version resolution succeeded here because the GIL was released
+# inside synchronize(); attach to a process spinning in native code fails with
+# "Failed to find python version from target process" (observed, healthy runs).

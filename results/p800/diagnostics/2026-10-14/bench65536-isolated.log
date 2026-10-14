@@ -1,0 +1,68 @@
+XCCL /root/miniconda/envs/python310_torch29_cuda/lib/python3.10/site-packages/torch_xmlir/xccl//so/libbkcl.so loaded
+[35mSYMBOL_REWRITE [0m[32mtorch success[0m
+    [XDNN_UNIMPLEMENTED][/home/agent/xpytorch/workspace/8ba19c15-fc11-4377-85f3-84daf8eaab09/XMLIR/xdnn_pytorch/src/kernel_wrapper/wrapper/internal_fft_common.cpp:340]
+[ASSERT-FAIL](4==SUCCESS)[/home/agent/xpytorch/workspace/8ba19c15-fc11-4377-85f3-84daf8eaab09/XMLIR/xdnn_pytorch/src/xdnn_pytorch_wrapper/fft_fft.cpp:69]
+== lowering-contract verdicts ==
+  legal        flow=baseline-global-stage unit=radix-2 tile=1 block=1024
+  legal        flow=baseline-global-stage unit=radix-2 tile=1 block=1024
+  legal        flow=local-fused-tile unit=radix-2 tile=64 block=1024
+  legal        flow=local-fused-tile unit=radix-2 tile=64 block=1024
+  legal        flow=baseline-global-stage unit=radix-4 tile=1 block=1024
+  legal        flow=baseline-global-stage unit=radix-4 tile=1 block=1024
+  legal        flow=batch-spread unit=radix-2 tile=1 block=1024
+  legal        flow=batch-spread unit=radix-2 tile=1 block=1024
+  legal        flow=batch-spread unit=radix-2 tile=1 block=1024
+  legal        flow=batch-spread unit=radix-2 tile=1 block=1024
+  legal        flow=batch-spread unit=radix-2 tile=1 block=1024
+  legal        flow=batch-spread unit=radix-2 tile=1 block=1024
+  legal        flow=batch-spread unit=radix-2 tile=1 block=1024
+  legal        flow=batch-spread unit=radix-2 tile=1 block=1024
+  legal        flow=batch-folded unit=radix-2 tile=1 block=1024
+  legal        flow=batch-folded unit=radix-2 tile=1 block=1024
+  legal        flow=batch-folded unit=radix-2 tile=1 block=1024
+  legal        flow=batch-folded unit=radix-2 tile=1 block=1024
+  legal        flow=batch-folded unit=radix-2 tile=1 block=1024
+  legal        flow=batch-folded unit=radix-2 tile=1 block=1024
+  legal        flow=batch-folded unit=radix-2 tile=1 block=1024
+  legal        flow=batch-folded unit=radix-2 tile=1 block=1024
+selected_candidate: baseline-global-stage (conservative pick = lowest fused_tile; M1 must prove itself by measurement)
+manifest: commit=12965bca dirty=True profile=a78b86793c7142a0 device=kunlunxin-p800
+
+== timings (median api_ms; interleaved 50 trials) ==
+       N    M0_dit    M0_dif    M1_t64  M2d_t64M3g_dit_t8    vendor   dit_err   dif_err
+   65536    9.6356    9.2605   13.7795   6.0451   5.4769       n/a   4.2e-07   3.9e-07
+         kernel_ms: M0_dit= 9.5941 M1_t64=13.7530 M2d_t64= 6.0155 M3g_t8= 5.4448  launches: M0=16 M1=12 M2=12 M3=11  (kernel time = device events, 0 unsupported)
+         M4 dit: spread/b1=9.6483 spread/b4=36.0060 spread/b16=135.3586 spread/b64=538.4707 folded/b1=9.6066 folded/b4=36.1601 folded/b16=140.6360 folded/b64=539.7731  err: 4.2e-07 5.1e-07 5.0e-07 5.8e-07 4.2e-07 5.1e-07 5.0e-07 5.8e-07
+         M5 r4: dit=4.9794 dif=4.6491 launches=8 err: 2.2e-07 2.5e-07
+         vendor unsupported: RuntimeError: [NOT IMPLEMENTED]: error code= 4(at /home/agent/xpytorch/workspace/8ba19c15-fc11-4377-85f3-84daf
+
+== M1 vs M0 (api_ms speedup, >1 = M1 faster) ==
+  tile=64: N<=1024 gmean=nanx  N>=4096 gmean=0.70x  all gmean=0.70x
+  m2_dit_t64: vs M0 N<=1024 gmean=nanx  N>=4096 gmean=1.59x  all gmean=1.59x  vs M1 all gmean=2.28x
+  m2_dif_t64: vs M0 N<=1024 gmean=nanx  N>=4096 gmean=1.59x  all gmean=1.59x  vs M1 all gmean=2.28x
+  m3_g_dit_t8: vs M0 N<=1024 gmean=nanx  N>=4096 gmean=1.76x  all gmean=1.76x  vs M2 all gmean=1.10x
+  m3_g_dif_t8: vs M0 N<=1024 gmean=nanx  N>=4096 gmean=1.73x  all gmean=1.73x  vs M2 all gmean=1.09x
+
+== M5 radix-4 vs M0 radix-2 (same flow; api_ms speedup) ==
+  m5_r4_dit: N<=1024 gmean=nanx  N>=4096 gmean=1.94x  all gmean=1.94x  max_err=2.2e-07
+  m5_r4_dif: N<=1024 gmean=nanx  N>=4096 gmean=1.99x  all gmean=1.99x  max_err=2.5e-07
+  arithmetic ledger (analytic, same flow):
+    N=   65536: launches 16->8  twiddle_mults 524288->393216  real_adds 2097152->3145728
+
+== M4 batch vs M0 (per-element: b*m0_ms/m4_ms; >1 = batch amortizes) ==
+  m4_spread_b1_dit: N<=1024 gmean=nanx  N>=4096 gmean=1.00x  all gmean=1.00x  max_err=4.2e-07
+  m4_spread_b1_dif: N<=1024 gmean=nanx  N>=4096 gmean=0.99x  all gmean=0.99x  max_err=3.9e-07
+  m4_spread_b4_dit: N<=1024 gmean=nanx  N>=4096 gmean=1.07x  all gmean=1.07x  max_err=5.1e-07
+  m4_spread_b4_dif: N<=1024 gmean=nanx  N>=4096 gmean=1.06x  all gmean=1.06x  max_err=4.0e-07
+  m4_spread_b16_dit: N<=1024 gmean=nanx  N>=4096 gmean=1.14x  all gmean=1.14x  max_err=5.0e-07
+  m4_spread_b16_dif: N<=1024 gmean=nanx  N>=4096 gmean=1.13x  all gmean=1.13x  max_err=4.7e-07
+  m4_spread_b64_dit: N<=1024 gmean=nanx  N>=4096 gmean=1.15x  all gmean=1.15x  max_err=5.8e-07
+  m4_spread_b64_dif: N<=1024 gmean=nanx  N>=4096 gmean=1.14x  all gmean=1.14x  max_err=5.6e-07
+  m4_folded_b1_dit: N<=1024 gmean=nanx  N>=4096 gmean=1.00x  all gmean=1.00x  max_err=4.2e-07
+  m4_folded_b1_dif: N<=1024 gmean=nanx  N>=4096 gmean=0.99x  all gmean=0.99x  max_err=3.9e-07
+  m4_folded_b4_dit: N<=1024 gmean=nanx  N>=4096 gmean=1.07x  all gmean=1.07x  max_err=5.1e-07
+  m4_folded_b4_dif: N<=1024 gmean=nanx  N>=4096 gmean=1.06x  all gmean=1.06x  max_err=4.0e-07
+  m4_folded_b16_dit: N<=1024 gmean=nanx  N>=4096 gmean=1.10x  all gmean=1.10x  max_err=5.0e-07
+  m4_folded_b16_dif: N<=1024 gmean=nanx  N>=4096 gmean=1.09x  all gmean=1.09x  max_err=4.7e-07
+  m4_folded_b64_dit: N<=1024 gmean=nanx  N>=4096 gmean=1.14x  all gmean=1.14x  max_err=5.8e-07
+  m4_folded_b64_dif: N<=1024 gmean=nanx  N>=4096 gmean=1.14x  all gmean=1.14x  max_err=5.6e-07

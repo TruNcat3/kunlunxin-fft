@@ -1,0 +1,11 @@
+# Representative stderr from torch.fft.fft at N>2048 (vendor boundary).
+# Fires once per bench size above vendor_baseline_max_n=2048; the exception
+# is caught and retained as vendor_error in the raw JSON - not a hang cause.
+# (Two-line pattern per failed attempt; observed 4x before the attempt=0
+# hang => bench had reached the N=32768 size's vendor boundary.)
+    [XDNN_UNIMPLEMENTED][/home/agent/xpytorch/workspace/8ba19c15-fc11-4377-85f3-84daf8eaab09/XMLIR/xdnn_pytorch/src/kernel_wrapper/wrapper/internal_fft_common.cpp:340]
+[ASSERT-FAIL](4==SUCCESS)[/home/agent/xpytorch/workspace/8ba19c15-fc11-4377-85f3-84daf8eaab09/XMLIR/xdnn_pytorch/src/xdnn_pytorch_wrapper/fft_fft.cpp:69]
+    [XDNN_UNIMPLEMENTED][/home/agent/xpytorch/workspace/8ba19c15-fc11-4377-85f3-84daf8eaab09/XMLIR/xdnn_pytorch/src/kernel_wrapper/wrapper/internal_fft_common.cpp:340]
+[ASSERT-FAIL](4==SUCCESS)[/home/agent/xpytorch/workspace/8ba19c15-fc11-4377-85f3-84daf8eaab09/XMLIR/xdnn_pytorch/src/xdnn_pytorch_wrapper/fft_fft.cpp:69]
+# Actual RuntimeError (caught, retained):
+# RuntimeError: [NOT IMPLEMENTED]: error code= 4 (at xdnn_pytorch/fft_fft.cpp:69)

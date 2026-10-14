@@ -1,0 +1,10 @@
+# Verbatim driver output (run_matrix.sh watchdog, 2026-10-14).
+# Threshold was 12 min of log silence; attempt=1 was a FALSE POSITIVE kill
+# (the N=524288 batch phase is legitimately silent for ~30 min - see the
+# incident report). The earlier attempt=0 kill (not logged here) was a
+# GENUINE hang: py-spy stuck in torch.cuda.synchronize() for >30 min with
+# XPU-Util pinned at 100%.
+=== START phase3 attempt=1 20:05:01 ===
+=== STALL detected 20:43:01; killing pid 63120 ===
+=== attempt=1 rc=137 20:43:02 ===
+=== START phase3 attempt=2 20:43:02 ===

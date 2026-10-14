@@ -172,7 +172,11 @@ needs it; the recorded gap to the full cuButterfly mixed space-time dataflow is 
 ## Dangerous-operation notes
 
 * A kernel launched with wrong parameters can **hang the device** (`xpu-smi` shows 100%
-  util). Recovery is `kill -9` on the offending process.
+  util). Recovery is `kill -9` on the offending process. A worked example (genuine
+  intermittent hang during the phase-3 bench, with `py-spy` traces, isolation matrix
+  and watchdog guidance) is recorded in
+  [incidents/2026-10-14-p800-bench-hang.md](development/incidents/2026-10-14-p800-bench-hang.md);
+  capture snapshots with `scripts/diag_snapshot.sh <pid> <log>`.
 * Do **not** `pkill -f <script-name>` to kill such a process — the pattern matches your
   own shell command line and kills the shell. (This happened during this investigation.)
 * `CUDA_VISIBLE_DEVICES` is honored by both the XRE runtime and `torch_xmlir`.
