@@ -41,9 +41,11 @@ import triton
 from .context import device_ready, xpu_context
 from .kernels import (
     bitrev_kernel,
+    dif_stage4_kernel,
     dif_stage_batch_kernel,
     dif_stage_kernel,
     dit_fused_kernel,
+    dit_stage4_kernel,
     dit_stage_batch_kernel,
     dit_stage_kernel,
     local_matrix_kernel,
@@ -188,7 +190,7 @@ def fft_dif(
                 M,
                 n,
                 logn,
-                BITREV_OUTPUT=(s == 0),
+                REV_MODE=(1 if s == 0 else 0),
             )
             cr, ci = nr, ni
     return _from_so(cr, ci)
@@ -342,7 +344,7 @@ def _fft_matrix_tail(
         kw = (
             {"BITREV_INPUT": False}
             if direction == "dit"
-            else {"BITREV_OUTPUT": False}
+            else {"REV_MODE": 0}
         )
         _launch(
             stage,
@@ -566,7 +568,7 @@ def _fft_group_tail(
             kw = (
                 {"BITREV_INPUT": False}
                 if direction == "dit"
-                else {"BITREV_OUTPUT": False}
+                else {"REV_MODE": 0}
             )
             _launch(
                 stage,
@@ -880,6 +882,181 @@ def fft_dif_batch(
                 BITREV_OUTPUT=(s == 0),
                 SPREAD=spread,
             )
+            cr, ci = nr, ni
+    return _from_so(cr, ci)
+
+def _r4_dit_stages(n: int) -> list:
+    """M5 DIT stage sequence: radix-4 spans 4, 16, ... plus an optional
+    radix-2 tail spanning ``N`` when ``log2(N)`` is odd."""
+    stages = []
+    s = 4
+    while True:
+        stages.append(("r4", s))
+        if s == n:
+            break
+        if 4 * s <= n:
+            s *= 4
+        elif 2 * s == n:
+            stages.append(("r2", n))
+            break
+        else:
+            raise AssertionError(f"no next DIT span for N={n}, s={s}")
+    return stages
+
+
+def _r4_dif_stages(n: int) -> list:
+    """M5 DIF stage sequence: radix-4 groups ``N, N/4, ...`` down to a
+    group of 4, plus a radix-2 tail (group 2) when ``log2(N)`` is odd."""
+    stages = []
+    s = n
+    while s % 4 == 0 and s >= 4:
+        stages.append(("r4", s))
+        s >>= 2
+    if s == 2:
+        stages.append(("r2", 2))
+    return stages
+
+
+def fft_dit_radix4(
+    x: torch.Tensor,
+    block: int = 1024,
+    twiddle=None,
+) -> torch.Tensor:
+    """M5: radix-4 DIT FFT (flow ``baseline-global-stage``, core ``radix-4``).
+
+    Same flow as the M0 baseline -- one global round trip and one launch per
+    stage -- but the processing unit is a radix-4 butterfly: ``ceil(log4(N))``
+    radix-4 stages (spans 4, 16, ...) plus one radix-2 tail when
+    ``log2(N)`` is odd. The mixed digit-reversal input permutation is folded
+    into the first stage, so there is no separate pass. Twiddle count per
+    transform drops versus radix-2 (3 twiddles per 4 outputs per stage vs 1
+    per 2 outputs); see ``src/xpu/candidates.py:arithmetic_cost`` for the
+    analytic comparison.
+    """
+    validate_input(x, "x", block=block)
+    n = x.numel()
+    logn = log2_exact(n)
+    if n < 4:
+        raise ValueError(f"radix-4 requires N >= 4, got N={n}")
+    if twiddle is None:
+        twiddle = twiddle_tables(n, x.device)
+    validate_twiddle(twiddle, n, x.device)
+    wr, wi = twiddle
+    stages = _r4_dit_stages(n)
+    grid4 = triton.cdiv(n >> 2, block)
+    grid2 = triton.cdiv(n >> 1, block)
+
+    with xpu_context(x.device.index or 0):
+        cr, ci = _as_so(x)
+        for kind, span in stages:
+            nr = torch.empty_like(cr)
+            ni = torch.empty_like(ci)
+            if kind == "r4":
+                stage_n = span >> 2
+                _launch(
+                    dit_stage4_kernel,
+                    block,
+                    grid4,
+                    cr,
+                    ci,
+                    nr,
+                    ni,
+                    wr,
+                    wi,
+                    stage_n,
+                    n // span,
+                    n,
+                    logn,
+                    DIGREV_INPUT=(span == 4),
+                )
+            else:
+                _launch(
+                    dit_stage_kernel,
+                    block,
+                    grid2,
+                    cr,
+                    ci,
+                    nr,
+                    ni,
+                    wr,
+                    wi,
+                    n >> 1,
+                    1,
+                    n,
+                    logn,
+                    BITREV_INPUT=False,
+                )
+            cr, ci = nr, ni
+    return _from_so(cr, ci)
+
+
+def fft_dif_radix4(
+    x: torch.Tensor,
+    block: int = 1024,
+    twiddle=None,
+) -> torch.Tensor:
+    """M5: radix-4 DIF FFT (flow ``baseline-global-stage``, core ``radix-4``).
+
+    The DIF mirror of :func:`fft_dit_radix4`: radix-4 groups ``N, N/4, ...``
+    with the mixed digit-reversal output permutation folded into whichever
+    stage is last (radix-4 with ``DIGREV_OUTPUT``, or the radix-2 tail with
+    ``REV_MODE=2``). Launch count matches the DIT sequence, so DIT and DIF
+    differ only in stage direction under the same flow.
+    """
+    validate_input(x, "x", block=block)
+    n = x.numel()
+    logn = log2_exact(n)
+    if n < 4:
+        raise ValueError(f"radix-4 requires N >= 4, got N={n}")
+    if twiddle is None:
+        twiddle = twiddle_tables(n, x.device)
+    validate_twiddle(twiddle, n, x.device)
+    wr, wi = twiddle
+    stages = _r4_dif_stages(n)
+    grid4 = triton.cdiv(n >> 2, block)
+    grid2 = triton.cdiv(n >> 1, block)
+
+    with xpu_context(x.device.index or 0):
+        cr, ci = _as_so(x)
+        for idx, (kind, span) in enumerate(stages):
+            last = idx == len(stages) - 1
+            nr = torch.empty_like(cr)
+            ni = torch.empty_like(ci)
+            if kind == "r4":
+                stage_n = span >> 2
+                _launch(
+                    dif_stage4_kernel,
+                    block,
+                    grid4,
+                    cr,
+                    ci,
+                    nr,
+                    ni,
+                    wr,
+                    wi,
+                    stage_n,
+                    n // span,
+                    n,
+                    logn,
+                    DIGREV_OUTPUT=last,
+                )
+            else:
+                _launch(
+                    dif_stage_kernel,
+                    block,
+                    grid2,
+                    cr,
+                    ci,
+                    nr,
+                    ni,
+                    wr,
+                    wi,
+                    1,
+                    n >> 1,
+                    n,
+                    logn,
+                    REV_MODE=2,
+                )
             cr, ci = nr, ni
     return _from_so(cr, ci)
 

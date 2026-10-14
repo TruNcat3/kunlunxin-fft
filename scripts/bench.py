@@ -48,7 +48,11 @@ from src.xpu import (  # noqa: E402
     SizeMatrix,
     build_manifest,
 )
-from src.xpu.candidates import enumerate_candidates, selected_candidate  # noqa: E402
+from src.xpu.candidates import (  # noqa: E402
+    arithmetic_cost,
+    enumerate_candidates,
+    selected_candidate,
+)
 from src.xpu.matrices import tail_groups  # noqa: E402
 from src.xpu.runner import (  # noqa: E402
     device_name,
@@ -61,6 +65,8 @@ from src.xpu.runner import (  # noqa: E402
     fft_dit_fused,
     fft_dit_grouped,
     fft_dit_matrix,
+    fft_dif_radix4,
+    fft_dit_radix4,
     time_call_detailed,
     twiddle_tables,
 )
@@ -150,7 +156,8 @@ def main() -> None:
     print("== lowering-contract verdicts ==")
     for v in legal:
         c = v.candidate
-        print(f"  legal        flow={c.flow_id} tile={c.fused_tile} block={c.block}")
+        print(f"  legal        flow={c.flow_id} unit={c.processing_unit} "
+              f"tile={c.fused_tile} block={c.block}")
     for v in rejected:
         c = v.candidate
         print(f"  {v.status:<12} flow={c.flow_id} tile={c.fused_tile} :: {'; '.join(v.reasons)}")
@@ -228,6 +235,12 @@ def main() -> None:
                         fn(batch_x[b], block=args.block, variant=v, twiddle=tw),
                         batch_refs[b])
 
+        # M5 radix-4 core on the same baseline flow
+        r4_errs = {
+            "dit": err_vs(fft_dit_radix4(x, block=args.block, twiddle=tw), ref),
+            "dif": err_vs(fft_dif_radix4(x, block=args.block, twiddle=tw), ref),
+        }
+
         # vendor boundary
         vend, vend_err = vendor_fft(x)
         vend_ms = None
@@ -255,6 +268,8 @@ def main() -> None:
             cands[f"m3_g_dif_t{t}"] = lambda t=t: fft_dif_grouped(
                 x, block=args.block, tile=t, glog=args.glog, maxp=args.maxp,
                 cells=args.cells, twiddle=tw)
+        cands["m5_r4_dit"] = lambda: fft_dit_radix4(x, block=args.block, twiddle=tw)
+        cands["m5_r4_dif"] = lambda: fft_dif_radix4(x, block=args.block, twiddle=tw)
         batch_of = {}   # candidate key -> batch size (M4 keys only)
         for b in batchs:
             for v in batch_variants:
@@ -289,6 +304,10 @@ def main() -> None:
         # the grid) so launches do not change with B or the variant.
         for k in batch_of:
             launches[k] = logn
+        # M5: radix-4 launch count comes from the analytic ledger
+        r4_cost = arithmetic_cost(n, 4)
+        launches["m5_r4_dit"] = r4_cost["launches"]
+        launches["m5_r4_dif"] = r4_cost["launches"]
 
         # randomized interleaved trials: round-robin over shuffled candidate order
         order = list(cands)
@@ -333,6 +352,8 @@ def main() -> None:
             row[f"m3_g_{k}_err"] = e
         for (v, b, d), e in batch_errs.items():
             row[f"m4_{v}_b{b}_{d}_err"] = e
+        row["m5_r4_dit_err"] = r4_errs["dit"]
+        row["m5_r4_dif_err"] = r4_errs["dif"]
         for k in cands:
             row[f"{k}_ms"] = med(timings[k])
             row[f"{k}_kernel_ms"] = med(ktime[k])
@@ -376,6 +397,10 @@ def main() -> None:
             errs = [f"{row.get(f'm4_{v}_b{b}_dit_err', float('nan')):.1e}"
                     for v in batch_variants for b in batchs]
             print(f"{'':>8} M4 dit: {' '.join(cells)}  err: {' '.join(errs)}")
+        print(f"{'':>8} M5 r4: dit={row.get('m5_r4_dit_ms') or 0:.4f} "
+              f"dif={row.get('m5_r4_dif_ms') or 0:.4f} "
+              f"launches={r4_cost['launches']} "
+              f"err: {row['m5_r4_dit_err']:.1e} {row['m5_r4_dif_err']:.1e}")
         if vend_err:
             print(f"{'':>8} vendor unsupported: {vend_err[:110]}")
 
@@ -423,6 +448,28 @@ def main() -> None:
             print(f"  {key}: vs M0 N<=1024 gmean={gm(small):.2f}x  "
                   f"N>=4096 gmean={gm(big):.2f}x  all gmean={gm(ratios):.2f}x"
                   + (f"  vs M2 all gmean={gm(vs_m2):.2f}x" if vs_m2 else ""))
+
+    # M5 radix-4 vs radix-2 on the same flow + the analytic arithmetic ledger
+    print("\n== M5 radix-4 vs M0 radix-2 (same flow; api_ms speedup) ==")
+    gm = lambda xs: float(np.exp(np.mean(np.log(xs)))) if xs else float("nan")
+    for d in ("dit", "dif"):
+        key = f"m5_r4_{d}"
+        ratios = [r[f"m0_{d}_ms"] / r[f"{key}_ms"] for r in rows if r.get(f"{key}_ms")]
+        small = [r[f"m0_{d}_ms"] / r[f"{key}_ms"] for r in rows
+                 if r["n"] <= 1024 and r.get(f"{key}_ms")]
+        big = [r[f"m0_{d}_ms"] / r[f"{key}_ms"] for r in rows
+               if r["n"] >= 4096 and r.get(f"{key}_ms")]
+        max_err_ = max((r.get(f"{key}_err") for r in rows
+                        if r.get(f"{key}_err") is not None), default=None)
+        print(f"  {key}: N<=1024 gmean={gm(small):.2f}x  "
+              f"N>=4096 gmean={gm(big):.2f}x  all gmean={gm(ratios):.2f}x"
+              + (f"  max_err={max_err_:.1e}" if max_err_ is not None else ""))
+    print("  arithmetic ledger (analytic, same flow):")
+    for n in sorted({sizes_list[0], sizes_list[len(sizes_list) // 2], sizes_list[-1]}):
+        c2, c4 = arithmetic_cost(n, 2), arithmetic_cost(n, 4)
+        print(f"    N={n:>8}: launches {c2['launches']}->{c4['launches']}  "
+              f"twiddle_mults {c2['twiddle_mults']}->{c4['twiddle_mults']}  "
+              f"real_adds {c2['real_adds']}->{c4['real_adds']}")
 
     # M4 batch amortization (per-element: batch is a workload axis, section 6)
     print("\n== M4 batch vs M0 (per-element: b*m0_ms/m4_ms; >1 = batch amortizes) ==")
@@ -520,6 +567,11 @@ def long_rows(rows, man, profile, threshold=1e-4):
                 flow = "local-fused-tile"
                 direction = "dit" if "_dit_" in base else "dif"
                 notes = "m3-execution-group-tail"
+            elif base.startswith("m5_"):
+                flow = "baseline-global-stage"
+                direction = base.rsplit("_", 1)[-1]
+                err = r.get(f"{base}_err")
+                notes = "m5-radix4"
             elif base.startswith("m4_"):
                 parts = base.split("_")            # m4, variant, bNN, dit|dif
                 if len(parts) != 4:
@@ -537,8 +589,9 @@ def long_rows(rows, man, profile, threshold=1e-4):
                 continue
             if err is None and flow != "baseline-global-stage":
                 err = r.get(f"{base}_err")
-            analytic = flow in ("baseline-global-stage", "batch-spread",
-                                "batch-folded")
+            analytic = (flow in ("baseline-global-stage", "batch-spread",
+                                 "batch-folded")
+                        and not base.startswith("m5_"))
             launches = r.get(f"{base}_launches")
             out.append({
                 "commit": man["commit"],
@@ -550,7 +603,8 @@ def long_rows(rows, man, profile, threshold=1e-4):
                 "direction": direction,
                 "precision": "fp32",
                 "flow_id": flow,
-                "processing_unit": "radix-2",
+                "processing_unit": ("radix-4" if base.startswith("m5_")
+                                    else "radix-2"),
                 "Us": 1, "Ts": 1, "Ud": ud, "Td": td,
                 "residence": "gm",
                 "layout": "planar-soa",
@@ -646,6 +700,34 @@ def _write_markdown(path, rows, tiles, matrix_tiles, grouped_tiles, man,
         f"all sizes {gm(g3_all):.2f}x.",
         "",
     ]
+    # M5 radix-4: same baseline flow, different processing unit
+    if rows and all(r.get("m5_r4_dit_ms") for r in rows):
+        m5_small = [r["m0_dit_ms"] / r["m5_r4_dit_ms"] for r in rows if r["n"] <= 1024]
+        m5_big = [r["m0_dit_ms"] / r["m5_r4_dit_ms"] for r in rows if r["n"] >= 4096]
+        m5_all = [r["m0_dit_ms"] / r["m5_r4_dit_ms"] for r in rows]
+        m5d_small = [r["m0_dif_ms"] / r["m5_r4_dif_ms"] for r in rows if r["n"] <= 1024]
+        m5d_big = [r["m0_dif_ms"] / r["m5_r4_dif_ms"] for r in rows if r["n"] >= 4096]
+        lines += [
+            "### M5 radix-4 vs M0 radix-2 (same flow, median api_ms)",
+            "",
+            "| N | M5 r4 dit | M5 r4 dif | dit err | dif err | dit vs M0 | dif vs M0 |",
+            "|---:|---:|---:|---:|---:|---:|---:|",
+        ]
+        for r in rows:
+            rd = r["m0_dit_ms"] / r["m5_r4_dit_ms"]
+            rf = r["m0_dif_ms"] / r["m5_r4_dif_ms"]
+            lines.append(
+                f"| {r['n']} | {r['m5_r4_dit_ms']:.4f} | {r['m5_r4_dif_ms']:.4f} "
+                f"| {r.get('m5_r4_dit_err', 0):.1e} | {r.get('m5_r4_dif_err', 0):.1e} "
+                f"| {rd:.2f}x | {rf:.2f}x |")
+        lines += [
+            "",
+            f"M5 radix-4 dit geometric-mean speedup vs M0: "
+            f"`N<=1024` **{gm(m5_small):.2f}x**, `N>=4096` **{gm(m5_big):.2f}x**, "
+            f"all sizes {gm(m5_all):.2f}x. DIF: "
+            f"`N<=1024` **{gm(m5d_small):.2f}x**, `N>=4096` **{gm(m5d_big):.2f}x**.",
+            "",
+        ]
     # M4 batch tables (workload axis: raw api_ms, no cross-B speedup claim)
     if batchs and batch_variants:
         for d in ("dit", "dif"):

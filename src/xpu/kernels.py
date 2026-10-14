@@ -36,6 +36,46 @@ def _bit_reverse(x, BITS: tl.constexpr):
 
 
 @triton.jit
+def _dit_digit_reverse(x, BITS: tl.constexpr):
+    """DIT input permutation: mixed-radix digit reversal (M5).
+
+    Radix-4 digits low-to-high (2-bit each); the top digit is 1-bit when
+    ``BITS`` is odd (radices ``[4]*m`` or ``[4]*m + [2]``). Digit ``q`` keeps
+    weight ``2**(BITS - 2q - 2)``, i.e. the product of the radices above it;
+    an odd top bit lands in bit 0.
+    """
+    rev = tl.zeros_like(x)
+    for q in range(BITS // 2):
+        d = (x >> (2 * q)) & 3
+        rev = rev | (d << (BITS - 2 * q - 2))
+    if BITS % 2 == 1:
+        rev = rev | ((x >> (BITS - 1)) & 1)
+    return rev
+
+
+@triton.jit
+def _dif_digit_reverse(x, BITS: tl.constexpr):
+    """DIF output permutation: mixed-radix digit reversal (M5).
+
+    Same reversal with radices ``[2] + [4]*m`` when ``BITS`` is odd (the
+    1-bit digit sits at the bottom of the input index and carries the highest
+    output weight); even ``BITS`` matches :func:`_dit_digit_reverse`.
+    """
+    if BITS % 2 == 1:
+        rev = (x & 1) << (BITS - 1)
+        for q in range(1, BITS // 2 + 1):
+            d = (x >> (2 * q - 1)) & 3
+            rev = rev | (d << (BITS - 1 - 2 * q))
+        return rev
+    else:
+        rev = tl.zeros_like(x)
+        for q in range(BITS // 2):
+            d = (x >> (2 * q)) & 3
+            rev = rev | (d << (BITS - 2 * q - 2))
+        return rev
+
+
+@triton.jit
 def bitrev_kernel(
     Xr,
     Xi,
@@ -133,7 +173,7 @@ def dif_stage_kernel(
     N,
     BITS: tl.constexpr,
     BLOCK: tl.constexpr,
-    BITREV_OUTPUT: tl.constexpr,
+    REV_MODE: tl.constexpr,
 ):
     """One radix-2 DIF butterfly stage on split-complex data.
 
@@ -144,8 +184,9 @@ def dif_stage_kernel(
         Y[i]     = a + b
         Y[i + n] = (a - b) * W[j * M]
 
-    When ``BITREV_OUTPUT`` is set the final stage writes through a
-    bit-reversal permutation, so the result is in natural order.
+    ``REV_MODE`` selects the output permutation folded into this (possibly
+    final) stage: ``0`` none, ``1`` bit-reversal (M0), ``2`` the mixed-radix
+    digit reversal the M5 radix-4 cascade leaves behind (odd ``log2(N)``).
     """
     pid = tl.program_id(0)
     off = pid * BLOCK + tl.arange(0, BLOCK)
@@ -171,9 +212,16 @@ def dif_stage_kernel(
     drw = dr * wr - di * wi
     diw = dr * wi + di * wr
 
-    if BITREV_OUTPUT:
+    if REV_MODE == 1:
         d0 = _bit_reverse(i, BITS)
         d1 = _bit_reverse(i + n, BITS)
+        tl.store(Yr + d0, sr, mask=mask)
+        tl.store(Yi + d0, si, mask=mask)
+        tl.store(Yr + d1, drw, mask=mask)
+        tl.store(Yi + d1, diw, mask=mask)
+    elif REV_MODE == 2:
+        d0 = _dif_digit_reverse(i, BITS)
+        d1 = _dif_digit_reverse(i + n, BITS)
         tl.store(Yr + d0, sr, mask=mask)
         tl.store(Yi + d0, si, mask=mask)
         tl.store(Yr + d1, drw, mask=mask)
@@ -183,6 +231,193 @@ def dif_stage_kernel(
         tl.store(Yi + i, si, mask=mask)
         tl.store(Yr + i + n, drw, mask=mask)
         tl.store(Yi + i + n, diw, mask=mask)
+
+
+@triton.jit
+def dit_stage4_kernel(
+    Xr,
+    Xi,
+    Yr,
+    Yi,
+    Wr,
+    Wi,
+    n,
+    M,
+    N,
+    BITS: tl.constexpr,
+    BLOCK: tl.constexpr,
+    DIGREV_INPUT: tl.constexpr,
+):
+    """One radix-4 DIT stage (M5), span ``4n``, ``n`` in 1, 4, 16, ...
+
+    Index mapping mirrors the radix-2 DIT stage with groups of ``4n``::
+
+        j = off % n
+        i = (off // n) * 4n + j
+        b_d = X[i + d*n] * W**(d*j*M)          d = 0..3
+        Y[i + d*n] = column_d(b_0..b_3)        analysis matrix
+
+    ``M = N / (4n)`` so ``d*j*M < 3N/4``; the ``3*j*M`` twiddle folds above
+    ``N/2`` through ``W[N-w] = conj(W[w])`` (``w == N/2`` never occurs for
+    power-of-four ``n``). When ``DIGREV_INPUT`` is set the first stage reads
+    through the mixed digit-reversed permutation, so output is natural order
+    with no trailing pass.
+    """
+    pid = tl.program_id(0)
+    off = pid * BLOCK + tl.arange(0, BLOCK)
+    mask = off < (N >> 2)
+
+    j = off % n
+    i = ((off // n) * 4) * n + j
+
+    if DIGREV_INPUT:
+        src0 = _dit_digit_reverse(i, BITS)
+        src1 = _dit_digit_reverse(i + n, BITS)
+        src2 = _dit_digit_reverse(i + 2 * n, BITS)
+        src3 = _dit_digit_reverse(i + 3 * n, BITS)
+    else:
+        src0 = i
+        src1 = i + n
+        src2 = i + 2 * n
+        src3 = i + 3 * n
+
+    ar = tl.load(Xr + src0, mask=mask)
+    ai = tl.load(Xi + src0, mask=mask)
+    br = tl.load(Xr + src1, mask=mask)
+    bi = tl.load(Xi + src1, mask=mask)
+    cr = tl.load(Xr + src2, mask=mask)
+    ci = tl.load(Xi + src2, mask=mask)
+    dr = tl.load(Xr + src3, mask=mask)
+    di = tl.load(Xi + src3, mask=mask)
+
+    # twiddle b_d = a_d * W**(d*j*M) before the butterfly (DIT)
+    jm = j * M
+    w2 = jm << 1
+    w3 = jm + w2
+    big = w3 > (N >> 1)
+    k3 = tl.where(big, N - w3, w3)
+    wi3s = tl.where(big, -1.0, 1.0)
+    w1r = tl.load(Wr + jm, mask=mask)
+    w1i = tl.load(Wi + jm, mask=mask)
+    w2r = tl.load(Wr + w2, mask=mask)
+    w2i = tl.load(Wi + w2, mask=mask)
+    w3r = tl.load(Wr + k3, mask=mask)
+    w3i = tl.load(Wi + k3, mask=mask) * wi3s
+
+    b1r = br * w1r - bi * w1i
+    b1i = br * w1i + bi * w1r
+    b2r = cr * w2r - ci * w2i
+    b2i = cr * w2i + ci * w2r
+    b3r = dr * w3r - di * w3i
+    b3i = dr * w3i + di * w3r
+
+    # analysis column DFT (same butterfly as DIF, applied to twiddled inputs)
+    y0r = ar + b1r + b2r + b3r
+    y0i = ai + b1i + b2i + b3i
+    y1r = ar + b1i - b2r - b3i
+    y1i = ai - b1r - b2i + b3r
+    y2r = ar - b1r + b2r - b3r
+    y2i = ai - b1i + b2i - b3i
+    y3r = ar - b1i - b2r + b3i
+    y3i = ai + b1r - b2i - b3r
+
+    tl.store(Yr + i, y0r, mask=mask)
+    tl.store(Yi + i, y0i, mask=mask)
+    tl.store(Yr + i + n, y1r, mask=mask)
+    tl.store(Yi + i + n, y1i, mask=mask)
+    tl.store(Yr + i + 2 * n, y2r, mask=mask)
+    tl.store(Yi + i + 2 * n, y2i, mask=mask)
+    tl.store(Yr + i + 3 * n, y3r, mask=mask)
+    tl.store(Yi + i + 3 * n, y3i, mask=mask)
+
+
+@triton.jit
+def dif_stage4_kernel(
+    Xr,
+    Xi,
+    Yr,
+    Yi,
+    Wr,
+    Wi,
+    n,
+    M,
+    N,
+    BITS: tl.constexpr,
+    BLOCK: tl.constexpr,
+    DIGREV_OUTPUT: tl.constexpr,
+):
+    """One radix-4 DIF stage (M5), span ``4n``.
+
+    Same index mapping as :func:`dit_stage4_kernel`, but the column DFT runs
+    first and the twiddle ``W**(c*j*M)`` is applied to output quarter ``c``
+    (fold above ``N/2`` via conjugation, as in the DIT stage). With
+    ``DIGREV_OUTPUT`` the final stage stores through the mixed digit-reversed
+    permutation, leaving the result in natural order.
+    """
+    pid = tl.program_id(0)
+    off = pid * BLOCK + tl.arange(0, BLOCK)
+    mask = off < (N >> 2)
+
+    j = off % n
+    i = ((off // n) * 4) * n + j
+
+    ar = tl.load(Xr + i, mask=mask)
+    ai = tl.load(Xi + i, mask=mask)
+    br = tl.load(Xr + i + n, mask=mask)
+    bi = tl.load(Xi + i + n, mask=mask)
+    cr = tl.load(Xr + i + 2 * n, mask=mask)
+    ci = tl.load(Xi + i + 2 * n, mask=mask)
+    dr = tl.load(Xr + i + 3 * n, mask=mask)
+    di = tl.load(Xi + i + 3 * n, mask=mask)
+
+    y0r = ar + br + cr + dr
+    y0i = ai + bi + ci + di
+    y1r = ar + bi - cr - di
+    y1i = ai - br - ci + dr
+    y2r = ar - br + cr - dr
+    y2i = ai - bi + ci - di
+    y3r = ar - bi - cr + di
+    y3i = ai + br - ci - dr
+
+    jm = j * M
+    w2 = jm << 1
+    w3 = jm + w2
+    big = w3 > (N >> 1)
+    k3 = tl.where(big, N - w3, w3)
+    wi3s = tl.where(big, -1.0, 1.0)
+    w1r = tl.load(Wr + jm, mask=mask)
+    w1i = tl.load(Wi + jm, mask=mask)
+    w2r = tl.load(Wr + w2, mask=mask)
+    w2i = tl.load(Wi + w2, mask=mask)
+    w3r = tl.load(Wr + k3, mask=mask)
+    w3i = tl.load(Wi + k3, mask=mask) * wi3s
+
+    t1r = y1r * w1r - y1i * w1i
+    t1i = y1r * w1i + y1i * w1r
+    t2r = y2r * w2r - y2i * w2i
+    t2i = y2r * w2i + y2i * w2r
+    t3r = y3r * w3r - y3i * w3i
+    t3i = y3r * w3i + y3i * w3r
+
+    if DIGREV_OUTPUT:
+        d0 = _dif_digit_reverse(i, BITS)
+        d1 = _dif_digit_reverse(i + n, BITS)
+        d2 = _dif_digit_reverse(i + 2 * n, BITS)
+        d3 = _dif_digit_reverse(i + 3 * n, BITS)
+    else:
+        d0 = i
+        d1 = i + n
+        d2 = i + 2 * n
+        d3 = i + 3 * n
+
+    tl.store(Yr + d0, y0r, mask=mask)
+    tl.store(Yi + d0, y0i, mask=mask)
+    tl.store(Yr + d1, t1r, mask=mask)
+    tl.store(Yi + d1, t1i, mask=mask)
+    tl.store(Yr + d2, t2r, mask=mask)
+    tl.store(Yi + d2, t2i, mask=mask)
+    tl.store(Yr + d3, t3r, mask=mask)
+    tl.store(Yi + d3, t3i, mask=mask)
 
 
 @triton.jit

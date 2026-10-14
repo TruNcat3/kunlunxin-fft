@@ -40,6 +40,8 @@ from src.xpu import (  # noqa: E402
     fft_dit_grouped,
     fft_dif_batch,
     fft_dit_batch,
+    fft_dif_radix4,
+    fft_dit_radix4,
 )
 
 if not device_ready():  # pragma: no cover - guarded again by the fixture
@@ -274,49 +276,6 @@ def test_tensor_subscript_gather_blocked():
     assert "triton.jit" in str(exc.value) or "CompilationError" in str(exc.value)
 
 
-if __name__ == "__main__":
-    if not device_ready():
-        print("no XPU device available, skipping")
-        sys.exit(0)
-    test_bitrev_only()
-    for n in (8, 16, 64, 256, 1024, 4096, 65536, 1048576):
-        test_dit_sizes(n)
-    for n in (8, 16, 64, 256, 1024, 4096, 65536):
-        test_dif_sizes(n)
-    for n in (8, 64, 1024, 4096, 65536, 1048576):
-        test_fused_sizes(n)
-    for n in (8, 64, 1024, 4096, 65536, 1048576):
-        test_matrix_dit_sizes(n)
-    for n in (8, 64, 1024, 4096, 65536):
-        test_matrix_dif_sizes(n)
-    for tile in (8, 16, 64):
-        test_matrix_tile_axis_is_neutral(tile)
-    for rows in (1, 8):
-        test_matrix_rows_is_neutral(rows)
-    for n in (8, 64, 1024, 4096, 65536, 1048576):
-        test_grouped_dit_sizes(n)
-    for n in (8, 64, 1024, 4096, 65536):
-        test_grouped_dif_sizes(n)
-    for glog in (1, 2, 3):
-        test_grouped_glog_axis_is_neutral(glog)
-    for maxp in (128, 4096, 8192):
-        test_grouped_maxp_axis_is_neutral(maxp)
-    for cells in (1, 4):
-        test_grouped_cells_axis_is_neutral(cells)
-    for n in (64, 4096, 65536):
-        for b in (1, 4, 16, 64):
-            for variant in ("spread", "folded"):
-                test_batch_dit_dif_sizes(n, b, variant)
-    test_batch_one_equals_baseline()
-    test_batch_negative_inputs_rejected()
-    test_known_signals()
-    test_sentinel_output_changes()
-    test_negative_inputs_rejected()
-    test_pointer_form_gather_lowers()
-    test_tensor_subscript_gather_blocked()
-    print("all correctness tests passed")
-
-
 def make_batch_input(b: int, n: int, seed: int):
     torch.manual_seed(seed)
     x = torch.complex(
@@ -386,3 +345,81 @@ def test_batch_negative_inputs_rejected():
         fft_dit_batch(good.t())                     # non-contiguous
     with pytest.raises(ValueError):
         fft_dit_batch(good, block=1000)             # block power of two
+
+
+@pytest.mark.parametrize("n", [8, 16, 32, 64, 256, 1024, 4096, 65536, 1048576])
+def test_radix4_dit_sizes(n):
+    """M5 radix-4 DIT (baseline flow, new processing unit) vs numpy."""
+    x, ref = make_input(n, 0)
+    rel = max_err(fft_dit_radix4(x), ref) / max_mag(ref)
+    assert rel < 1e-4, f"radix-4 DIT failed at N={n}: rel={rel:.3e}"
+
+
+@pytest.mark.parametrize("n", [8, 16, 32, 64, 256, 1024, 4096, 65536])
+def test_radix4_dif_sizes(n):
+    """M5 radix-4 DIF vs numpy (odd and even log2(N) both covered)."""
+    x, ref = make_input(n, 1)
+    rel = max_err(fft_dif_radix4(x), ref) / max_mag(ref)
+    assert rel < 1e-4, f"radix-4 DIF failed at N={n}: rel={rel:.3e}"
+
+
+def test_radix4_negative_inputs_rejected():
+    """Radix-4 contract: same as M0 plus N >= 4."""
+    good = torch.complex(torch.ones(16, device="cuda"),
+                         torch.zeros(16, device="cuda"))
+    with pytest.raises(ValueError):
+        fft_dit_radix4(good.reshape(4, 4))          # rank
+    with pytest.raises(TypeError):
+        fft_dif_radix4(good.real)                   # dtype
+    with pytest.raises(ValueError):
+        fft_dit_radix4(torch.complex(torch.ones(2, device="cuda"),
+                                     torch.zeros(2, device="cuda")))  # N < 4
+
+if __name__ == "__main__":
+    if not device_ready():
+        print("no XPU device available, skipping")
+        sys.exit(0)
+    test_bitrev_only()
+    for n in (8, 16, 64, 256, 1024, 4096, 65536, 1048576):
+        test_dit_sizes(n)
+    for n in (8, 16, 64, 256, 1024, 4096, 65536):
+        test_dif_sizes(n)
+    for n in (8, 64, 1024, 4096, 65536, 1048576):
+        test_fused_sizes(n)
+    for n in (8, 64, 1024, 4096, 65536, 1048576):
+        test_matrix_dit_sizes(n)
+    for n in (8, 64, 1024, 4096, 65536):
+        test_matrix_dif_sizes(n)
+    for tile in (8, 16, 64):
+        test_matrix_tile_axis_is_neutral(tile)
+    for rows in (1, 8):
+        test_matrix_rows_is_neutral(rows)
+    for n in (8, 16, 32, 64, 256, 1024, 4096, 65536, 1048576):
+        test_radix4_dit_sizes(n)
+    for n in (8, 16, 32, 64, 256, 1024, 4096, 65536):
+        test_radix4_dif_sizes(n)
+    test_radix4_negative_inputs_rejected()
+    for n in (8, 64, 1024, 4096, 65536, 1048576):
+        test_grouped_dit_sizes(n)
+    for n in (8, 64, 1024, 4096, 65536):
+        test_grouped_dif_sizes(n)
+    for glog in (1, 2, 3):
+        test_grouped_glog_axis_is_neutral(glog)
+    for maxp in (128, 4096, 8192):
+        test_grouped_maxp_axis_is_neutral(maxp)
+    for cells in (1, 4):
+        test_grouped_cells_axis_is_neutral(cells)
+    for n in (64, 4096, 65536):
+        for b in (1, 4, 16, 64):
+            for variant in ("spread", "folded"):
+                test_batch_dit_dif_sizes(n, b, variant)
+    test_batch_one_equals_baseline()
+    test_batch_negative_inputs_rejected()
+    test_known_signals()
+    test_sentinel_output_changes()
+    test_negative_inputs_rejected()
+    test_pointer_form_gather_lowers()
+    test_tensor_subscript_gather_blocked()
+    print("all correctness tests passed")
+
+

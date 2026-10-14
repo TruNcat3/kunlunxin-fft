@@ -16,6 +16,7 @@ import pytest
 from src.xpu.candidates import (
     Candidate,
     LoweringStatus,
+    arithmetic_cost,
     check_lowering,
     enumerate_candidates,
     selected_candidate,
@@ -60,7 +61,7 @@ def test_size_matrix_all_powers_of_two():
 
 def test_design_space_exposes_consumed_axes():
     ds = DesignSpace.load()
-    assert ds.radix == (2,)
+    assert ds.radix == (2, 4)
     assert ds.fused_tile_candidates  # M1 axis present and consumed
     assert all((t & (t - 1)) == 0 for t in ds.fused_tile_candidates)
     assert 1 in ds.fused_tile_candidates  # M0 baseline must be an option
@@ -119,14 +120,59 @@ def test_on_chip_residence_is_not_lowered():
     assert any("residence" in r for r in v.reasons)
 
 
-def test_radix4_is_not_lowered():
+def test_radix4_is_legal_on_baseline_flow():
+    """M5: radix-4 lowers on the same flow as radix-2; unit/radix must agree."""
     p = DeviceProfile.load()
     c = Candidate(flow_id="baseline-global-stage", processing_unit="radix-4",
                   radix=4, residence="gm", layout="planar-soa",
                   block=1024, fused_tile=1)
     v = check_lowering(c, p)
+    assert v.legal, v.reasons
+    # unit/radix mismatch is still rejected
+    mismatch = Candidate(flow_id="baseline-global-stage",
+                         processing_unit="radix-4", radix=2,
+                         residence="gm", layout="planar-soa",
+                         block=1024, fused_tile=1)
+    v = check_lowering(mismatch, p)
     assert not v.legal
     assert any("processing-unit" in r for r in v.reasons)
+    # unimplemented cores stay not-lowered
+    other = Candidate(flow_id="baseline-global-stage",
+                      processing_unit="radix-8", radix=8,
+                      residence="gm", layout="planar-soa",
+                      block=1024, fused_tile=1)
+    v = check_lowering(other, p)
+    assert not v.legal
+    # M1 fusion remains radix-2-only (enumeration-level, see below)
+    fused_r4 = Candidate(flow_id="local-fused-tile",
+                         processing_unit="radix-4", radix=4,
+                         residence="gm", layout="planar-soa",
+                         block=1024, fused_tile=64)
+    assert check_lowering(fused_r4, p).legal  # contract allows tile>1...
+    # ...but enumeration must not pair radix-4 with the fused flow
+    ds = DesignSpace.load()
+    legal, rejected = enumerate_candidates(ds, p, block=1024)
+    r4_flows = {v.candidate.flow_id for v in legal
+                if v.candidate.processing_unit == "radix-4"}
+    assert r4_flows == {"baseline-global-stage"}
+
+
+def test_arithmetic_cost_radix4_vs_radix2():
+    """M5: same flow, compare the arithmetic ledger (both directions)."""
+    for n in (8, 64, 1024, 65536):
+        r2 = arithmetic_cost(n, 2)
+        r4 = arithmetic_cost(n, 4)
+        logn = n.bit_length() - 1
+        assert r2["launches"] == logn
+        assert r4["launches"] == logn // 2 + logn % 2
+        assert r4["launches"] < r2["launches"]
+        assert r4["twiddle_mults"] < r2["twiddle_mults"]
+        assert r4["real_adds"] > r2["real_adds"]  # reported, not hidden
+        assert r4["butterflies"] < r2["butterflies"]
+    with pytest.raises(ValueError):
+        arithmetic_cost(12, 2)
+    with pytest.raises(ValueError):
+        arithmetic_cost(1024, 8)
 
 
 def test_batch_expansion_is_not_lowered():
@@ -399,3 +445,4 @@ def test_enumeration_includes_batch_points():
     sel = selected_candidate(legal)
     assert sel.candidate.flow_id == "baseline-global-stage"
     assert sel.candidate.batch_variant == "none"
+    assert sel.candidate.processing_unit == "radix-2"  # incumbent stays radix-2

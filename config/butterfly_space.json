@@ -14,8 +14,8 @@
   },
 
   "P": {
-    "radix": [2],
-    "radix_note": "radix-2 only in v0; radix-4/8 are unexplored",
+    "radix": [2, 4],
+    "radix_note": "v0 baseline is radix-2; M5 adds radix-4 as a second processing unit on the same baseline flow (compare arithmetic cost against radix-2). radix-8 and others remain unexplored.",
     "dit_stage_kernel": {
       "bitrev_input_fold": [true, false],
       "note": "First DIT stage optionally reads X[bit_reverse(i)] and X[bit_reverse(i)+n], folding the input permutation into stage 0"

@@ -81,10 +81,17 @@ def check_lowering(cand: Candidate, profile: DeviceProfile) -> Verdict:
     """
     reasons = []
 
-    # 1. Only radix-2 is implemented as a processing unit in this migration.
-    if cand.processing_unit != "radix-2" or cand.radix != 2:
+    # 1. Implemented processing units: the radix-2 baseline and the M5
+    #    radix-4 core (same flow, different processing unit). Any other
+    #    unit, or a unit/radix mismatch, is not-lowered.
+    if cand.processing_unit not in ("radix-2", "radix-4") or cand.radix not in (2, 4):
         reasons.append(
-            "processing-unit: only radix-2 is implemented; radix-4/other cores are not-lowered"
+            "processing-unit: only radix-2 and radix-4 are implemented; "
+            "radix-8/other cores are not-lowered"
+        )
+    elif cand.processing_unit != f"radix-{cand.radix}":
+        reasons.append(
+            f"processing-unit: {cand.processing_unit!r} must match radix={cand.radix}"
         )
 
     # 2. The public layout is complex64; the internal lowering is planar SoA.
@@ -197,22 +204,27 @@ def enumerate_candidates(space: DesignSpace, profile: DeviceProfile, block: int 
     fields are not invented here (the config schema forbids ignored fields).
     """
     legal, rejected = [], []
-    for fused_tile in space.fused_tile_candidates:
-        flow = "local-fused-tile" if fused_tile > 1 else "baseline-global-stage"
-        for dit_fold in space.dit_bitrev_input_fold:
-            cand = Candidate(
-                flow_id=flow,
-                processing_unit="radix-2",
-                radix=2,
-                residence="gm",
-                layout="planar-soa",
-                block=block,
-                fused_tile=fused_tile,
-                dit_bitrev_input_fold=bool(dit_fold),
-                dif_bitrev_output_fold=True,
-            )
-            v = check_lowering(cand, profile)
-            (legal if v.legal else rejected).append(v)
+    for radix in space.radix:
+        for fused_tile in space.fused_tile_candidates:
+            # M1's fused local micro-FFT is a radix-2-only kernel; the M5
+            # radix-4 core pairs only with the baseline (tile=1) flow.
+            if radix != 2 and fused_tile != 1:
+                continue
+            flow = "local-fused-tile" if fused_tile > 1 else "baseline-global-stage"
+            for dit_fold in space.dit_bitrev_input_fold:
+                cand = Candidate(
+                    flow_id=flow,
+                    processing_unit=f"radix-{radix}",
+                    radix=radix,
+                    residence="gm",
+                    layout="planar-soa",
+                    block=block,
+                    fused_tile=fused_tile,
+                    dit_bitrev_input_fold=bool(dit_fold),
+                    dif_bitrev_output_fold=True,
+                )
+                v = check_lowering(cand, profile)
+                (legal if v.legal else rejected).append(v)
     # M4 batch expansion points: variant x B x bitrev-fold, all M0-shaped.
     for variant in space.batch_variants:
         for batch in space.batch_candidates:
@@ -243,7 +255,53 @@ def selected_candidate(legal_verdicts):
     The convergence plan requires a new selector never to choose a candidate
     slower than the incumbent without explicit opt-in, so the default selection
     is the M0 baseline (fused_tile=1); M1 must prove itself by measurement.
+    Stable sort keeps the radix-2 baseline ahead of same-tile radix-4/batch
+    points, so the incumbent stays the default until measurement says
+    otherwise.
     """
     if not legal_verdicts:
         return None
     return sorted(legal_verdicts, key=lambda v: v.candidate.fused_tile)[0]
+
+
+def arithmetic_cost(n: int, radix: int) -> dict:
+    """Analytic per-transform op counts for the ``baseline-global-stage`` flow.
+
+    The M5 comparison the plan asks for: same flow (one launch and one global
+    round trip per stage), different processing unit. Counting conventions:
+    one complex twiddle multiply = one ``twiddle_mults`` unit; butterfly
+    adds count real additions only (sign flips and +/-i swaps are free).
+
+    * **radix-2**: ``log2(N)`` stages of ``N/2`` butterflies; one twiddle per
+      butterfly; each butterfly = complex add + complex sub = 4 real adds.
+    * **radix-4**: ``floor(log2(N)/2)`` radix-4 stages of ``N/4`` butterflies
+      (three twiddles each: d=1,2,3; four output columns x three complex adds
+      = 24 real adds), plus one radix-2 tail stage when ``log2(N)`` is odd.
+
+    Radix-4 therefore runs **fewer twiddle multiplies and fewer launches but
+    more real adds** than radix-2 on the same flow; both sides of the ledger
+    are reported rather than a single "better" claim.
+    """
+    if n < 2 or (n & (n - 1)) != 0:
+        raise ValueError(f"n must be a power of two >= 2, got {n}")
+    if radix not in (2, 4):
+        raise ValueError(f"radix must be 2 or 4, got {radix}")
+    logn = n.bit_length() - 1
+    if radix == 2:
+        launches = logn
+        butterflies = (n >> 1) * logn
+        twiddle_mults = butterflies
+        real_adds = butterflies * 4
+    else:
+        r4_stages = logn // 2
+        tail = logn % 2
+        launches = r4_stages + tail
+        butterflies = (n >> 2) * r4_stages + tail * (n >> 1)
+        twiddle_mults = 3 * (n >> 2) * r4_stages + tail * (n >> 1)
+        real_adds = 24 * (n >> 2) * r4_stages + tail * (n >> 1) * 4
+    return {
+        "launches": launches,
+        "butterflies": butterflies,
+        "twiddle_mults": twiddle_mults,
+        "real_adds": real_adds,
+    }
