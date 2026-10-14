@@ -64,6 +64,10 @@ def test_design_space_exposes_consumed_axes():
     assert ds.fused_tile_candidates  # M1 axis present and consumed
     assert all((t & (t - 1)) == 0 for t in ds.fused_tile_candidates)
     assert 1 in ds.fused_tile_candidates  # M0 baseline must be an option
+    # M4 batch axis present and consumed by dit/dif_stage_batch_kernel
+    assert ds.batch_candidates and 1 in ds.batch_candidates
+    assert all((t & (t - 1)) == 0 for t in ds.batch_candidates)
+    assert set(ds.batch_variants) <= {"spread", "folded"}
 
 
 def test_manifest_pins_commit_and_profile():
@@ -330,3 +334,68 @@ def test_tail_group_kernel_unrolls_k_loop():
     seg = ast.get_source_segment(text, node)
     assert "tl.static_range(1, NDEP)" in seg, "k loop lost its static_range"
     assert "for k in range" not in seg, "k loop regressed to range()"
+
+
+# --- M4 batch expansion (host-only candidate contract) ---
+
+
+def test_batch_expansion_lowers_with_variant():
+    """spread (Ud=B) and folded (Td=B) are the two lowered batch points."""
+    p = DeviceProfile.load()
+    spread = Candidate(flow_id="batch-spread", processing_unit="radix-2",
+                       radix=2, residence="gm", layout="planar-soa",
+                       block=1024, fused_tile=1, batch=4, batch_variant="spread",
+                       ud=4, td=1)
+    folded = Candidate(flow_id="batch-folded", processing_unit="radix-2",
+                       radix=2, residence="gm", layout="planar-soa",
+                       block=1024, fused_tile=1, batch=4, batch_variant="folded",
+                       ud=1, td=4)
+    for c in (spread, folded):
+        v = check_lowering(c, p)
+        assert v.legal, v.reasons
+
+
+def test_batch_variant_axis_mismatch_rejected():
+    """Ud/Td, flow, batch, and fused_tile must all agree with the variant."""
+    p = DeviceProfile.load()
+
+    def cand(**kw):
+        base = dict(flow_id="batch-spread", processing_unit="radix-2", radix=2,
+                    residence="gm", layout="planar-soa", block=1024,
+                    fused_tile=1, batch=4, batch_variant="spread", ud=4, td=1)
+        base.update(kw)
+        return Candidate(**base)
+
+    bad = [
+        cand(td=4),                        # spread must keep Td=1
+        cand(ud=1),                        # spread requires Ud=batch
+        cand(batch=3),                     # batch must be a power of two
+        cand(fused_tile=64),               # batched path is M0-stage-only
+        cand(flow_id="batch-folded"),      # flow must match variant
+        cand(batch_variant="none"),        # variant removed but Ud kept
+        cand(flow_id="batch-spread", batch_variant="folded", ud=1, td=4),
+        Candidate(flow_id="baseline-global-stage", processing_unit="radix-2",
+                  radix=2, residence="gm", layout="planar-soa", block=1024,
+                  fused_tile=1, ud=8),     # expansion without any variant
+    ]
+    for c in bad:
+        v = check_lowering(c, p)
+        assert not v.legal, f"expected rejection: {c}"
+        assert v.status == LoweringStatus.NOT_LOWERED
+
+
+def test_enumeration_includes_batch_points():
+    """The declared batch axis must surface as legal candidates, and the
+    conservative selector must still default to the M0 baseline."""
+    ds = DesignSpace.load()
+    p = DeviceProfile.load()
+    legal, rejected = enumerate_candidates(ds, p, block=1024)
+    batch_flows = {v.candidate.flow_id for v in legal
+                   if v.candidate.flow_id.startswith("batch-")}
+    assert "batch-spread" in batch_flows and "batch-folded" in batch_flows
+    batches = {v.candidate.batch for v in legal
+               if v.candidate.flow_id.startswith("batch-")}
+    assert batches == set(ds.batch_candidates)
+    sel = selected_candidate(legal)
+    assert sel.candidate.flow_id == "baseline-global-stage"
+    assert sel.candidate.batch_variant == "none"

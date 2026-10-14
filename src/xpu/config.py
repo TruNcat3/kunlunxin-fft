@@ -123,6 +123,8 @@ class DesignSpace:
     dit_bitrev_input_fold: tuple
     dif_bitrev_output_fold: tuple
     fused_tile_candidates: tuple
+    batch_candidates: tuple
+    batch_variants: tuple
     layout_in: str
     layout_out: str
 
@@ -154,6 +156,23 @@ class DesignSpace:
             "butterfly_space.json: P.stage_fusion.fused_tiles must be powers of two",
         )
 
+        # M4 batch expansion axis (B values and layout variants the stage
+        # batch kernels actually consume). Defaults keep the loader honest
+        # when an older config omits the section.
+        batch = p.get("batch_expansion", {})
+        batch_candidates = batch.get("candidates", [1])
+        _require(
+            isinstance(batch_candidates, list)
+            and all(isinstance(t, int) and t > 0 and (t & (t - 1)) == 0 for t in batch_candidates),
+            "butterfly_space.json: P.batch_expansion.candidates must be powers of two",
+        )
+        batch_variants = batch.get("variants", [])
+        _require(
+            isinstance(batch_variants, list)
+            and all(v in ("spread", "folded") for v in batch_variants),
+            "butterfly_space.json: P.batch_expansion.variants must be 'spread'/'folded'",
+        )
+
         lay = d.get("L", {})
         _require(isinstance(lay.get("in"), list) and lay["in"], "butterfly_space.json: L.in required")
         _require(isinstance(lay.get("out"), list) and lay["out"], "butterfly_space.json: L.out required")
@@ -165,6 +184,8 @@ class DesignSpace:
             dit_bitrev_input_fold=tuple(dit["bitrev_input_fold"]),
             dif_bitrev_output_fold=tuple(dif["bitrev_output_fold"]),
             fused_tile_candidates=tuple(tiles),
+            batch_candidates=tuple(batch_candidates),
+            batch_variants=tuple(batch_variants),
             layout_in=lay["in"][0],
             layout_out=lay["out"][0],
         )

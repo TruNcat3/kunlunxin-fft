@@ -38,6 +38,8 @@ from src.xpu import (  # noqa: E402
     fft_dit_matrix,
     fft_dif_grouped,
     fft_dit_grouped,
+    fft_dif_batch,
+    fft_dit_batch,
 )
 
 if not device_ready():  # pragma: no cover - guarded again by the fixture
@@ -301,9 +303,86 @@ if __name__ == "__main__":
         test_grouped_maxp_axis_is_neutral(maxp)
     for cells in (1, 4):
         test_grouped_cells_axis_is_neutral(cells)
+    for n in (64, 4096, 65536):
+        for b in (1, 4, 16, 64):
+            for variant in ("spread", "folded"):
+                test_batch_dit_dif_sizes(n, b, variant)
+    test_batch_one_equals_baseline()
+    test_batch_negative_inputs_rejected()
     test_known_signals()
     test_sentinel_output_changes()
     test_negative_inputs_rejected()
     test_pointer_form_gather_lowers()
     test_tensor_subscript_gather_blocked()
     print("all correctness tests passed")
+
+
+def make_batch_input(b: int, n: int, seed: int):
+    torch.manual_seed(seed)
+    x = torch.complex(
+        torch.randn(b, n, dtype=torch.float32, device="cuda"),
+        torch.randn(b, n, dtype=torch.float32, device="cuda"),
+    )
+    host = x.real.cpu().numpy() + 1j * x.imag.cpu().numpy()
+    return x, np.fft.fft(host, axis=-1)
+
+
+@pytest.mark.parametrize("variant", ["spread", "folded"])
+@pytest.mark.parametrize("b", [1, 4, 16, 64])
+@pytest.mark.parametrize("n", [64, 4096, 65536])
+def test_batch_dit_dif_sizes(n, b, variant):
+    """M4 batch expansion (both variants, both directions) vs numpy per row."""
+    x, ref = make_batch_input(b, n, seed=11)
+    for name, fn in (("dit", fft_dit_batch), ("dif", fft_dif_batch)):
+        y = fn(x, variant=variant)
+        rel = max_err(y, ref) / max_mag(ref)
+        assert rel < 1e-4, (
+            f"M4 {name} variant={variant} N={n} B={b}: rel={rel:.3e}"
+        )
+
+
+def test_batch_one_equals_baseline():
+    """B=1 must degenerate to the M0 baseline for both variants."""
+    x, _ = make_batch_input(1, 4096, seed=12)
+    for variant in ("spread", "folded"):
+        # xpytorch has no complex allclose; compare via the numpy path.
+        got_dit = fft_dit_batch(x, variant=variant)
+        ref_dit = fft_dit(x.view(-1))
+        ref_np = ref_dit.real.cpu().numpy() + 1j * ref_dit.imag.cpu().numpy()
+        err = max_err(got_dit.view(-1), ref_np)
+        assert err < 1e-3, (
+            f"batch B=1 {variant} != fft_dit: max_err={err:.3e}"
+        )
+        got_dif = fft_dif_batch(x, variant=variant)
+        ref_dif = fft_dif(x.view(-1))
+        ref_np = ref_dif.real.cpu().numpy() + 1j * ref_dif.imag.cpu().numpy()
+        err = max_err(got_dif.view(-1), ref_np)
+        assert err < 1e-3, (
+            f"batch B=1 {variant} != fft_dif: max_err={err:.3e}"
+        )
+
+
+def test_batch_negative_inputs_rejected():
+    """Batch input contract: rank-2, complex64, contiguous, pow2 axes."""
+    good = torch.complex(
+        torch.ones(4, 16, device="cuda"),
+        torch.zeros(4, 16, device="cuda"),
+    )
+    with pytest.raises(ValueError):
+        fft_dit_batch(good.view(-1))                # rank
+    with pytest.raises(ValueError):
+        fft_dit_batch(good, variant="interleaved")  # variant
+    with pytest.raises(TypeError):
+        fft_dit_batch(good.real)                    # dtype
+    np_n = torch.complex(torch.ones(4, 12, device="cuda"),
+                         torch.zeros(4, 12, device="cuda"))
+    with pytest.raises(ValueError):
+        fft_dit_batch(np_n)                         # non-pow2 N
+    np_b = torch.complex(torch.ones(3, 16, device="cuda"),
+                         torch.zeros(3, 16, device="cuda"))
+    with pytest.raises(ValueError):
+        fft_dit_batch(np_b)                         # non-pow2 batch
+    with pytest.raises(ValueError):
+        fft_dit_batch(good.t())                     # non-contiguous
+    with pytest.raises(ValueError):
+        fft_dit_batch(good, block=1000)             # block power of two

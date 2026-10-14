@@ -41,8 +41,10 @@ import triton
 from .context import device_ready, xpu_context
 from .kernels import (
     bitrev_kernel,
+    dif_stage_batch_kernel,
     dif_stage_kernel,
     dit_fused_kernel,
+    dit_stage_batch_kernel,
     dit_stage_kernel,
     local_matrix_kernel,
     tail_group_kernel,
@@ -92,8 +94,13 @@ def _from_so(re: torch.Tensor, im: torch.Tensor) -> torch.Tensor:
     return torch.complex(re, im)
 
 
-def _launch(kernel, block: int, grid: int, *args, **kw):
-    kernel[(grid,)](*args, BLOCK=block, **kw)
+def _launch(kernel, block: int, grid, *args, **kw):
+    """Launch ``kernel`` with ``BLOCK=block``; ``grid`` is an int or a tuple.
+
+    Tuple grids are passed through for the M4 spread variant (batch on grid
+    axis 1); int grids stay the 1-D ``(n,)`` form every other flow uses.
+    """
+    kernel[grid if isinstance(grid, tuple) else (grid,)](*args, BLOCK=block, **kw)
 
 
 def fft_dit(
@@ -732,6 +739,149 @@ def fft_dif_grouped(
         cur_r, cur_i = out_r, out_i
     return _from_so(cur_r, cur_i)
 
+
+
+
+def _validate_batch_input(x: torch.Tensor, block: int, variant: str):
+    """M4 input contract: contiguous (B, N) complex64 on the XPU, pow2 axes."""
+    if variant not in ("spread", "folded"):
+        raise ValueError(f"variant must be 'spread' or 'folded', got {variant!r}")
+    if not isinstance(x, torch.Tensor):
+        raise TypeError(f"x must be a torch.Tensor, got {type(x).__name__}")
+    if x.dtype != torch.complex64:
+        raise TypeError(f"x must be complex64, got {x.dtype}")
+    if x.device.type != "cuda":
+        raise ValueError(f"x must be on the XPU device, got {x.device}")
+    if x.dim() != 2:
+        raise ValueError(f"x must be rank-2 (batch, length), got dim={x.dim()}")
+    if not x.is_contiguous():
+        raise ValueError("x must be contiguous")
+    if block <= 0 or (block & (block - 1)) != 0:
+        raise ValueError(f"block must be a power of two, got {block}")
+    b, n = x.shape
+    if b < 1:
+        raise ValueError(f"batch must be >= 1, got {b}")
+    log2_exact(b)
+    log2_exact(n)
+    return b, n
+
+
+def fft_dit_batch(
+    x: torch.Tensor,
+    block: int = 1024,
+    variant: str = "spread",
+    twiddle=None,
+) -> torch.Tensor:
+    """M4: batched DIT FFT over ``x`` of shape ``(B, N)`` (flow
+    ``batch-spread`` or ``batch-folded``).
+
+    One launch per stage -- the same ``log2(N)`` launches as the M0 baseline --
+    with batch items mapped by ``variant``:
+
+    * ``spread`` (data-space expansion, ``Ud=B``): grid
+      ``(cdiv(N/2, block), B)``, batch on grid axis 1.
+    * ``folded`` (data-time expansion, ``Td=B``): one flat grid over the pair
+      space ``B*N/2``, batch split out of the linear program index, so the
+      launch geometry is baseline-shaped up to a factor of ``B``.
+
+    ``B=1`` degenerates to the M0 baseline in both variants. The batch axis is
+    a workload axis (plan section 6/7), not an assumed speedup.
+    """
+    b, n = _validate_batch_input(x, block, variant)
+    logn = log2_exact(n)
+    if twiddle is None:
+        twiddle = twiddle_tables(n, x.device)
+    validate_twiddle(twiddle, n, x.device)
+    wr, wi = twiddle
+    half = n >> 1
+    if variant == "spread":
+        grid = (triton.cdiv(half, block), b)
+    else:
+        grid = triton.cdiv(half * b, block)
+    spread = variant == "spread"
+
+    with xpu_context(x.device.index or 0):
+        cr, ci = _as_so(x)
+        for s in range(logn):
+            stage_n = 1 << s
+            M = n // (stage_n << 1)
+            nr = torch.empty_like(cr)
+            ni = torch.empty_like(ci)
+            _launch(
+                dit_stage_batch_kernel,
+                block,
+                grid,
+                cr,
+                ci,
+                nr,
+                ni,
+                wr,
+                wi,
+                stage_n,
+                M,
+                n,
+                b,
+                LOGN=logn,
+                BITREV_INPUT=(s == 0),
+                SPREAD=spread,
+            )
+            cr, ci = nr, ni
+    return _from_so(cr, ci)
+
+
+def fft_dif_batch(
+    x: torch.Tensor,
+    block: int = 1024,
+    variant: str = "spread",
+    twiddle=None,
+) -> torch.Tensor:
+    """M4: batched DIF FFT over ``x`` of shape ``(B, N)``.
+
+    The DIF mirror of :func:`fft_dit_batch`: stages run N/2 down to 1 with the
+    output bit-reversal folded into the final stage, so again exactly
+    ``log2(N)`` launches. See :func:`fft_dit_batch` for the ``variant``
+    contract (``spread`` = Ud data-space, ``folded`` = Td data-time).
+    """
+    b, n = _validate_batch_input(x, block, variant)
+    logn = log2_exact(n)
+    if twiddle is None:
+        twiddle = twiddle_tables(n, x.device)
+    validate_twiddle(twiddle, n, x.device)
+    wr, wi = twiddle
+    half = n >> 1
+    if variant == "spread":
+        grid = (triton.cdiv(half, block), b)
+    else:
+        grid = triton.cdiv(half * b, block)
+    spread = variant == "spread"
+
+    with xpu_context(x.device.index or 0):
+        cr, ci = _as_so(x)
+        for s in range(logn - 1, -1, -1):
+            stage_n = 1 << s
+            M = n // (stage_n << 1)
+            nr = torch.empty_like(cr)
+            ni = torch.empty_like(ci)
+            _launch(
+                dif_stage_batch_kernel,
+                block,
+                grid,
+                cr,
+                ci,
+                nr,
+                ni,
+                wr,
+                wi,
+                stage_n,
+                M,
+                n,
+                b,
+                LOGN=logn,
+                BITREV_OUTPUT=(s == 0),
+                SPREAD=spread,
+            )
+            cr, ci = nr, ni
+    return _from_so(cr, ci)
 
 def bit_reverse_permute(x: torch.Tensor, block: int = 1024) -> torch.Tensor:
     validate_input(x, "x", block=block, require_complex=True)

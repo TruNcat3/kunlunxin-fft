@@ -360,3 +360,137 @@ def tail_group_kernel(
             acc_i = acc_i + (xr * ci + xi * cr)
         tl.store(Yr + i, acc_r, mask=mask)
         tl.store(Yi + i, acc_i, mask=mask)
+
+
+@triton.jit
+def dit_stage_batch_kernel(
+    Xr,
+    Xi,
+    Yr,
+    Yi,
+    Wr,
+    Wi,
+    n,
+    M,
+    N,
+    B,
+    LOGN: tl.constexpr,
+    BLOCK: tl.constexpr,
+    BITREV_INPUT: tl.constexpr,
+    SPREAD: tl.constexpr,
+):
+    """M4: one radix-2 DIT stage over a (B, N) batch, two data-space layouts.
+
+    Stage semantics are exactly ``dit_stage_kernel`` (reads ``k`` in
+    [0, N/2), butterfly half-span ``n``, twiddle ``W[j*M]``, optional
+    bit-reversed input on the first stage); every address is rebased to
+    ``base + per-batch index``, so batch items never mix.
+
+    ``SPREAD=True`` (data-space expansion, ``Ud=B``): grid is
+    ``(cdiv(N/2, BLOCK), B)`` -- batch rides grid axis 1, ``base = pid1 * N``,
+    and each program sees one contiguous partition of a single transform.
+
+    ``SPREAD=False`` (data-time expansion, ``Td=B``): one flat 1D grid over the
+    pair space ``[0, B*N/2)``; ``b = off >> (LOGN-1)`` splits the batch out of
+    the linear index and ``base = b*N`` re-offsets every address. Batch items
+    are folded into the same program stream instead of a new grid axis, which
+    keeps the launch geometry identical to the unbatched flow up to a factor.
+    """
+    half = N >> 1
+    if SPREAD:
+        off = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
+        base = tl.program_id(1) * N
+        mask = off < half
+    else:
+        off_all = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
+        base = (off_all >> (LOGN - 1)) * N
+        off = off_all & (half - 1)
+        mask = off_all < (half * B)
+
+    j = off % n
+    i = ((off // n) << 1) * n + j
+
+    if BITREV_INPUT:
+        src = base + _bit_reverse(i, LOGN)
+        src2 = base + _bit_reverse(i + n, LOGN)
+    else:
+        src = base + i
+        src2 = base + i + n
+
+    w = j * M
+    wr = tl.load(Wr + w, mask=mask)
+    wi = tl.load(Wi + w, mask=mask)
+    ar = tl.load(Xr + src, mask=mask)
+    ai = tl.load(Xi + src, mask=mask)
+    br = tl.load(Xr + src2, mask=mask)
+    bi = tl.load(Xi + src2, mask=mask)
+    brw = br * wr - bi * wi
+    biw = br * wi + bi * wr
+    tl.store(Yr + base + i, ar + brw, mask=mask)
+    tl.store(Yi + base + i, ai + biw, mask=mask)
+    tl.store(Yr + base + i + n, ar - brw, mask=mask)
+    tl.store(Yi + base + i + n, ai - biw, mask=mask)
+
+
+@triton.jit
+def dif_stage_batch_kernel(
+    Xr,
+    Xi,
+    Yr,
+    Yi,
+    Wr,
+    Wi,
+    n,
+    M,
+    N,
+    B,
+    LOGN: tl.constexpr,
+    BLOCK: tl.constexpr,
+    BITREV_OUTPUT: tl.constexpr,
+    SPREAD: tl.constexpr,
+):
+    """M4: one radix-2 DIF stage over a (B, N) batch (see
+    :func:`dit_stage_batch_kernel` for the SPREAD layout contract).
+
+    Same index mapping as :func:`dif_stage_kernel`; the final stage optionally
+    writes through the per-batch bit-reversal so the result is natural order.
+    """
+    half = N >> 1
+    if SPREAD:
+        off = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
+        base = tl.program_id(1) * N
+        mask = off < half
+    else:
+        off_all = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
+        base = (off_all >> (LOGN - 1)) * N
+        off = off_all & (half - 1)
+        mask = off_all < (half * B)
+
+    j = off % n
+    i = ((off // n) << 1) * n + j
+    w = j * M
+    wr = tl.load(Wr + w, mask=mask)
+    wi = tl.load(Wi + w, mask=mask)
+    ar = tl.load(Xr + base + i, mask=mask)
+    ai = tl.load(Xi + base + i, mask=mask)
+    br = tl.load(Xr + base + i + n, mask=mask)
+    bi = tl.load(Xi + base + i + n, mask=mask)
+    sr = ar + br
+    si = ai + bi
+    dr = ar - br
+    di = ai - bi
+    drw = dr * wr - di * wi
+    diw = dr * wi + di * wr
+
+    if BITREV_OUTPUT:
+        d0 = base + _bit_reverse(i, LOGN)
+        d1 = base + _bit_reverse(i + n, LOGN)
+        tl.store(Yr + d0, sr, mask=mask)
+        tl.store(Yi + d0, si, mask=mask)
+        tl.store(Yr + d1, drw, mask=mask)
+        tl.store(Yi + d1, diw, mask=mask)
+    else:
+        tl.store(Yr + base + i, sr, mask=mask)
+        tl.store(Yi + base + i, si, mask=mask)
+        tl.store(Yr + base + i + n, drw, mask=mask)
+        tl.store(Yi + base + i + n, diw, mask=mask)

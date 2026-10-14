@@ -31,6 +31,7 @@ class Candidate:
     """One point in the design space."""
 
     flow_id: str                 # "baseline-global-stage" | "local-fused-tile"
+                                 # | "batch-spread" | "batch-folded"
     processing_unit: str         # "radix-2"
     radix: int
     us: int = 1
@@ -44,6 +45,8 @@ class Candidate:
     fused_tile: int = 1          # 1 = no fusion (M0); >1 = M1 local micro-FFT
     dit_bitrev_input_fold: bool = True
     dif_bitrev_output_fold: bool = True
+    batch: int = 1               # M4: transforms per call (workload axis)
+    batch_variant: str = "none"  # "none" | "spread" (Ud) | "folded" (Td)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -108,21 +111,73 @@ def check_lowering(cand: Candidate, profile: DeviceProfile) -> Verdict:
     # 5. Fused local tile legality: tile must divide N is checked at runtime,
     #    but tile>1 with residence='gm' is the M1 flow (fused global-pointer
     #    micro-FFT) and is legal; tile>1 with a non-gm residence is not.
+    #    The M4 batch flows are M0-shaped (no local fusion), so tile>1 only
+    #    pairs with the local-fused-tile flow.
     if cand.fused_tile > 1 and cand.flow_id != "local-fused-tile":
         reasons.append(
             f"flow_id: fused_tile={cand.fused_tile} requires flow 'local-fused-tile', "
             f"got {cand.flow_id!r}"
         )
-    if cand.fused_tile == 1 and cand.flow_id != "baseline-global-stage":
+    if cand.fused_tile == 1 and cand.flow_id not in (
+        "baseline-global-stage", "batch-spread", "batch-folded",
+    ):
         reasons.append(
-            f"flow_id: fused_tile=1 requires flow 'baseline-global-stage', got {cand.flow_id!r}"
+            f"flow_id: fused_tile=1 requires flow 'baseline-global-stage' or a "
+            f"batch flow, got {cand.flow_id!r}"
         )
 
-    # 6. Data-space/time expansion (Ud/Td) has no batched lowering yet.
-    if cand.ud != 1 or cand.td != 1:
-        reasons.append(
-            f"data expansion: Ud/Td != 1 has no batched lowering yet; got Ud={cand.ud}, Td={cand.td}"
-        )
+    # 6. Data-space/time expansion (Ud/Td) is lowered exactly by the M4 batch
+    #    variants: spread puts B on grid axis 1 (Ud=B, td=1), folded splits B
+    #    out of the flat pair-space grid (Td=B, ud=1). Without a batch variant
+    #    the expansion has no consuming kernel.
+    if cand.batch_variant == "none":
+        if cand.batch != 1:
+            reasons.append(
+                f"batch: batch={cand.batch} needs a batch variant ('spread'/'folded'); "
+                f"got batch_variant='none'"
+            )
+        if cand.flow_id in ("batch-spread", "batch-folded"):
+            reasons.append(
+                f"flow_id: {cand.flow_id!r} requires batch_variant "
+                f"'{cand.flow_id.removeprefix('batch-')}', got 'none'"
+            )
+        if cand.ud != 1 or cand.td != 1:
+            reasons.append(
+                f"data expansion: Ud/Td != 1 is lowered only through a batch "
+                f"variant; got Ud={cand.ud}, Td={cand.td}"
+            )
+    else:
+        if cand.batch_variant not in ("spread", "folded"):
+            reasons.append(
+                f"batch_variant: must be 'none'/'spread'/'folded', got {cand.batch_variant!r}"
+            )
+            return Verdict(candidate=cand, status=LoweringStatus.NOT_LOWERED,
+                           reasons=tuple(reasons))
+        expect_flow = ("batch-spread" if cand.batch_variant == "spread"
+                       else "batch-folded")
+        if cand.flow_id != expect_flow:
+            reasons.append(
+                f"flow_id: batch_variant={cand.batch_variant!r} requires {expect_flow!r}, "
+                f"got {cand.flow_id!r}"
+            )
+        if cand.batch <= 0 or (cand.batch & (cand.batch - 1)) != 0:
+            reasons.append(f"batch: must be a power of two, got {cand.batch}")
+        if cand.fused_tile > 1:
+            reasons.append(
+                f"fused_tile: the batched path is M0-stage-only; got fused_tile={cand.fused_tile}"
+            )
+        if cand.batch_variant == "spread":
+            if cand.ud != cand.batch or cand.td != 1:
+                reasons.append(
+                    f"data expansion: spread requires Ud=batch={cand.batch}, Td=1; "
+                    f"got Ud={cand.ud}, Td={cand.td}"
+                )
+        else:
+            if cand.ud != 1 or cand.td != cand.batch:
+                reasons.append(
+                    f"data expansion: folded requires Ud=1, Td=batch={cand.batch}; "
+                    f"got Ud={cand.ud}, Td={cand.td}"
+                )
 
     # 7. Pipeline beyond 'none' needs producer/consumer overlap evidence.
     if cand.pipeline not in ("none",):
@@ -158,6 +213,27 @@ def enumerate_candidates(space: DesignSpace, profile: DeviceProfile, block: int 
             )
             v = check_lowering(cand, profile)
             (legal if v.legal else rejected).append(v)
+    # M4 batch expansion points: variant x B x bitrev-fold, all M0-shaped.
+    for variant in space.batch_variants:
+        for batch in space.batch_candidates:
+            for dit_fold in space.dit_bitrev_input_fold:
+                cand = Candidate(
+                    flow_id=f"batch-{variant}",
+                    processing_unit="radix-2",
+                    radix=2,
+                    residence="gm",
+                    layout="planar-soa",
+                    block=block,
+                    fused_tile=1,
+                    dit_bitrev_input_fold=bool(dit_fold),
+                    dif_bitrev_output_fold=True,
+                    batch=batch,
+                    batch_variant=variant,
+                    ud=batch if variant == "spread" else 1,
+                    td=batch if variant == "folded" else 1,
+                )
+                v = check_lowering(cand, profile)
+                (legal if v.legal else rejected).append(v)
     return legal, rejected
 
 

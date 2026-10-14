@@ -14,11 +14,18 @@ Protocol:
 * Correctness against numpy (complex128) is recorded with **separate DIT and DIF
   error columns**; the vendor ``torch.fft.fft`` row is retained even when it
   fails, with the **actual error string**.
+* **M4 batch sweep** (plan section 7): every declared batch size x variant x
+  direction is timed in the same interleaved shuffle, with per-row numpy
+  references. Batch is a **workload axis**, so cross-batch rows report
+  throughput (Gpts/s) instead of a misleading speedup against ``B=1``.
+* ``--csv-long`` emits the plan section 9 raw field set: one row per
+  (flow, N, batch, direction) with manifest columns inlined.
 
 Usage:
     CUDA_VISIBLE_DEVICES=6 python3 scripts/bench.py \
         [--sizes 8,16,...] [--block 1024] [--tiles 64] \
-        [--trials 50] [--json out.json] [--csv out.csv]
+        [--batchs 1,4,16,64] [--batch-variants spread,folded] \
+        [--trials 50] [--json out.json] [--csv out.csv] [--csv-long out.csv]
 """
 
 import argparse
@@ -46,9 +53,11 @@ from src.xpu.matrices import tail_groups  # noqa: E402
 from src.xpu.runner import (  # noqa: E402
     device_name,
     fft_dif,
+    fft_dif_batch,
     fft_dif_grouped,
     fft_dif_matrix,
     fft_dit,
+    fft_dit_batch,
     fft_dit_fused,
     fft_dit_grouped,
     fft_dit_matrix,
@@ -62,6 +71,15 @@ def make_input(n: int, seed: int = 0) -> torch.Tensor:
     return torch.complex(
         torch.randn(n, dtype=torch.float32, device="cuda"),
         torch.randn(n, dtype=torch.float32, device="cuda"),
+    )
+
+
+def make_batch_input(n: int, batch: int, seed: int = 0) -> torch.Tensor:
+    """(batch, N) complex64 input for the M4 batched path."""
+    torch.manual_seed(seed)
+    return torch.complex(
+        torch.randn(batch, n, dtype=torch.float32, device="cuda"),
+        torch.randn(batch, n, dtype=torch.float32, device="cuda"),
     )
 
 
@@ -101,10 +119,16 @@ def main() -> None:
                     help="M3 cap on the group period (register-block bound)")
     ap.add_argument("--cells", type=int, default=1,
                     help="M3 BLOCK windows per group-kernel program")
+    ap.add_argument("--batchs", default=None,
+                    help="comma-separated M4 batch sizes (default: design space)")
+    ap.add_argument("--batch-variants", default=None,
+                    help="comma-separated M4 variants (default: design space)")
     ap.add_argument("--trials", type=int, default=50)
     ap.add_argument("--warmup", type=int, default=10)
     ap.add_argument("--json", default=None)
     ap.add_argument("--csv", default=None)
+    ap.add_argument("--csv-long", default=None,
+                    help="plan section 9 long-format rows (flow/N/batch/direction)")
     ap.add_argument("--markdown", default=None,
                     help="render the results table as markdown from raw rows")
     args = ap.parse_args()
@@ -116,6 +140,10 @@ def main() -> None:
     tiles = [int(t) for t in args.tiles.split(",")] if args.tiles else list(space.fused_tile_candidates)
     matrix_tiles = [int(t) for t in args.matrix_tiles.split(",")]
     grouped_tiles = [int(t) for t in args.grouped_tiles.split(",")]
+    batchs = ([int(b) for b in args.batchs.split(",")] if args.batchs
+              else list(space.batch_candidates))
+    batch_variants = ([v.strip() for v in args.batch_variants.split(",")]
+                      if args.batch_variants else list(space.batch_variants))
 
     # --- Phase 1: candidate legality before any launch ---
     legal, rejected = enumerate_candidates(space, profile, block=args.block)
@@ -141,7 +169,8 @@ def main() -> None:
                "matrix_rows": args.matrix_rows,
                "grouped_tiles": grouped_tiles, "glog": args.glog,
                "maxp": args.maxp, "cells": args.cells,
-               "sizes": sizes_list, "device_name": device_name()},
+               "sizes": sizes_list, "device_name": device_name(),
+               "batchs": batchs, "batch_variants": batch_variants},
     )
     man = manifest.to_dict()
     print(f"manifest: commit={man['commit'][:8]} dirty={man['dirty']} "
@@ -182,6 +211,23 @@ def main() -> None:
                 fft_dif_grouped(x, block=args.block, tile=t, glog=args.glog,
                                 maxp=args.maxp, cells=args.cells), ref)
 
+        # M4 batch expansion: (B, N) inputs and per-B numpy references
+        # (shared across variants and directions).
+        batch_x = {b: make_batch_input(n, b, seed=0) for b in batchs}
+        batch_refs = {}
+        for b in batchs:
+            bx = batch_x[b]
+            batch_refs[b] = np.fft.fft(
+                bx.real.cpu().numpy() + 1j * bx.imag.cpu().numpy(), axis=-1)
+        batch_errs = {}
+        for b in batchs:
+            for v in batch_variants:
+                for d in ("dit", "dif"):
+                    fn = fft_dit_batch if d == "dit" else fft_dif_batch
+                    batch_errs[(v, b, d)] = err_vs(
+                        fn(batch_x[b], block=args.block, variant=v, twiddle=tw),
+                        batch_refs[b])
+
         # vendor boundary
         vend, vend_err = vendor_fft(x)
         vend_ms = None
@@ -209,6 +255,15 @@ def main() -> None:
             cands[f"m3_g_dif_t{t}"] = lambda t=t: fft_dif_grouped(
                 x, block=args.block, tile=t, glog=args.glog, maxp=args.maxp,
                 cells=args.cells, twiddle=tw)
+        batch_of = {}   # candidate key -> batch size (M4 keys only)
+        for b in batchs:
+            for v in batch_variants:
+                for d in ("dit", "dif"):
+                    key = f"m4_{v}_b{b}_{d}"
+                    batch_of[key] = b
+                    cands[key] = lambda b=b, v=v, d=d: (
+                        fft_dit_batch if d == "dit" else fft_dif_batch
+                    )(batch_x[b], block=args.block, variant=v, twiddle=tw)
 
         # launch accounting (analytic, from the flow definitions)
         logn = int(math.log2(n))
@@ -230,6 +285,10 @@ def main() -> None:
                 gs, ss = tail_groups(min(t, n), logn, args.glog, args.maxp)
                 launches[f"m3_g_dit_t{t}"] = 2 + len(gs) + len(ss)
                 launches[f"m3_g_dif_t{t}"] = 2 + len(gs) + len(ss)
+        # M4: batch keeps the M0 stage count (one launch per stage, batch on
+        # the grid) so launches do not change with B or the variant.
+        for k in batch_of:
+            launches[k] = logn
 
         # randomized interleaved trials: round-robin over shuffled candidate order
         order = list(cands)
@@ -272,10 +331,18 @@ def main() -> None:
             row[f"m2_{k}_err"] = e
         for k, e in grouped_errs.items():
             row[f"m3_g_{k}_err"] = e
+        for (v, b, d), e in batch_errs.items():
+            row[f"m4_{v}_b{b}_{d}_err"] = e
         for k in cands:
             row[f"{k}_ms"] = med(timings[k])
             row[f"{k}_kernel_ms"] = med(ktime[k])
             row[f"{k}_launches"] = launches.get(k)
+            if k in batch_of and row[f"{k}_ms"]:
+                # Batch is a workload axis: report throughput, not a
+                # cross-batch speedup (plan section 6).
+                b = batch_of[k]
+                row[f"{k}_gps"] = b * n / (row[f"{k}_ms"] * 1e6)
+                continue
             if vend_ms and row[f"{k}_ms"]:
                 row[f"{k}_speedup_vs_vendor"] = vend_ms / row[f"{k}_ms"]
             row[f"{k}_speedup_vs_m0_dit"] = (row["m0_dit_ms"] / row[f"{k}_ms"]
@@ -303,6 +370,12 @@ def main() -> None:
               f"M2={row.get(f'm2_dit_t{matrix_tiles[0]}_launches') if matrix_tiles else '-'} "
               f"M3={row.get(f'm3_g_dit_t{grouped_tiles[0]}_launches') if grouped_tiles else '-'}"
               f"  (kernel time = device events, 0 unsupported)")
+        if batchs:
+            cells = [f"{v}/b{b}={row.get(f'm4_{v}_b{b}_dit_ms') or 0:.4f}"
+                     for v in batch_variants for b in batchs]
+            errs = [f"{row.get(f'm4_{v}_b{b}_dit_err', float('nan')):.1e}"
+                    for v in batch_variants for b in batchs]
+            print(f"{'':>8} M4 dit: {' '.join(cells)}  err: {' '.join(errs)}")
         if vend_err:
             print(f"{'':>8} vendor unsupported: {vend_err[:110]}")
 
@@ -351,11 +424,39 @@ def main() -> None:
                   f"N>=4096 gmean={gm(big):.2f}x  all gmean={gm(ratios):.2f}x"
                   + (f"  vs M2 all gmean={gm(vs_m2):.2f}x" if vs_m2 else ""))
 
+    # M4 batch amortization (per-element: batch is a workload axis, section 6)
+    print("\n== M4 batch vs M0 (per-element: b*m0_ms/m4_ms; >1 = batch amortizes) ==")
+    gm = lambda xs: float(np.exp(np.mean(np.log(xs)))) if xs else float("nan")
+    for v in batch_variants:
+        for b in batchs:
+            for d in ("dit", "dif"):
+                key = f"m4_{v}_b{b}_{d}"
+                ratios = [r[f"m0_{d}_ms"] * b / r[f"{key}_ms"]
+                          for r in rows if r.get(f"{key}_ms")]
+                small = [r[f"m0_{d}_ms"] * b / r[f"{key}_ms"] for r in rows
+                         if r["n"] <= 1024 and r.get(f"{key}_ms")]
+                big = [r[f"m0_{d}_ms"] * b / r[f"{key}_ms"] for r in rows
+                       if r["n"] >= 4096 and r.get(f"{key}_ms")]
+                max_err_ = max((r.get(f"{key}_err") for r in rows
+                                if r.get(f"{key}_err") is not None), default=None)
+                print(f"  {key}: N<=1024 gmean={gm(small):.2f}x  "
+                      f"N>=4096 gmean={gm(big):.2f}x  all gmean={gm(ratios):.2f}x"
+                      + (f"  max_err={max_err_:.1e}" if max_err_ is not None else ""))
+
     payload = {"manifest": man, "candidates": {
         "legal": [v.to_dict() for v in legal],
         "rejected": [v.to_dict() for v in rejected],
         "selected": sel.to_dict() if sel else None,
     }, "rows": rows}
+
+    lrows = long_rows(rows, man, profile)
+    payload["rows_long"] = lrows
+    if args.csv_long:
+        with open(args.csv_long, "w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=LONG_FIELDS)
+            w.writeheader()
+            w.writerows(lrows)
+        print(f"wrote {args.csv_long}")
 
     if args.json:
         with open(args.json, "w") as f:
@@ -371,11 +472,105 @@ def main() -> None:
 
     if args.markdown:
         _write_markdown(args.markdown, rows, tiles, matrix_tiles, grouped_tiles,
-                        manifest)
+                        manifest, batchs, batch_variants)
         print(f"wrote {args.markdown}")
 
 
-def _write_markdown(path, rows, tiles, matrix_tiles, grouped_tiles, man):
+LONG_FIELDS = [
+    "commit", "device", "runtime", "profile_hash", "N", "batch", "direction",
+    "precision", "flow_id", "processing_unit", "Us", "Ts", "Ud", "Td",
+    "residence", "layout", "compiled", "correct", "max_err", "kernel_ms",
+    "api_ms", "launches", "gm_read_bytes", "gm_write_bytes", "local_bytes",
+    "occupancy", "notes",
+]
+
+
+def long_rows(rows, man, profile, threshold=1e-4):
+    """Plan section 9 raw rows: one per (flow, N, batch, direction).
+
+    GM bytes are analytic for the global-per-stage flows (M0 and M4: each
+    launch reads 2*N complex64 + N/2 twiddle complex64 and writes 2*N
+    complex64); the fused/matrix/grouped flows have no counter instrumentation
+    on this stack, so those columns stay empty rather than guessed.
+    """
+    out = []
+    for r in rows:
+        n = r["n"]
+        for k in r:
+            if not k.endswith("_ms") or k == "vendor_ms" or k.endswith("_kernel_ms"):
+                continue
+            base = k[:-3]
+            err = None
+            flow = None
+            direction = None
+            batch = 1
+            ud, td = 1, 1
+            notes = ""
+            if base.startswith("m0_"):
+                flow, direction = "baseline-global-stage", base[3:]
+                err = r.get(f"{direction}_err")
+            elif base.startswith("m1_"):
+                flow, direction = "local-fused-tile", "dit"
+                notes = "m1-local-fused-tile"
+            elif base.startswith("m2_"):
+                flow = "local-fused-tile"
+                direction = "dit" if "_dit_" in base else "dif"
+                notes = "m2-register-resident-matrix"
+            elif base.startswith("m3_"):
+                flow = "local-fused-tile"
+                direction = "dit" if "_dit_" in base else "dif"
+                notes = "m3-execution-group-tail"
+            elif base.startswith("m4_"):
+                parts = base.split("_")            # m4, variant, bNN, dit|dif
+                if len(parts) != 4:
+                    continue
+                variant, bkey, direction = parts[1], parts[2], parts[3]
+                flow = f"batch-{variant}"
+                batch = int(bkey[1:])
+                err = r.get(f"{base}_err")
+                if variant == "spread":
+                    ud = batch
+                else:
+                    td = batch
+                notes = f"m4-batch-{variant}"
+            if flow is None or direction is None:
+                continue
+            if err is None and flow != "baseline-global-stage":
+                err = r.get(f"{base}_err")
+            analytic = flow in ("baseline-global-stage", "batch-spread",
+                                "batch-folded")
+            launches = r.get(f"{base}_launches")
+            out.append({
+                "commit": man["commit"],
+                "device": man["device"],
+                "runtime": profile.driver,
+                "profile_hash": man["profile_hash"],
+                "N": n,
+                "batch": batch,
+                "direction": direction,
+                "precision": "fp32",
+                "flow_id": flow,
+                "processing_unit": "radix-2",
+                "Us": 1, "Ts": 1, "Ud": ud, "Td": td,
+                "residence": "gm",
+                "layout": "planar-soa",
+                "compiled": True,
+                "correct": err is not None and err <= threshold,
+                "max_err": err,
+                "kernel_ms": r.get(f"{base}_kernel_ms"),
+                "api_ms": r[k],
+                "launches": launches,
+                "gm_read_bytes": 20 * n * launches if (analytic and launches) else None,
+                "gm_write_bytes": 16 * n * launches if (analytic and launches) else None,
+                "local_bytes": 0 if analytic else None,
+                "occupancy": None,
+                "notes": notes,
+            })
+    return out
+
+
+def _write_markdown(path, rows, tiles, matrix_tiles, grouped_tiles, man,
+                    batchs=(), batch_variants=()):
     """Render the report table from raw rows so it never needs hand-editing."""
     t0 = tiles[0] if tiles else 1
     m0t = matrix_tiles[0] if matrix_tiles else None
@@ -451,6 +646,24 @@ def _write_markdown(path, rows, tiles, matrix_tiles, grouped_tiles, man):
         f"all sizes {gm(g3_all):.2f}x.",
         "",
     ]
+    # M4 batch tables (workload axis: raw api_ms, no cross-B speedup claim)
+    if batchs and batch_variants:
+        for d in ("dit", "dif"):
+            lines += [
+                f"### M4 batch {d} (median api_ms)",
+                "",
+                "| N | " + " | ".join(
+                    f"{v} b={b}" for v in batch_variants for b in batchs) + " |",
+                "|---:|" + "---:|" * (len(batchs) * len(batch_variants)),
+            ]
+            for r in rows:
+                cells = []
+                for v in batch_variants:
+                    for b in batchs:
+                        ms = r.get(f"m4_{v}_b{b}_{d}_ms")
+                        cells.append(format(ms, ".4f") if ms else "n/a")
+                lines.append(f"| {r['n']} | " + " | ".join(cells) + " |")
+            lines.append("")
     with open(path, "w") as f:
         f.write("\n".join(lines))
 
