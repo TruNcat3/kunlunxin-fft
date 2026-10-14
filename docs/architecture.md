@@ -14,8 +14,11 @@ kunlunxin-fft/
 │   └── fft.hpp             #   radix-2 DIT/DIF stage + full FFT
 ├── src/
 │   ├── xpu/                # DEVICE PATH (Triton -> XMLIR -> XPU)
-│   │   ├── kernels.py      #   bitrev / dit_stage / dif_stage Triton kernels
-│   │   └── runner.py       #   Python host driver, twiddles, timing
+│   │   ├── kernels.py      #   Triton kernels (M0 radix-2 stages, M1 fused
+│   │   │                   #   tile, M2 matrix, M3 grouped tail, M4 batch
+│   │   │                   #   stages, M5 radix-4 stages)
+│   │   ├── runner.py       #   Python host driver, twiddles, timing, flows
+│   │   └── candidates.py   #   design-space enumeration + lowering gate
 │   └── host/               # HOST-SIDE REFERENCE (CPU, g++ unit test)
 │       └── fft_check.cpp   #   verifies DIT/DIF vs naive DFT
 ├── scripts/
@@ -23,9 +26,10 @@ kunlunxin-fft/
 │   ├── build.sh            #   g++ unit test + Triton cache warm
 │   ├── warm_triton.py      #   pre-compile device code
 │   ├── test_correctness.py #   device correctness vs numpy
-│   └── bench.py            #   benchmark vs torch.fft.fft
-├── tests/test_fft.py       # pytest-style correctness entry point
-└── results/p800/           # published benchmark data
+│   ├── bench.py            #   experiment matrix + section-9 long CSV
+│   └── plot_results.py     #   section-7 plots from raw bench JSON
+├── tests/                  # pytest: host-only + device suites
+└── results/p800/           # published benchmark data (raw rows + plots)
 ```
 
 ## Device path (`src/xpu/`)
@@ -82,31 +86,61 @@ pair (i, i+n), twiddle W[j * M]
   (no SSA gather). A `tl.debug_barrier()` between stages is required for correctness.
   Used by `fft_dit_fused`.
 
+* **`dit_stage4_kernel` / `dif_stage4_kernel`** (M5) — one radix-4 butterfly stage.
+  Four-point column DFT (analysis matrix: `y1 = (ar+bi)-(cr+di)` etc.), twiddles
+  `W^d` for `d = 1..3` before (DIT) or after (DIF) the butterfly, span `4n`,
+  twiddle stride `M = N/(4n)`. The mixed-radix digit-reversal permutation of the
+  full transform is folded into the first (DIT input) or last (DIF output) stage;
+  an odd `log2(N)` ends in one radix-2 tail (the DIF tail carries the bit-reversal
+  via `REV_MODE`, which superseded the old `BITREV_OUTPUT` flag).
+
+* **`local_matrix_kernel`** (M2) — register-resident matrix micro-FFT: the tile's
+  stages stay in registers across one program; pairing is done with pointer-form
+  gather (`tl.load(ptr + idx)`), the form this lowering accepts (see
+  [Device Stack](device-stack.md)).
+
+* **`tail_group_kernel`** (M3) — execution-group tail: the post-tile stages run
+  with an explicit work-group decomposition instead of one program per stage.
+
+* **`dit_stage_batch_kernel` / `dif_stage_batch_kernel`** (M4) — stage semantics
+  identical to the M0 stages, batched on the grid: `SPREAD` places `B` on the
+  grid axis (one stage-kernel instance per batch element), `FOLDED` folds `B`
+  into the flat pair space so one program owns all batch elements of a pair
+  index. Same stage count as M0, so `B` changes throughput, not launches.
+
 For the M0 baseline (`fft_dit`/`fft_dif`), a full FFT is `log2(N)` stage launches with
 the permutation folded into the first (DIT) or last (DIF) stage — no separate pass.
+M5 keeps the same launch-per-stage flow; only the butterfly and the number of
+stages change (`ceil(log2(N)/2)` launches for power-of-four blocks).
 
-### Driver (`runner.py`): the two flow candidates
+### Driver (`runner.py`): the flow candidates
 
-| Flow id | Entry point | Launches | Description |
-|---|---|---|---|
-| `baseline-global-stage` (M0) | `fft_dit` / `fft_dif` | `log2(N)` | One global round trip + one launch per stage. The **compatibility baseline**, not a performance claim. |
-| `local-fused-tile` (M1) | `fft_dit_fused` | `1 + 1 + log2(N) - log2(TILE)` | Explicit bit-reversal, then a fused local micro-FFT over `TILE`, then the remaining M0 stages. |
+| Flow id | Milestone | Entry point | Launches | Description |
+|---|---|---|---|---|
+| `baseline-global-stage` | M0 | `fft_dit` / `fft_dif` | `log2(N)` | One global round trip + one launch per stage. The **compatibility baseline**, not a performance claim. |
+| `local-fused-tile` | M1 | `fft_dit_fused` | `1 + 1 + log2(N) - log2(TILE)` | Explicit bit-reversal, then a fused local micro-FFT over `TILE`, then the remaining M0 stages. |
+| `local-fused-tile` | M2 | `fft_dit_matrix` / `fft_dif_matrix` | same shape as M1 | Register-resident matrix tile (pointer-form gather), M0-style stages for the tail. |
+| `local-fused-tile` | M3 | `fft_dit_grouped` / `fft_dif_grouped` | M1/M2 tail replaced by grouped launches | Execution-group tail over the post-tile stages. |
+| `batch-spread` / `batch-folded` | M4 | `fft_dit_batch` / `fft_dif_batch` | `log2(N)` (independent of `B`) | Batched stages: `B` on the grid (`spread`) or folded into the pair space (`folded`); workload axis, reported as Gpts/s. |
+| `baseline-global-stage` | M5 | `fft_dit_radix4` / `fft_dif_radix4` | `ceil(log2(N)/2)` | Same flow, radix-4 core: digit-reversal folded into the boundary stage, radix-2 tail for odd `log2(N)`. |
 
 Both split a complex64 tensor into planar views, build the twiddle tables once per size
 (`twiddle_tables`), and run inside `xpu_context()`. `time_call` reports median
 synchronized wall time; `time_call_detailed` adds randomized trials and a separate
 device-event kernel-time estimate.
 
-### Why radix-2, and the baseline's limits
+### Processing units and the baseline's limits
 
-This milestone is correctness-first. Each M0 stage reads global memory, writes global
-memory, and is its own kernel launch — memory- and launch-bound (see
-[Results](results.md)). The cuButterfly method's contribution (blocking, register
-residency, fused stages) is the identified path forward. M1 implements the *first* step
-(static local micro-FFT) and is measured below; register/UB residence (M2) is the next
-step and is currently limited by one indexing form the tested Triton lowering does not
-generate — scoped precisely in [Device Stack](device-stack.md), not a claim that the
-method is impossible.
+M0 is correctness-first: each stage reads global memory, writes global memory, and is
+its own kernel launch — memory- and launch-bound (see [Results](results.md)). The
+ladder climbs from there: M1 fuses block-local stages (launch-bound regime win, barrier
+cost at large N), M2/M3 change the post-tile residency/tail (measured wins at every
+size), M4 adds the batch workload axis (throughput), and M5 changes the processing unit
+to radix-4 on the baseline flow (fewer launches/twiddle multiplies, more real adds —
+both directions reported by `candidates.arithmetic_cost`). The one form this Triton
+lowering still rejects is the tensor-subscript SSA gather; the pointer form it accepts
+is what every fused/matrix kernel uses — canaried in
+[Device Stack](device-stack.md).
 
 ## Host-side reference (`include/`, `src/host/`)
 

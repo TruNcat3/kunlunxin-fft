@@ -128,22 +128,32 @@ hardware-lowerable in this compiler  partial — pointer-form gather and pointer
                                    tl.load/tl.store: yes (canary-tested);
                                    tensor-subscript Xt[idx]: no (canary-tested)
 implemented and measured          M1 local-fused-tile: yes (pointer form);
-                                   register/UB residence: not yet
+                                   M2 register-resident matrix: yes — the
+                                   tile group as a dense linear map through
+                                   tl.dot (ieee), one load/store pair, no
+                                   gather and no inter-stage barrier;
+                                   M3 execution-group tail: yes;
+                                   M5 radix-4 stages: yes (pointer form)
 ```
 
-**Alternative legal forms to try before declaring a toolchain blocker** (ladder from
-the migration convergence plan; step 1 is measured, steps 2–3 now look reachable given
-the pointer-form result):
+**Alternative legal forms, in the order the ladder was actually walked** (from the
+migration convergence plan; 1, 2, 4 are now implemented and measured, only 5 is a
+reserved classification):
 
-1. compile-time / static index tables for small tiles — **M1 `local-fused-tile` does
-   this**: it fuses the first `log2(TILE)` block-local stages using only global-pointer
-   `tl.load`/`tl.store`, and is correct at every tested size.
-2. contiguous tile loads followed by register permutation — the load half is proven
-   (pointer form works); the register-side pairing may be expressible with
-   static reshape/slice/concat instead of `Xt[idx]` (untested, next round);
-3. ping-pong registers or UB with explicit stage-local permutations;
-4. multiple legal subgraphs connected by explicit boundaries (execution groups);
-5. only then classify the remaining form as a toolchain blocker.
+1. compile-time / static index tables for small tiles — **M1 `local-fused-tile`**:
+   fuses the first `log2(TILE)` block-local stages using only global-pointer
+   `tl.load`/`tl.store`, correct at every tested size.
+2. contiguous tile loads followed by register-side pairing — the *same residency goal*
+   was reached by a different legal shape: **M2 `local_matrix_kernel`** writes the tile
+   group as a dense fp32 matrix (host-precomputed, N-independent), crosses device
+   memory exactly once, and holds all stage intermediates in registers across
+   `tl.dot(..., input_precision="ieee")`. No `Xt[idx]` gather, no inter-stage barrier.
+3. ping-pong registers or UB with explicit stage-local permutations — still open as a
+   form, but no longer required for register residency (M2 covers the case).
+4. multiple legal subgraphs connected by explicit boundaries (execution groups) —
+   **M3 `tail_group_kernel`** implements exactly this for the post-tile tail.
+5. only then classify the remaining form as a toolchain blocker — not reached;
+   `Xt[idx]` stays canaried, every shipped kernel routes around it.
 
 **Why M1 still regresses at large N (measured cause).** The M1 fused kernel updates a
 tile **in place** across stages, which requires a `tl.debug_barrier()` between stages —
@@ -151,13 +161,13 @@ removing it produces races at every size (rel err ~0.9, confirmed). The mandator
 barrier plus the in-place store→load dependency serializes the memory pipeline that the
 M0 out-of-place stages keep fully independent, so M1 wins where launches dominate
 (`N <= 1024`, geometric mean ~1.6x) and loses where memory time dominates
-(`N >= 4096`, geometric mean ~0.7x). Register/UB residence (M2) avoids this entirely —
-values would never round-trip through memory, so no inter-stage fence exists. The only
-part of M2 the current lowering rejects is the tensor-subscript SSA shape above; how
-much of the register-side permutation can be rebuilt from the proven pointer form and
-static reshape/slice ops is the concrete open question for the next round. This is the
-specific, recorded gap between the current baseline and the full cuButterfly mixed
-space-time dataflow.
+(`N >= 4096`, geometric mean ~0.7x). Register residence avoids this entirely —
+values never round-trip through memory, so no inter-stage fence exists — and **that is
+landed**: M2 replaces the barrier-per-stage tile with one dense matrix multiply per
+group (`local_matrix_kernel`), intermediates register-resident throughout. The
+tensor-subscript SSA shape above remains rejected (canaried), but no shipped kernel
+needs it; the recorded gap to the full cuButterfly mixed space-time dataflow is now a
+*measured performance* question, not a lowering question.
 
 ## Dangerous-operation notes
 

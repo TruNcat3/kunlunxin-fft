@@ -1,5 +1,8 @@
 # Results
 
+The current headline is the **Phase 3 experiment matrix** (plan §7) further down this
+page; the Phase 2 sections below are the historical record of the M0/M1 milestones.
+
 ## Measurement protocol (Phase 2)
 
 All rows come from `scripts/bench.py`, which records a **manifest** (commit, dirty
@@ -29,10 +32,19 @@ Hardware: single Kunlunxin **P800 OAM** (12 clusters x 64 cores, 96 GiB HBM, dri
 |---|---|---|
 | `baseline-global-stage` (M0) | `fft_dit` / `fft_dif` | One global round trip + one launch per stage. **Compatibility baseline.** |
 | `local-fused-tile` (M1) | `fft_dit_fused(tile=64)` | Explicit bit-reversal, then the first `log2(64)=6` block-local stages fused in one kernel, then the remaining M0 stages. |
+| `local-fused-tile` (M2) | `fft_dit_matrix` / `fft_dif_matrix` | Register-resident tile: the tile stage group as a dense linear map through `tl.dot` (one load/store pair, no barrier). |
+| `local-fused-tile` (M3) | `fft_dit_grouped` / `fft_dif_grouped` | Execution-group tail over the post-tile stages. |
+| `batch-spread` / `batch-folded` (M4) | `fft_dit_batch` / `fft_dif_batch` | Batched M0 stages, `B` on the grid (`spread`) or folded into the pair space (`folded`). Workload axis — reported as Gpts/s, never as B-vs-1 speedup. |
+| `baseline-global-stage` (M5) | `fft_dit_radix4` / `fft_dif_radix4` | Same flow, radix-4 core: digit-reversal folded into the boundary stage, radix-2 tail for odd `log2(N)`. |
 
-The lowering-contract check ran before timing: both candidates are `legal` for
-`residence=gm, layout=planar-soa, radix=2`; `selected_candidate` defaults to the
-conservative M0 (`lowest fused_tile`) so M1 must prove itself by measurement.
+The lowering-contract check runs before timing: candidates are checked for
+`residence=gm, layout=planar-soa` with unit/radix consistency (`radix-2` and
+`radix-4` both legal on the baseline flow; M1 fusion stays radix-2-only);
+`selected_candidate` defaults to the conservative M0 (`lowest fused_tile`, stable
+sort keeps the incumbent first) so every challenger must prove itself by
+measurement. The analytic arithmetic ledger (`candidates.arithmetic_cost`) reports
+M5's twiddle-multiply saving **and** its real-add cost — both directions, no
+single-number claim.
 
 ## Timing (median api_ms; DIT and DIF errors separate)
 
@@ -87,10 +99,11 @@ confirmed) — it is mandatory. The barrier plus the in-place store→load depen
 serializes the memory pipeline that M0's out-of-place stages keep fully independent.
 At small `N` the launch reduction dominates and M1 wins; at large `N` barrier cost
 dominates and M1 loses. This is a **resource/dependency bottleneck of the pointer-based
-fusion form**, not an algorithmic limit. Overcoming it is the job of register/UB
-residence (M2), which never round-trips through memory — but M2 depends on the SSA
-gather indexing form the current Triton lowering does not generate. Scoped precisely in
-[Device Stack](device-stack.md).
+fusion form**, not an algorithmic limit. Register residence (never round-tripping
+through memory, hence no inter-stage fence) is the fix — and it is **landed as M2** via
+a dense matrix linear map through `tl.dot`, a form the lowering accepts without the
+rejected tensor-subscript gather. The tensor-subscript limitation stays canaried and
+scoped in [Device Stack](device-stack.md); no shipped kernel depends on it.
 
 ## Honest reading
 
@@ -113,3 +126,152 @@ CUDA_VISIBLE_DEVICES=6 python3 scripts/bench.py --trials 40 --tiles 64 \
     --json results/p800/bench_phase2.json --csv results/p800/bench_phase2.csv \
     --markdown /tmp/table.md
 ```
+
+---
+
+## Experiment matrix (Phase 3, plan §7)
+
+Commit `12965bc`, profile `a78b8679`, `trials=50`, `warmup=10`, card 6,
+`block=1024` (flagship). Regenerable report:
+[`bench_phase3.md`](https://github.com/TruNcat3/kunlunxin-fft/blob/master/results/p800/bench_phase3.md)
+from raw rows
+[`bench_phase3.json`](https://github.com/TruNcat3/kunlunxin-fft/blob/master/results/p800/bench_phase3.json)
+/ [`bench_phase3.csv`](https://github.com/TruNcat3/kunlunxin-fft/blob/master/results/p800/bench_phase3.csv)
+/ [`bench_phase3_long.csv`](https://github.com/TruNcat3/kunlunxin-fft/blob/master/results/p800/bench_phase3_long.csv)
+(section-9 columns). Every table below has an adjacent plot under
+[`plots/`](https://github.com/TruNcat3/kunlunxin-fft/tree/master/results/p800/plots).
+
+### Coverage (every axis the plan requires)
+
+| Axis | Covered |
+|---|---|
+| direction | DIT **and** DIF, all flows |
+| precision | fp32 (complex64 API, planar SoA kernel ABI) |
+| length | `2^3..2^20`, 18 sizes; `2^12, 2^14, 2^16, 2^18, 2^20` highlighted in plots |
+| batch | `1, 4, 16, 64` x `{spread, folded}` |
+| block/tile | every declared legal block `256, 512, 1024, 2048` (separate runs, `B=1`) |
+| flow | baseline, local-fused, matrix, grouped, batch, radix-4 |
+| core | radix-2 baseline + legal radix-4 (analytic cost ledger both directions) |
+| layout | public complex64 API vs internal planar lowering (conversion in `api_ms`) |
+
+Vendor (`torch.fft.fft`) is the external baseline where it supports the size
+(`N <= 2048`); beyond that, rows are **coverage/correctness results, not speedups**,
+and the vendor error string is retained in the raw JSON.
+
+### Latency by flow
+
+![api_ms vs N](plots/api_ms_vs_n.png)
+![speedup vs M0](plots/speedup_vs_m0.png)
+
+Geometric-mean speedup vs the M0 baseline, DIT (same for DIF within noise):
+
+| Flow | `N <= 1024` | `N >= 4096` | all 18 |
+|---|---:|---:|---:|
+| M1 fused tile=64 | 1.62x | 0.67x | 1.01x |
+| M2 matrix tile=64 (DIT) | 1.80x | 1.53x | 1.65x |
+| M2 matrix tile=64 (DIF) | 1.91x | 1.57x | 1.72x |
+| M3 grouped tile=8 (DIT) | 1.58x | 1.57x | 1.58x |
+| M5 radix-4 (DIT) | 1.03x | **1.69x** | 1.34x |
+| M5 radix-4 (DIF) | 1.00x | **1.77x** | 1.35x |
+
+At the highlighted large sizes (median api_ms, DIT):
+
+| N | M0 | M1 | M2 | M3 | M5 radix-4 |
+|---:|---:|---:|---:|---:|---:|
+| 4096 | 1.05 | 1.31 | **0.72** | 0.78 | 0.86 |
+| 16384 | 2.32 | 3.69 | 1.50 | 1.68 | **1.49** |
+| 65536 | 9.15 | 13.85 | 6.06 | 5.50 | **4.73** |
+| 262144 | 39.00 | 61.12 | 26.19 | 23.37 | **20.29** |
+| 1048576 | 174.57 | 254.11 | 112.94 | 103.27 | **91.42** |
+
+Reading: **no single winner across sizes.** M2/M3 lead from mid sizes; M5 radix-4
+becomes the fastest flow from `N=65536` up (fewer launches and twiddle multiplies
+finally outweigh its extra real adds once global traffic dominates). M1 remains a
+small-`N`-only win (its mandatory inter-stage barrier — measured cause in the M1
+section above). M2 vs M1 at `N >= 4096`: 2.29x; M3 vs M2 there: 1.03x.
+
+Against the vendor (reachable only at `N <= 2048`): M0 is 1.22x slower than the
+vendor at `N=2048`, but **M2 is the first flow to beat the vendor where it runs** —
+0.53ms vs 0.65ms (**1.22x faster**) at `N=2048` (M1/M3/M5 sit between). The vendor
+fails outright at `N >= 4096`; every Triton flow runs correctly to `2^20` at worst
+err 1.1e-5 (M2 DIT at `2^20`; all other flows < 1e-6).
+
+### M5 arithmetic ledger (analytic, same flow)
+
+Radix-4 on the baseline flow replaces `log2(N)` radix-2 stages with
+`ceil(log2(N)/2)` radix-4 stages (radix-2 tail when odd). Per transform:
+
+| N | launches r2->r4 | twiddle mults r2->r4 | real adds r2->r4 |
+|---:|---:|---:|---:|
+| 8 | 3 -> 2 | 12 -> 10 | 48 -> 64 |
+| 4096 | 12 -> 6 | 24576 -> 18432 | 98304 -> 147456 |
+| 1048576 | 20 -> 10 | 10485760 -> 7864320 | 41943040 -> 62914560 |
+
+Both directions are reported (`candidates.arithmetic_cost`): radix-4 buys **25% fewer
+twiddle multiplies and half the launches at 50% more real adds**. The measured
+crossover (M5 wins at large N, neutral below) matches this ledger — fewer round
+trips matter when memory dominates; the add cost matters when launches do.
+
+### Batch workload axis (M4)
+
+Batch is a workload axis, never a B-vs-1 speedup: throughput is amortized
+`B * M0_ms / M4_ms` (higher = better packing of the same stage grid).
+
+![batch throughput](plots/batch_throughput.png)
+
+| B (folded, DIT) | `N <= 1024` | `N >= 4096` |
+|---|---:|---:|
+| 1 | 0.99x | 1.00x |
+| 4 | 3.67x | 1.17x |
+| 16 | 11.52x | 1.25x |
+| 64 | 28.22x | 1.27x |
+
+`spread` tracks `folded` within ~5% (raw rows carry both). Amortization is
+strong in the launch-bound regime and converges to ~1.2-1.3x once memory
+dominates; per-element correctness holds at every (B, N) (max err 7.2e-7).
+
+### Block sweep (every declared legal block)
+
+![block sweep](plots/block_sweep.png)
+
+Runs at `B=1`, sizes `{2^3, 2^6, 2^10, 2^12, 2^14, 2^16, 2^18, 2^20}` (full range,
+all highlighted sizes), raw rows:
+[block256](https://github.com/TruNcat3/kunlunxin-fft/blob/master/results/p800/bench_block256_long.csv),
+[block512](https://github.com/TruNcat3/kunlunxin-fft/blob/master/results/p800/bench_block512_long.csv),
+[block1024=phase3](https://github.com/TruNcat3/kunlunxin-fft/blob/master/results/p800/bench_phase3_long.csv),
+[block2048](https://github.com/TruNcat3/kunlunxin-fft/blob/master/results/p800/bench_block2048_long.csv).
+
+Geometric-mean api_ms ratio vs the default block=1024 (lower = faster):
+
+| block | M0 DIT | M5 DIT | M2 DIT |
+|---:|---:|---:|---:|
+| 256 | **0.80x** | **0.70x** | **0.86x** |
+| 512 | 0.87x | 0.80x | 0.91x |
+| 1024 (default) | 1.00x | 1.00x | 1.00x |
+| 2048 | 1.24x | 1.29x | 1.10x |
+
+The declared default is **not optimal**: block=256 is ~20% faster than 1024
+geometric-mean across sizes; block=2048 is ~25% slower. At `N >= 65536` the
+differences collapse to <5% (traffic-dominated). Correctness holds at every
+block (worst err 1.1e-5). This is a measured tuning axis, not a knob to leave
+at its default.
+
+### Honest reading (phase 3 deltas)
+
+1. **The ladder pays off and changes the winner.** Against the M0 baseline,
+   M2/M3 deliver 1.5-1.9x and M5 delivers 1.7-1.8x at large N — the first flows
+   that beat the memory-bound M0 regime at every large size.
+2. **The vendor comparison is unchanged in kind**: still ahead where reachable,
+   except near parity at `N=2048`; still absent where we have coverage.
+   Nothing here is a vendor speedup claim.
+3. **M5's ledger is honest in both directions**: fewer twiddles/launches, more
+   adds, and a measured size crossover — not a free win.
+4. **Defaults are measured, not assumed**: block=1024 is ~20% off the best
+   declared block; the conservative selector (M0) is far from the per-size best
+   (M2/M3/M5). A per-size selector remains the obvious next step, gated by the
+   plan's "never slower than the incumbent without opt-in" rule.
+5. **Operational note**: the `B=64` phases at `N >= 2^19` are legitimately
+   silent for tens of minutes (seconds per call x 50 trials x 16 entries);
+   run watchdogs must not treat that as a hang (a real hang looks identical —
+   `kill -9` by PID and re-run; see
+   [Device Stack](device-stack.md) dangerous-operation notes).
