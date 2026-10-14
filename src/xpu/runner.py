@@ -16,6 +16,13 @@ Flow identifiers (migration convergence plan):
 * ``local-fused-tile`` (M1) — the first ``log2(TILE)`` block-local DIT stages
   are fused into one kernel (global-pointer form, no SSA gather); the remaining
   stages use the M0 path.
+* ``register-resident-matrix`` (M2) — the tile-local stage group is one dense
+  fp32 ``tl.dot`` against a precomputed TILE-only matrix, so its stage
+  intermediates never leave registers; the remaining stages use the M0 path.
+* ``grouped-boundary`` (M3) — the tail stages are partitioned into execution
+  groups of consecutive stages; each group is one kernel launch over an
+  N-independent coefficient table, so only group boundaries cross global
+  memory. Leftover large stages use the M0 path.
 """
 
 import math
@@ -37,7 +44,10 @@ from .kernels import (
     dif_stage_kernel,
     dit_fused_kernel,
     dit_stage_kernel,
+    local_matrix_kernel,
+    tail_group_kernel,
 )
+from .matrices import local_matrix_planar, tail_group_planar, tail_groups
 from .validate import log2_exact, validate_input, validate_twiddle
 
 _XPU_MODEL = {3: "P800"}
@@ -263,6 +273,463 @@ def fft_dit_fused(
                     BITREV_INPUT=False,
                 )
                 cur_r, cur_i = nr, ni
+    return _from_so(cur_r, cur_i)
+
+
+_MATRIX_CACHE = {}
+
+
+def _local_matrices(tile: int, direction: str, device):
+    """Planar float32 (MT_r, MT_i) for the tile-local group, cached per device."""
+    key = (device, tile, direction)
+    m = _MATRIX_CACHE.get(key)
+    if m is None:
+        mr, mi = local_matrix_planar(tile, direction)
+        m = (torch.from_numpy(mr).to(device), torch.from_numpy(mi).to(device))
+        _MATRIX_CACHE[key] = m
+    return m
+
+
+def _matrix_group_params(n: int, tile: int, rows: int):
+    """Validate the M2 axes and return (eff_tile, rows_eff, grid)."""
+    if tile <= 1:
+        return None
+    log2_exact(tile)  # raises unless tile is a power of two
+    if rows <= 1:
+        rows = 1
+    else:
+        log2_exact(rows)  # raises unless rows is a power of two
+    eff_tile = min(tile, n)
+    tiles = n // eff_tile
+    rows_eff = min(rows, tiles)
+    grid = tiles // rows_eff
+    if grid < 1:
+        raise ValueError(f"n={n} tile={tile} rows={rows} leaves no programs")
+    return eff_tile, rows_eff, grid
+
+
+def _fft_matrix_tail(
+    cur_r,
+    cur_i,
+    direction: str,
+    fused_log: int,
+    n: int,
+    logn: int,
+    block: int,
+    wr,
+    wi,
+):
+    """Remaining stages (``n = eff_tile .. N/2``) on the M0 global-stage path."""
+    half = n >> 1
+    grid = triton.cdiv(half, block)
+    stage = dit_stage_kernel if direction == "dit" else dif_stage_kernel
+    if direction == "dit":
+        span = range(fused_log, logn)
+    else:
+        span = range(logn - 1, fused_log - 1, -1)
+    for s in span:
+        stage_n = 1 << s
+        m = n // (stage_n << 1)
+        nr = torch.empty_like(cur_r)
+        ni = torch.empty_like(cur_i)
+        kw = (
+            {"BITREV_INPUT": False}
+            if direction == "dit"
+            else {"BITREV_OUTPUT": False}
+        )
+        _launch(
+            stage,
+            block,
+            grid,
+            cur_r,
+            cur_i,
+            nr,
+            ni,
+            wr,
+            wi,
+            stage_n,
+            m,
+            n,
+            logn,
+            **kw,
+        )
+        cur_r, cur_i = nr, ni
+    return cur_r, cur_i
+
+
+def fft_dit_matrix(
+    x: torch.Tensor,
+    block: int = 1024,
+    tile: int = 64,
+    rows: int = 8,
+    twiddle=None,
+) -> torch.Tensor:
+    """M2: DIT FFT with the tile-local group resident in registers.
+
+    The ``log2(tile)`` first stages become one dense fp32 ``tl.dot`` against a
+    precomputed TILE-only matrix (flow ``register-resident-matrix``): their
+    intermediates never touch device memory. Flow: explicit bit-reversal pass,
+    register-resident matrix group, then the M0 tail. The bit-reversal cannot
+    be folded into the matrix kernel: combining a bit-reversal gather with
+    ``tl.dot`` trips an MLIR assertion in the XPU backend, so the proven
+    ``bitrev_kernel`` runs as its own pass. Launches:
+    ``2 + log2(N) - log2(tile)`` vs M0's ``log2(N)`` and M1's
+    ``log2(N) + 1`` (smaller for ``tile >= 4``). ``tile``/``rows`` must be
+    powers of two; ``rows`` is how many tile-blocks one program owns
+    (matrix-load amortization, semantics neutral).
+    """
+    validate_input(x, "x", block=block)
+    n = x.numel()
+    logn = log2_exact(n)
+    params = _matrix_group_params(n, tile, rows)
+    if params is None:
+        return fft_dit(x, block=block, twiddle=twiddle)
+    eff_tile, rows_eff, grid = params
+    fused_log = log2_exact(eff_tile)
+
+    with xpu_context(x.device.index or 0):
+        xr, xi = _as_so(x)
+        # 1. explicit bit-reversal: the gather cannot share a kernel with dot
+        #    (XPU MLIR assertion), so it stays its own proven pass
+        br_r = torch.empty_like(xr)
+        br_i = torch.empty_like(xi)
+        br_grid = triton.cdiv(n, block)
+        _launch(bitrev_kernel, block, br_grid, xr, xi, br_r, br_i, n, logn)
+
+        # 2. register-resident local group (natural in, natural out)
+        cur_r = torch.empty_like(xr)
+        cur_i = torch.empty_like(xi)
+        mr, mi = _local_matrices(eff_tile, "dit", x.device)
+        _launch(
+            local_matrix_kernel,
+            eff_tile,
+            grid,
+            br_r,
+            br_i,
+            cur_r,
+            cur_i,
+            mr,
+            mi,
+            ROWS=rows_eff,
+        )
+        if fused_log < logn:
+            if twiddle is None:
+                twiddle = twiddle_tables(n, x.device)
+            validate_twiddle(twiddle, n, x.device)
+            wr, wi = twiddle
+            cur_r, cur_i = _fft_matrix_tail(
+                cur_r, cur_i, "dit", fused_log, n, logn, block, wr, wi
+            )
+    return _from_so(cur_r, cur_i)
+
+
+def fft_dif_matrix(
+    x: torch.Tensor,
+    block: int = 1024,
+    tile: int = 64,
+    rows: int = 8,
+    twiddle=None,
+) -> torch.Tensor:
+    """M2: DIF FFT with the tile-local group resident in registers.
+
+    The global tail stages run first on the M0 path; then the last
+    ``log2(tile)`` stages become the register-resident matrix group; finally
+    the bit-reversed output is materialized by its own pass (the gather and
+    ``dot`` cannot share a kernel on this backend -- see
+    :func:`fft_dit_matrix`). Launches: ``2 + log2(N) - log2(tile)``, same as
+    :func:`fft_dit_matrix`.
+    """
+    validate_input(x, "x", block=block)
+    n = x.numel()
+    logn = log2_exact(n)
+    params = _matrix_group_params(n, tile, rows)
+    if params is None:
+        return fft_dif(x, block=block, twiddle=twiddle)
+    eff_tile, rows_eff, grid = params
+    fused_log = log2_exact(eff_tile)
+
+    with xpu_context(x.device.index or 0):
+        cur_r, cur_i = _as_so(x)
+        if fused_log < logn:
+            if twiddle is None:
+                twiddle = twiddle_tables(n, x.device)
+            validate_twiddle(twiddle, n, x.device)
+            wr, wi = twiddle
+            cur_r, cur_i = _fft_matrix_tail(
+                cur_r, cur_i, "dif", fused_log, n, logn, block, wr, wi
+            )
+        mr, mi = _local_matrices(eff_tile, "dif", x.device)
+        # register-resident local group (natural in, natural out)
+        loc_r = torch.empty_like(cur_r)
+        loc_i = torch.empty_like(cur_i)
+        _launch(
+            local_matrix_kernel,
+            eff_tile,
+            grid,
+            cur_r,
+            cur_i,
+            loc_r,
+            loc_i,
+            mr,
+            mi,
+            ROWS=rows_eff,
+        )
+        # output bit-reversal as its own pass (cannot fuse with dot)
+        out_r = torch.empty_like(loc_r)
+        out_i = torch.empty_like(loc_i)
+        br_grid = triton.cdiv(n, block)
+        _launch(bitrev_kernel, block, br_grid, loc_r, loc_i, out_r, out_i, n, logn)
+        cur_r, cur_i = out_r, out_i
+    return _from_so(cur_r, cur_i)
+
+
+
+
+_GROUP_CACHE = {}
+
+
+def _tail_group_tables(n0: int, glog: int, direction: str, device):
+    """Planar float32 ``(Cr, Ci)`` group coefficient table, cached per device."""
+    key = (device, n0, glog, direction)
+    t = _GROUP_CACHE.get(key)
+    if t is None:
+        cr, ci = tail_group_planar(n0, glog, direction)
+        t = (torch.from_numpy(cr).to(device), torch.from_numpy(ci).to(device))
+        _GROUP_CACHE[key] = t
+    return t
+
+
+def _fft_group_tail(
+    cur_r,
+    cur_i,
+    direction: str,
+    groups,
+    singles,
+    n: int,
+    logn: int,
+    block: int,
+    wr,
+    wi,
+    cells: int,
+    device,
+):
+    """M3 tail: execution groups on ``tail_group_kernel`` + leftover singles.
+
+    ``groups``/``singles`` come from :func:`xpu.matrices.tail_groups` and are
+    ascending in half-span; the units therefore cover every tail stage exactly
+    once in M0 order, and DIF reverses the list so the largest half-span runs
+    first (same stage order as :func:`fft_dif`). The group kernel's ``BLOCK``
+    spans at least one full period so its coefficient rows and XOR-gathered
+    inputs stay inside one program window.
+    """
+    units = [("g", n0, g) for n0, g in groups] + [("s", s, None) for s in singles]
+    if direction == "dif":
+        units.reverse()
+    half = n >> 1
+    stage_grid = triton.cdiv(half, block)
+    stage = dit_stage_kernel if direction == "dit" else dif_stage_kernel
+    for kind, a, b in units:
+        nr = torch.empty_like(cur_r)
+        ni = torch.empty_like(cur_i)
+        if kind == "g":
+            period = a << b
+            cr, ci = _tail_group_tables(a, b, direction, device)
+            blk = block if period <= block else period
+            if blk > n:
+                blk = n
+            windows = triton.cdiv(n, blk)
+            grid = triton.cdiv(windows, cells)
+            _launch(
+                tail_group_kernel,
+                blk,
+                grid,
+                cur_r,
+                cur_i,
+                nr,
+                ni,
+                cr,
+                ci,
+                n,
+                N0=a,
+                NDEP=1 << b,
+                CELLS=cells,
+            )
+        else:
+            m = n // (a << 1)
+            kw = (
+                {"BITREV_INPUT": False}
+                if direction == "dit"
+                else {"BITREV_OUTPUT": False}
+            )
+            _launch(
+                stage,
+                block,
+                stage_grid,
+                cur_r,
+                cur_i,
+                nr,
+                ni,
+                wr,
+                wi,
+                a,
+                m,
+                n,
+                logn,
+                **kw,
+            )
+        cur_r, cur_i = nr, ni
+    return cur_r, cur_i
+
+
+def fft_dit_grouped(
+    x: torch.Tensor,
+    block: int = 1024,
+    tile: int = 64,
+    rows: int = 8,
+    glog: int = 2,
+    maxp: int = 4096,
+    cells: int = 1,
+    twiddle=None,
+) -> torch.Tensor:
+    """M3: DIT FFT with tail execution groups (flow ``grouped-boundary``).
+
+    Like :func:`fft_dit_matrix`, the first ``log2(tile)`` stages are the
+    register-resident matrix group and the input bit-reversal is its own pass.
+    The tail (stages ``tile .. N/2``) is then partitioned by
+    :func:`xpu.matrices.tail_groups` into execution groups of ``glog``
+    consecutive stages with period ``n0 << glog <= maxp``; each group is one
+    :func:`tail_group_kernel` launch whose intermediates stay in registers, so
+    only group boundaries cross global memory. Leftover large stages run one
+    per launch on the proven M0 path.
+
+    Launches: ``2 + G + S`` (bit-reversal, local matrix, ``G`` groups,
+    ``S`` singles) vs M0's ``log2(N)`` and M2's
+    ``2 + log2(N) - log2(tile)``. ``tile``/``rows`` are powers of two as in
+    :func:`fft_dit_matrix`; ``glog >= 1`` caps stages per group (``glog=1``
+    disables grouping), ``maxp`` caps the period-shaped register block, and
+    ``cells`` is how many ``BLOCK`` windows one program owns.
+    """
+    validate_input(x, "x", block=block)
+    if glog < 1:
+        raise ValueError(f"glog must be >= 1, got {glog}")
+    if cells < 1:
+        raise ValueError(f"cells must be >= 1, got {cells}")
+    n = x.numel()
+    logn = log2_exact(n)
+    params = _matrix_group_params(n, tile, rows)
+    if params is None:
+        return fft_dit(x, block=block, twiddle=twiddle)
+    eff_tile, rows_eff, grid = params
+    fused_log = log2_exact(eff_tile)
+    groups, singles = tail_groups(eff_tile, logn, glog, maxp)
+
+    with xpu_context(x.device.index or 0):
+        xr, xi = _as_so(x)
+        # 1. explicit bit-reversal pass (cannot fuse with the matrix dot)
+        br_r = torch.empty_like(xr)
+        br_i = torch.empty_like(xi)
+        br_grid = triton.cdiv(n, block)
+        _launch(bitrev_kernel, block, br_grid, xr, xi, br_r, br_i, n, logn)
+
+        # 2. register-resident local group (natural in, natural out)
+        cur_r = torch.empty_like(xr)
+        cur_i = torch.empty_like(xi)
+        mr, mi = _local_matrices(eff_tile, "dit", x.device)
+        _launch(
+            local_matrix_kernel,
+            eff_tile,
+            grid,
+            br_r,
+            br_i,
+            cur_r,
+            cur_i,
+            mr,
+            mi,
+            ROWS=rows_eff,
+        )
+
+        # 3. execution groups over the tail, singles on the M0 path
+        if fused_log < logn:
+            wr = wi = None
+            if singles:
+                if twiddle is None:
+                    twiddle = twiddle_tables(n, x.device)
+                validate_twiddle(twiddle, n, x.device)
+                wr, wi = twiddle
+            cur_r, cur_i = _fft_group_tail(
+                cur_r, cur_i, "dit", groups, singles, n, logn, block, wr, wi,
+                cells, x.device,
+            )
+    return _from_so(cur_r, cur_i)
+
+
+def fft_dif_grouped(
+    x: torch.Tensor,
+    block: int = 1024,
+    tile: int = 64,
+    rows: int = 8,
+    glog: int = 2,
+    maxp: int = 4096,
+    cells: int = 1,
+    twiddle=None,
+) -> torch.Tensor:
+    """M3: DIF FFT with tail execution groups (flow ``grouped-boundary``).
+
+    The DIF mirror of :func:`fft_dit_grouped`: tail execution groups run
+    first (largest half-span down), then the register-resident local matrix
+    group, then the output bit-reversal as its own pass. Launches:
+    ``2 + G + S``, same accounting as the DIT entry point.
+    """
+    validate_input(x, "x", block=block)
+    if glog < 1:
+        raise ValueError(f"glog must be >= 1, got {glog}")
+    if cells < 1:
+        raise ValueError(f"cells must be >= 1, got {cells}")
+    n = x.numel()
+    logn = log2_exact(n)
+    params = _matrix_group_params(n, tile, rows)
+    if params is None:
+        return fft_dif(x, block=block, twiddle=twiddle)
+    eff_tile, rows_eff, grid = params
+    fused_log = log2_exact(eff_tile)
+    groups, singles = tail_groups(eff_tile, logn, glog, maxp)
+
+    with xpu_context(x.device.index or 0):
+        cur_r, cur_i = _as_so(x)
+        # 1. execution groups over the tail (DIF: descending), singles on M0
+        if fused_log < logn:
+            wr = wi = None
+            if singles:
+                if twiddle is None:
+                    twiddle = twiddle_tables(n, x.device)
+                validate_twiddle(twiddle, n, x.device)
+                wr, wi = twiddle
+            cur_r, cur_i = _fft_group_tail(
+                cur_r, cur_i, "dif", groups, singles, n, logn, block, wr, wi,
+                cells, x.device,
+            )
+        # 2. register-resident local group
+        mr, mi = _local_matrices(eff_tile, "dif", x.device)
+        loc_r = torch.empty_like(cur_r)
+        loc_i = torch.empty_like(cur_i)
+        _launch(
+            local_matrix_kernel,
+            eff_tile,
+            grid,
+            cur_r,
+            cur_i,
+            loc_r,
+            loc_i,
+            mr,
+            mi,
+            ROWS=rows_eff,
+        )
+        # 3. output bit-reversal as its own pass
+        out_r = torch.empty_like(loc_r)
+        out_i = torch.empty_like(loc_i)
+        br_grid = triton.cdiv(n, block)
+        _launch(bitrev_kernel, block, br_grid, loc_r, loc_i, out_r, out_i, n, logn)
+        cur_r, cur_i = out_r, out_i
     return _from_so(cur_r, cur_i)
 
 

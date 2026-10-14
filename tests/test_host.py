@@ -153,3 +153,180 @@ def test_enumeration_returns_legal_and_rejected():
     assert sel is not None
     assert sel.candidate.fused_tile == 1
     assert sel.candidate.flow_id == "baseline-global-stage"
+
+
+# --- M2 register-resident local matrices (host-only, numpy) ---
+
+
+def test_matrices_module_does_not_import_torch():
+    import src.xpu.matrices as matrices
+
+    src = Path(matrices.__file__).read_text()
+    assert "import torch" not in src
+    assert "import triton" not in src
+
+
+def test_local_matrix_verifies_against_scalar_loops():
+    from src.xpu.matrices import verify_local_matrix
+
+    for tile in (8, 16, 64, 128):
+        for direction in ("dit", "dif"):
+            err = verify_local_matrix(tile, direction)
+            assert err < 1e-12, f"{direction} tile={tile}: err={err:.3e}"
+
+
+def test_local_matrix_decomposition_matches_fft():
+    """The local group + global tail must reproduce an N-dependent FFT.
+
+    Pins the N-independence of the local twiddles against references whose
+    twiddles do depend on N (np.fft.fft for DIT, full scalar DIF loops).
+    """
+    from src.xpu.matrices import verify_decomposition
+
+    for n, tile in ((64, 64), (256, 64), (4096, 64), (4096, 8), (1024, 128)):
+        for direction in ("dit", "dif"):
+            rel = verify_decomposition(n, tile, direction)
+            assert rel < 1e-12, f"{direction} n={n} tile={tile}: rel={rel:.3e}"
+
+
+def test_local_matrix_shape_dtype_and_unitarity():
+    import numpy as np
+
+    from src.xpu.matrices import local_matrix, local_matrix_planar
+
+    for tile in (8, 64):
+        for direction in ("dit", "dif"):
+            m = local_matrix(tile, direction)
+            assert m.shape == (tile, tile)
+            assert m.dtype == np.complex128
+            # each butterfly stage is orthogonal up to scaling: after
+            # log2(tile) stages the columns have norm sqrt(tile) and are
+            # mutually orthogonal (M^H M = tile * I)
+            gram = m.conj().T @ m
+            assert np.allclose(gram, tile * np.eye(tile), atol=1e-10)
+            mr, mi = local_matrix_planar(tile, direction)
+            assert mr.shape == (tile, tile)
+            assert mr.dtype == np.float32
+            assert mr.flags["C_CONTIGUOUS"] and mi.flags["C_CONTIGUOUS"]
+
+
+def test_tail_group_table_matches_scalar_stages():
+    """M3 group coefficient table == independent per-stage scalar loops.
+
+    Pins the N-independence of the group map (coefficients depend only on
+    (n0, g, direction)) for both directions across sizes and group depths.
+    """
+    from src.xpu.matrices import verify_tail_group
+
+    for n0 in (1, 2, 4, 8, 16, 64):
+        for glog in (1, 2, 3):
+            for direction in ("dit", "dif"):
+                err = verify_tail_group(n0, glog, direction)
+                assert err < 1e-10, (
+                    f"tail group {direction} n0={n0} glog={glog}: err={err:.3e}"
+                )
+
+
+def test_grouped_decomposition_matches_fft():
+    """Grouped tail + M2 local group == np.fft over the whole array.
+
+    End-to-end host model of the M3 flow for both directions: verifies that
+    the execution-group partition is a valid refactorisation of the stage
+    sequence when the tail is exactly one group (n == tile << glog).
+    """
+    from src.xpu.matrices import verify_grouped_decomposition
+
+    for tile, glog in ((8, 1), (8, 2), (8, 3), (16, 2), (64, 2), (64, 3)):
+        n = tile << glog
+        for direction in ("dit", "dif"):
+            rel = verify_grouped_decomposition(n, tile, glog, direction)
+            assert rel < 1e-12, (
+                f"grouped {direction} n={n} tile={tile} glog={glog}: rel={rel:.3e}"
+            )
+
+
+def test_tail_groups_partition_is_complete():
+    """The partition covers every tail stage exactly once, groups first.
+
+    Groups must be a prefix of ascending half-spans (n0 doubling), singles a
+    suffix, each group period n0<<g within maxp, every stage >= tile covered.
+    """
+    from src.xpu.matrices import tail_groups
+
+    for tile, logn, glog, maxp in (
+        (8, 16, 2, 4096),
+        (8, 16, 1, 4096),
+        (64, 16, 3, 8192),
+        (64, 16, 3, 128),
+        (16, 20, 2, 1024),
+        (64, 16, 2, 8192),
+        (8, 4, 2, 4096),
+        (64, 16, 4, 4096),
+    ):
+        groups, singles = tail_groups(tile, logn, glog, maxp)
+        # every stage >= tile up to logn covered exactly once, ascending
+        covered = sorted(
+            [n0 << s for n0, g in groups for s in range(g)] + list(singles)
+        )
+        expect = [1 << s for s in range(tile.bit_length() - 1, logn)]
+        assert covered == expect, f"tile={tile} logn={logn}: {covered} != {expect}"
+        # groups form a prefix: periods ascending, no group after a single
+        periods = [n0 << g for n0, g in groups]
+        assert periods == sorted(periods), f"groups not ascending: {groups}"
+        if singles and groups:
+            last_stage = groups[-1][0] << (groups[-1][1] - 1)
+            assert all(s > last_stage for s in singles), (
+                f"single at/below last group stage: groups={groups} singles={singles}"
+            )
+        for n0, g in groups:
+            assert n0 << g <= maxp, f"period over maxp: n0={n0} g={g} maxp={maxp}"
+            assert n0 in expect, f"group n0={n0} not a tail stage: tile={tile}"
+        # singles are single stages, i.e. the leftover run above the groups
+        for s in singles:
+            assert s >= tile and s < (1 << logn)
+
+
+def test_dot_free_kernels_do_not_trigger_sdnn_flag():
+    """Vendor `ASTSource.parse_options` substring-scans `fn.src` for "tl.dot".
+
+    The scan sets ``is_sdnn=True`` (SDNN matrix-unit lowering path) purely on
+    the presence of the *text* ``tl.dot`` anywhere in the function source,
+    docstrings included; that path breaks dot-free kernels with
+    'linalg.generic' op expects region #0 to have 0 or 1 blocks. Keep the
+    substring only in kernels that actually call the builtin.
+    """
+    import ast
+
+    path = Path(__file__).resolve().parents[1] / "src" / "xpu" / "kernels.py"
+    tree = ast.parse(path.read_text())
+    for node in tree.body:
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        seg = ast.get_source_segment(path.read_text(), node) or ""
+        if "tl.dot" in seg or "tt.dot" in seg:
+            assert node.name == "local_matrix_kernel", (
+                f"{node.name} source contains a dot substring but does not call it"
+            )
+
+
+def test_tail_group_kernel_unrolls_k_loop():
+    """The k loop must be ``tl.static_range``, never ``range``.
+
+    The vendor TritonXPUUnrollControl pass (UnrollControl.cpp:79) exits the
+    process with status 1 -- a native exit Python cannot catch, so a live
+    canary would kill the whole test session -- whenever a ``range()`` loop
+    coexists with BLOCK >= 256 in a kernel like this one. Compile-time
+    unrolling removes the scf.for the pass chokes on. Guard the source text.
+    """
+    import ast
+
+    path = Path(__file__).resolve().parents[1] / "src" / "xpu" / "kernels.py"
+    text = path.read_text()
+    tree = ast.parse(text)
+    node = next(
+        n for n in tree.body
+        if isinstance(n, ast.FunctionDef) and n.name == "tail_group_kernel"
+    )
+    seg = ast.get_source_segment(text, node)
+    assert "tl.static_range(1, NDEP)" in seg, "k loop lost its static_range"
+    assert "for k in range" not in seg, "k loop regressed to range()"

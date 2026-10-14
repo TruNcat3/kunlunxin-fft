@@ -244,3 +244,119 @@ def dit_fused_kernel(
         # compiler + intra-program ordering between stages (blocks are disjoint,
         # so this does not synchronize across programs)
         tl.debug_barrier()
+
+
+@triton.jit
+def local_matrix_kernel(
+    Xr,
+    Xi,
+    Yr,
+    Yi,
+    Mr,
+    Mi,
+    BLOCK: tl.constexpr,
+    ROWS: tl.constexpr,
+):
+    """M2: register-resident local micro-FFT via a dense fp32 (BLOCK x BLOCK) matrix.
+
+    One program owns ``ROWS`` consecutive tile-blocks. The tile-local stage
+    group (first ``log2(BLOCK)`` DIT stages, or last ``log2(BLOCK)`` DIF
+    stages) is a linear map ``out = M @ in`` whose coefficients depend only on
+    ``BLOCK`` -- the butterfly twiddle ``exp(-2j*pi*j/(2n))`` cancels ``N``
+    exactly -- so the host precomputes it once and the group crosses device
+    memory exactly once (one load, one store) with all stage intermediates
+    held in registers.
+
+    ``tl.trans``/``tl.split``/exact ``tl.reshape`` crash the XPU backend, so
+    the matrix ships pre-transposed (planar ``Mr``/``Mi`` with
+    ``out_row = in_row @ (Mr + 1j*Mi)``) and the complex product is four
+    ``tl.dot(..., input_precision="ieee")`` calls. The default dot precision
+    is bf16-like on this stack and would corrupt the FFT; ``"ieee"`` is fp32
+    end-to-end.
+
+    Loads/stores are strictly natural-order: combining a bit-reversal gather
+    with ``tl.dot`` in one kernel trips an MLIR assertion in the XPU backend
+    (``getOpResultImpl`` result-number-out-of-range), so callers run the
+    proven ``bitrev_kernel`` as its own pass around this kernel.
+    """
+    pid = tl.program_id(0)
+    row = tl.arange(0, ROWS)[:, None]
+    col = tl.arange(0, BLOCK)[None, :]
+    off = (pid * ROWS + row) * BLOCK + col
+    ar = tl.load(Xr + off)
+    ai = tl.load(Xi + off)
+    moff = tl.arange(0, BLOCK)[:, None] * BLOCK + tl.arange(0, BLOCK)[None, :]
+    mr = tl.load(Mr + moff)
+    mi = tl.load(Mi + moff)
+    orr = tl.dot(ar, mr, input_precision="ieee") - tl.dot(ai, mi, input_precision="ieee")
+    oi = tl.dot(ar, mi, input_precision="ieee") + tl.dot(ai, mr, input_precision="ieee")
+    tl.store(Yr + off, orr)
+    tl.store(Yi + off, oi)
+
+
+@triton.jit
+def tail_group_kernel(
+    Xr,
+    Xi,
+    Yr,
+    Yi,
+    Cr,
+    Ci,
+    N,
+    N0: tl.constexpr,
+    NDEP: tl.constexpr,
+    BLOCK: tl.constexpr,
+    CELLS: tl.constexpr,
+):
+    """M3: one execution group of ``log2(NDEP)`` consecutive tail stages.
+
+    A group with half-spans ``n0, 2*n0, ..., 2^(g-1)*n0`` is a single
+    block-closed linear map over the ``P = N0 << log2(NDEP)`` period:
+    ``out[i] = sum_k T[k, i mod P] * in[i ^ (k*N0)]`` (DIT applies the stages
+    ascending, DIF the same set descending -- already baked into ``T``). Only
+    group boundaries cross global memory, so the tail's ``G`` and GM
+    transactions collapse to one pass per group instead of one per stage.
+
+    The host precomputes ``T`` once per ``(N0, g, direction)`` -- like the M2
+    local matrix, the group twiddle ``exp(-2j*pi*j/(2n))`` does not depend on
+    ``N`` -- and ships it planar ``[k, i_local]`` so each unrolled iteration
+    reads one contiguous coalesced row. ``BLOCK`` may span several periods
+    (``BLOCK % P == 0``, enforced by the caller); rows are indexed by
+    ``i mod P`` and the gather is pointer arithmetic only (``k*N0 < P`` keeps
+    ``i ^ (k*N0)`` inside the program's window). Combining a gather with
+    the dense matrix-multiply builtin trips an XPU MLIR assertion, so this
+    kernel stays on the pointer form and the bit-reversal stays its own
+    pass, exactly like :func:`local_matrix_kernel`.
+
+    The ``k`` loop must be ``tl.static_range`` (compile-time unrolled): the
+    vendor ``TritonXPUUnrollControl`` pass exits the process with status 1
+    (null ``op2`` in ``isAncestorOf``, UnrollControl.cpp:79) when a
+    ``range()`` loop coexists with ``BLOCK >= 256``, so a plain loop would
+    hard-crash the interpreter at compile time on wide blocks.
+
+    Program ``pid`` owns ``CELLS`` consecutive ``BLOCK`` windows; ``i < N``
+    masks the tail of the array.
+    """
+    pid = tl.program_id(0)
+    period = N0 * NDEP
+    for c in range(CELLS):
+        loc = tl.arange(0, BLOCK)
+        i = (pid * CELLS + c) * BLOCK + loc
+        mask = i < N
+        lop = i & (period - 1)
+        cr = tl.load(Cr + lop)
+        ci = tl.load(Ci + lop)
+        xr = tl.load(Xr + i, mask=mask)
+        xi = tl.load(Xi + i, mask=mask)
+        acc_r = xr * cr - xi * ci
+        acc_i = xr * ci + xi * cr
+        for k in tl.static_range(1, NDEP):
+            cr = tl.load(Cr + k * period + lop)
+            ci = tl.load(Ci + k * period + lop)
+            src = i ^ (k * N0)
+            xr = tl.load(Xr + src, mask=mask)
+            xi = tl.load(Xi + src, mask=mask)
+            acc_r = acc_r + (xr * cr - xi * ci)
+            acc_i = acc_i + (xr * ci + xi * cr)
+        tl.store(Yr + i, acc_r, mask=mask)
+        tl.store(Yi + i, acc_i, mask=mask)

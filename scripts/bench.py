@@ -24,6 +24,7 @@ Usage:
 import argparse
 import csv
 import json
+import math
 import os
 import sys
 import time
@@ -41,11 +42,16 @@ from src.xpu import (  # noqa: E402
     build_manifest,
 )
 from src.xpu.candidates import enumerate_candidates, selected_candidate  # noqa: E402
+from src.xpu.matrices import tail_groups  # noqa: E402
 from src.xpu.runner import (  # noqa: E402
     device_name,
     fft_dif,
+    fft_dif_grouped,
+    fft_dif_matrix,
     fft_dit,
     fft_dit_fused,
+    fft_dit_grouped,
+    fft_dit_matrix,
     time_call_detailed,
     twiddle_tables,
 )
@@ -83,6 +89,18 @@ def main() -> None:
     ap.add_argument("--sizes", default=None, help="comma-separated lengths")
     ap.add_argument("--block", type=int, default=1024)
     ap.add_argument("--tiles", default="64", help="comma-separated M1 fused tile sizes")
+    ap.add_argument("--matrix-tiles", default="64",
+                    help="comma-separated M2 register-matrix tile sizes")
+    ap.add_argument("--matrix-rows", type=int, default=8,
+                    help="tile-blocks per program for the M2 dot kernel")
+    ap.add_argument("--grouped-tiles", default="8",
+                    help="comma-separated M3 execution-group tile sizes")
+    ap.add_argument("--glog", type=int, default=2,
+                    help="M3 tail stages per execution group (1 disables grouping)")
+    ap.add_argument("--maxp", type=int, default=4096,
+                    help="M3 cap on the group period (register-block bound)")
+    ap.add_argument("--cells", type=int, default=1,
+                    help="M3 BLOCK windows per group-kernel program")
     ap.add_argument("--trials", type=int, default=50)
     ap.add_argument("--warmup", type=int, default=10)
     ap.add_argument("--json", default=None)
@@ -96,6 +114,8 @@ def main() -> None:
     space = DesignSpace.load()
     sizes_list = [int(s) for s in args.sizes.split(",")] if args.sizes else list(sizes.bench_sizes)
     tiles = [int(t) for t in args.tiles.split(",")] if args.tiles else list(space.fused_tile_candidates)
+    matrix_tiles = [int(t) for t in args.matrix_tiles.split(",")]
+    grouped_tiles = [int(t) for t in args.grouped_tiles.split(",")]
 
     # --- Phase 1: candidate legality before any launch ---
     legal, rejected = enumerate_candidates(space, profile, block=args.block)
@@ -117,7 +137,11 @@ def main() -> None:
         warmup=args.warmup,
         trials=args.trials,
         command=" ".join(sys.argv),
-        extra={"tiles": tiles, "sizes": sizes_list, "device_name": device_name()},
+        extra={"tiles": tiles, "matrix_tiles": matrix_tiles,
+               "matrix_rows": args.matrix_rows,
+               "grouped_tiles": grouped_tiles, "glog": args.glog,
+               "maxp": args.maxp, "cells": args.cells,
+               "sizes": sizes_list, "device_name": device_name()},
     )
     man = manifest.to_dict()
     print(f"manifest: commit={man['commit'][:8]} dirty={man['dirty']} "
@@ -128,6 +152,8 @@ def main() -> None:
     print(f"\n== timings (median api_ms; interleaved {args.trials} trials) ==")
     print(f"{'N':>8} {'M0_dit':>9} {'M0_dif':>9} "
           + "".join(f"{'M1_t'+str(t):>9}" for t in tiles)
+          + "".join(f"{'M2d_t'+str(t):>9}" for t in matrix_tiles)
+          + "".join(f"{'M3g_dit_t'+str(t):>9}" for t in grouped_tiles)
           + f" {'vendor':>9} {'dit_err':>9} {'dif_err':>9}")
 
     for n in sizes_list:
@@ -141,6 +167,20 @@ def main() -> None:
         fused_errs = {}
         for t in tiles:
             fused_errs[t] = err_vs(fft_dit_fused(x, block=args.block, tile=t, twiddle=tw), ref)
+        matrix_errs = {}
+        for t in matrix_tiles:
+            matrix_errs[f"dit_t{t}"] = err_vs(
+                fft_dit_matrix(x, block=args.block, tile=t, rows=args.matrix_rows), ref)
+            matrix_errs[f"dif_t{t}"] = err_vs(
+                fft_dif_matrix(x, block=args.block, tile=t, rows=args.matrix_rows), ref)
+        grouped_errs = {}
+        for t in grouped_tiles:
+            grouped_errs[f"dit_t{t}"] = err_vs(
+                fft_dit_grouped(x, block=args.block, tile=t, glog=args.glog,
+                                maxp=args.maxp, cells=args.cells), ref)
+            grouped_errs[f"dif_t{t}"] = err_vs(
+                fft_dif_grouped(x, block=args.block, tile=t, glog=args.glog,
+                                maxp=args.maxp, cells=args.cells), ref)
 
         # vendor boundary
         vend, vend_err = vendor_fft(x)
@@ -157,6 +197,39 @@ def main() -> None:
         }
         for t in tiles:
             cands[f"m1_t{t}"] = lambda t=t: fft_dit_fused(x, block=args.block, tile=t, twiddle=tw)
+        for t in matrix_tiles:
+            cands[f"m2_dit_t{t}"] = lambda t=t: fft_dit_matrix(
+                x, block=args.block, tile=t, rows=args.matrix_rows, twiddle=tw)
+            cands[f"m2_dif_t{t}"] = lambda t=t: fft_dif_matrix(
+                x, block=args.block, tile=t, rows=args.matrix_rows, twiddle=tw)
+        for t in grouped_tiles:
+            cands[f"m3_g_dit_t{t}"] = lambda t=t: fft_dit_grouped(
+                x, block=args.block, tile=t, glog=args.glog, maxp=args.maxp,
+                cells=args.cells, twiddle=tw)
+            cands[f"m3_g_dif_t{t}"] = lambda t=t: fft_dif_grouped(
+                x, block=args.block, tile=t, glog=args.glog, maxp=args.maxp,
+                cells=args.cells, twiddle=tw)
+
+        # launch accounting (analytic, from the flow definitions)
+        logn = int(math.log2(n))
+        launches = {"m0_dit": logn, "m0_dif": logn}
+        for t in tiles:
+            fl = int(math.log2(min(t, n)))
+            launches[f"m1_t{t}"] = 2 + (logn - fl)
+        for t in matrix_tiles:
+            fl = int(math.log2(min(t, n)))
+            launches[f"m2_dit_t{t}"] = 2 + (logn - fl)
+            launches[f"m2_dif_t{t}"] = 2 + (logn - fl)
+        for t in grouped_tiles:
+            # M3: bit-reversal pass + local matrix + one launch per tail unit
+            # (execution group or leftover single stage); matches tail_groups.
+            if t < 2:
+                launches[f"m3_g_dit_t{t}"] = logn
+                launches[f"m3_g_dif_t{t}"] = logn
+            else:
+                gs, ss = tail_groups(min(t, n), logn, args.glog, args.maxp)
+                launches[f"m3_g_dit_t{t}"] = 2 + len(gs) + len(ss)
+                launches[f"m3_g_dif_t{t}"] = 2 + len(gs) + len(ss)
 
         # randomized interleaved trials: round-robin over shuffled candidate order
         order = list(cands)
@@ -195,9 +268,14 @@ def main() -> None:
         }
         for t in tiles:
             row[f"m1_t{t}_err"] = fused_errs[t]
+        for k, e in matrix_errs.items():
+            row[f"m2_{k}_err"] = e
+        for k, e in grouped_errs.items():
+            row[f"m3_g_{k}_err"] = e
         for k in cands:
             row[f"{k}_ms"] = med(timings[k])
             row[f"{k}_kernel_ms"] = med(ktime[k])
+            row[f"{k}_launches"] = launches.get(k)
             if vend_ms and row[f"{k}_ms"]:
                 row[f"{k}_speedup_vs_vendor"] = vend_ms / row[f"{k}_ms"]
             row[f"{k}_speedup_vs_m0_dit"] = (row["m0_dit_ms"] / row[f"{k}_ms"]
@@ -209,11 +287,21 @@ def main() -> None:
 
         print(f"{n:>8} {row['m0_dit_ms']:9.4f} {row['m0_dif_ms']:9.4f} "
               + "".join(f"{row[f'm1_t{t}_ms']:9.4f}" for t in tiles)
+              + "".join(f"{row[f'm2_dit_t{t}_ms']:9.4f}" for t in matrix_tiles)
+              + "".join(f"{row[f'm3_g_dit_t{t}_ms']:9.4f}" for t in grouped_tiles)
               + f" {fmt(vend_ms)} {dit_err:9.1e} {dif_err:9.1e}")
         k0 = row["m0_dit_kernel_ms"]
         k1 = row[f"m1_t{tiles[0]}_kernel_ms"] if tiles else None
+        k2 = row[f"m2_dit_t{matrix_tiles[0]}_kernel_ms"] if matrix_tiles else None
+        k3 = row[f"m3_g_dit_t{grouped_tiles[0]}_kernel_ms"] if grouped_tiles else None
         print(f"{'':>8} kernel_ms: M0_dit={fmt(k0, 7, '.4f')} "
-              f"M1_t{tiles[0] if tiles else '-'}={fmt(k1, 7, '.4f')}"
+              f"M1_t{tiles[0] if tiles else '-'}={fmt(k1, 7, '.4f')} "
+              f"M2d_t{matrix_tiles[0] if matrix_tiles else '-'}={fmt(k2, 7, '.4f')} "
+              f"M3g_t{grouped_tiles[0] if grouped_tiles else '-'}={fmt(k3, 7, '.4f')}"
+              f"  launches: M0={row['m0_dit_launches']} "
+              f"M1={row.get(f'm1_t{tiles[0]}_launches') if tiles else '-'} "
+              f"M2={row.get(f'm2_dit_t{matrix_tiles[0]}_launches') if matrix_tiles else '-'} "
+              f"M3={row.get(f'm3_g_dit_t{grouped_tiles[0]}_launches') if grouped_tiles else '-'}"
               f"  (kernel time = device events, 0 unsupported)")
         if vend_err:
             print(f"{'':>8} vendor unsupported: {vend_err[:110]}")
@@ -229,6 +317,39 @@ def main() -> None:
         gm = lambda xs: float(np.exp(np.mean(np.log(xs)))) if xs else float("nan")
         print(f"  tile={t}: N<=1024 gmean={gm(small):.2f}x  "
               f"N>=4096 gmean={gm(big):.2f}x  all gmean={gm(ratios):.2f}x")
+
+    # M2 vs M0/M1 summary
+    for t in matrix_tiles:
+        for d in ("dit", "dif"):
+            key = f"m2_{d}_t{t}"
+            ratios = [r["m0_dit_ms"] / r[f"{key}_ms"] for r in rows if r.get(f"{key}_ms")]
+            small = [r["m0_dit_ms"] / r[f"{key}_ms"] for r in rows
+                     if r["n"] <= 1024 and r.get(f"{key}_ms")]
+            big = [r["m0_dit_ms"] / r[f"{key}_ms"] for r in rows
+                   if r["n"] >= 4096 and r.get(f"{key}_ms")]
+            vs_m1 = [r[f"m1_t{tiles[0]}_ms"] / r[f"{key}_ms"] for r in rows
+                     if tiles and r.get(f"{key}_ms") and r.get(f"m1_t{tiles[0]}_ms")]
+            gm = lambda xs: float(np.exp(np.mean(np.log(xs)))) if xs else float("nan")
+            print(f"  {key}: vs M0 N<=1024 gmean={gm(small):.2f}x  "
+                  f"N>=4096 gmean={gm(big):.2f}x  all gmean={gm(ratios):.2f}x"
+                  + (f"  vs M1 all gmean={gm(vs_m1):.2f}x" if vs_m1 else ""))
+
+    # M3 execution-group vs M0/M2 summary
+    for t in grouped_tiles:
+        for d in ("dit", "dif"):
+            key = f"m3_g_{d}_t{t}"
+            ratios = [r["m0_dit_ms"] / r[f"{key}_ms"] for r in rows if r.get(f"{key}_ms")]
+            small = [r["m0_dit_ms"] / r[f"{key}_ms"] for r in rows
+                     if r["n"] <= 1024 and r.get(f"{key}_ms")]
+            big = [r["m0_dit_ms"] / r[f"{key}_ms"] for r in rows
+                   if r["n"] >= 4096 and r.get(f"{key}_ms")]
+            m2key = f"m2_{d}_t{matrix_tiles[0]}" if matrix_tiles else None
+            vs_m2 = [r[f"{m2key}_ms"] / r[f"{key}_ms"] for r in rows
+                     if m2key and r.get(f"{key}_ms") and r.get(f"{m2key}_ms")]
+            gm = lambda xs: float(np.exp(np.mean(np.log(xs)))) if xs else float("nan")
+            print(f"  {key}: vs M0 N<=1024 gmean={gm(small):.2f}x  "
+                  f"N>=4096 gmean={gm(big):.2f}x  all gmean={gm(ratios):.2f}x"
+                  + (f"  vs M2 all gmean={gm(vs_m2):.2f}x" if vs_m2 else ""))
 
     payload = {"manifest": man, "candidates": {
         "legal": [v.to_dict() for v in legal],
@@ -249,26 +370,43 @@ def main() -> None:
         print(f"wrote {args.csv}")
 
     if args.markdown:
-        _write_markdown(args.markdown, rows, tiles, man)
+        _write_markdown(args.markdown, rows, tiles, matrix_tiles, grouped_tiles,
+                        manifest)
         print(f"wrote {args.markdown}")
 
 
-def _write_markdown(path, rows, tiles, man):
+def _write_markdown(path, rows, tiles, matrix_tiles, grouped_tiles, man):
     """Render the report table from raw rows so it never needs hand-editing."""
     t0 = tiles[0] if tiles else 1
+    m0t = matrix_tiles[0] if matrix_tiles else None
     gm = lambda xs: float(np.exp(np.mean(np.log(xs)))) if xs else float("nan")
     small = [r["m0_dit_ms"] / r[f"m1_t{t0}_ms"] for r in rows
              if r["n"] <= 1024 and r.get(f"m1_t{t0}_ms")]
     big = [r["m0_dit_ms"] / r[f"m1_t{t0}_ms"] for r in rows
            if r["n"] >= 4096 and r.get(f"m1_t{t0}_ms")]
     allr = [r["m0_dit_ms"] / r[f"m1_t{t0}_ms"] for r in rows if r.get(f"m1_t{t0}_ms")]
+    m2k = f"m2_dit_t{m0t}" if m0t else None
+    m2_small = [r["m0_dit_ms"] / r[f"{m2k}_ms"] for r in rows
+                if m2k and r["n"] <= 1024 and r.get(f"{m2k}_ms")]
+    m2_big = [r["m0_dit_ms"] / r[f"{m2k}_ms"] for r in rows
+              if m2k and r["n"] >= 4096 and r.get(f"{m2k}_ms")]
+    m2_all = [r["m0_dit_ms"] / r[f"{m2k}_ms"] for r in rows
+              if m2k and r.get(f"{m2k}_ms")]
+    g3t = grouped_tiles[0] if grouped_tiles else None
+    g3k = f"m3_g_dit_t{g3t}" if g3t else None
+    g3_small = [r["m0_dit_ms"] / r[f"{g3k}_ms"] for r in rows
+                if g3k and r["n"] <= 1024 and r.get(f"{g3k}_ms")]
+    g3_big = [r["m0_dit_ms"] / r[f"{g3k}_ms"] for r in rows
+              if g3k and r["n"] >= 4096 and r.get(f"{g3k}_ms")]
+    g3_all = [r["m0_dit_ms"] / r[f"{g3k}_ms"] for r in rows
+              if g3k and r.get(f"{g3k}_ms")]
     lines = [
         f"<!-- generated by scripts/bench.py --markdown; commit {man.commit[:8]}, "
         f"profile {man.profile_hash}, trials={man.trials}, warmup={man.warmup} -->",
         "",
-        "| N | M0 dit | M0 dif | M1 fused | vendor | M0 vs vendor | "
-        "M1 vs M0 | dit_err | dif_err |",
-        "|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| N | M0 dit | M0 dif | M1 fused | M2 dit | M3 dit | vendor | M0 vs vendor | "
+        "M1 vs M0 | M2 vs M0 | M3 vs M0 | dit_err | dif_err |",
+        "|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for r in rows:
         vend = format(r["vendor_ms"], ".4f") if r["vendor_ms"] else "n/a"
@@ -279,15 +417,38 @@ def _write_markdown(path, rows, tiles, man):
             sp_m1 = f"**{ratio:.2f}x**" if ratio > 1 else f"{ratio:.2f}x"
         else:
             sp_m1 = "n/a"
+        if m2k and r.get(f"{m2k}_ms"):
+            ratio2 = r["m0_dit_ms"] / r[f"{m2k}_ms"]
+            sp_m2 = f"**{ratio2:.2f}x**" if ratio2 > 1 else f"{ratio2:.2f}x"
+            m2_ms = format(r[f"{m2k}_ms"], ".4f")
+        else:
+            sp_m2 = "n/a"
+            m2_ms = "n/a"
+        if g3k and r.get(f"{g3k}_ms"):
+            ratio3 = r["m0_dit_ms"] / r[f"{g3k}_ms"]
+            sp_m3 = f"**{ratio3:.2f}x**" if ratio3 > 1 else f"{ratio3:.2f}x"
+            m3_ms = format(r[f"{g3k}_ms"], ".4f")
+        else:
+            sp_m3 = "n/a"
+            m3_ms = "n/a"
         lines.append(
             f"| {r['n']} | {r['m0_dit_ms']:.4f} | {r['m0_dif_ms']:.4f} "
-            f"| {r.get(f'm1_t{t0}_ms', 0):.4f} | {vend} | {sp_v} | {sp_m1} "
+            f"| {r.get(f'm1_t{t0}_ms', 0):.4f} | {m2_ms} | {m3_ms} | {vend} | {sp_v} "
+            f"| {sp_m1} | {sp_m2} | {sp_m3} "
             f"| {r['dit_err']:.1e} | {r['dif_err']:.1e} |")
     lines += [
         "",
         f"M1 tile={t0} geometric-mean speedup vs M0: "
         f"`N<=1024` **{gm(small):.2f}x**, `N>=4096` **{gm(big):.2f}x**, "
         f"all sizes {gm(allr):.2f}x.",
+        "",
+        f"M2 dit tile={m0t} geometric-mean speedup vs M0: "
+        f"`N<=1024` **{gm(m2_small):.2f}x**, `N>=4096` **{gm(m2_big):.2f}x**, "
+        f"all sizes {gm(m2_all):.2f}x.",
+        "",
+        f"M3 dit grouped tile={g3t} geometric-mean speedup vs M0: "
+        f"`N<=1024` **{gm(g3_small):.2f}x**, `N>=4096` **{gm(g3_big):.2f}x**, "
+        f"all sizes {gm(g3_all):.2f}x.",
         "",
     ]
     with open(path, "w") as f:

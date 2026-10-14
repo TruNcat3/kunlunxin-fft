@@ -29,7 +29,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 pytestmark = pytest.mark.hardware
 
-from src.xpu import device_ready, fft_dif, fft_dit, fft_dit_fused  # noqa: E402
+from src.xpu import (  # noqa: E402
+    device_ready,
+    fft_dif,
+    fft_dit,
+    fft_dit_fused,
+    fft_dif_matrix,
+    fft_dit_matrix,
+    fft_dif_grouped,
+    fft_dit_grouped,
+)
 
 if not device_ready():  # pragma: no cover - guarded again by the fixture
     pytest.skip("XPU device not ready", allow_module_level=True)
@@ -96,6 +105,83 @@ def test_fused_sizes(n):
     x, ref = make_input(n, 0)
     rel = max_err(fft_dit_fused(x, tile=64), ref) / max_mag(ref)
     assert rel < 1e-4, f"fused failed at N={n}: rel={rel:.3e}"
+
+
+@pytest.mark.parametrize("n", [8, 64, 1024, 4096, 65536, 1048576])
+def test_matrix_dit_sizes(n):
+    """M2 register-resident DIT (matrix local group) vs numpy at every size."""
+    x, ref = make_input(n, 0)
+    rel = max_err(fft_dit_matrix(x, tile=64), ref) / max_mag(ref)
+    assert rel < 1e-4, f"matrix DIT failed at N={n}: rel={rel:.3e}"
+
+
+@pytest.mark.parametrize("n", [8, 64, 1024, 4096, 65536])
+def test_matrix_dif_sizes(n):
+    """M2 register-resident DIF (matrix local group) vs numpy at every size."""
+    x, ref = make_input(n, 1)
+    rel = max_err(fft_dif_matrix(x, tile=64), ref) / max_mag(ref)
+    assert rel < 1e-4, f"matrix DIF failed at N={n}: rel={rel:.3e}"
+
+
+@pytest.mark.parametrize("tile", [8, 16, 64])
+def test_matrix_tile_axis_is_neutral(tile):
+    """tile changes the group size, never the result (axes are semantics neutral)."""
+    n = 4096
+    x, ref = make_input(n, 2)
+    rel = max_err(fft_dit_matrix(x, tile=tile), ref) / max_mag(ref)
+    assert rel < 1e-4, f"tile={tile} failed: rel={rel:.3e}"
+
+
+@pytest.mark.parametrize("rows", [1, 8])
+def test_matrix_rows_is_neutral(rows):
+    """rows only batches tile-blocks per program; results must be identical."""
+    n = 4096
+    x, ref = make_input(n, 3)
+    rel = max_err(fft_dif_matrix(x, rows=rows), ref) / max_mag(ref)
+    assert rel < 1e-4, f"rows={rows} failed: rel={rel:.3e}"
+
+
+@pytest.mark.parametrize("n", [8, 64, 1024, 4096, 65536, 1048576])
+def test_grouped_dit_sizes(n):
+    """M3 execution-group DIT (grouped tail) vs numpy at every size."""
+    x, ref = make_input(n, 0)
+    rel = max_err(fft_dit_grouped(x, tile=64), ref) / max_mag(ref)
+    assert rel < 1e-4, f"grouped DIT failed at N={n}: rel={rel:.3e}"
+
+
+@pytest.mark.parametrize("n", [8, 64, 1024, 4096, 65536])
+def test_grouped_dif_sizes(n):
+    """M3 execution-group DIF (grouped tail) vs numpy at every size."""
+    x, ref = make_input(n, 1)
+    rel = max_err(fft_dif_grouped(x, tile=64), ref) / max_mag(ref)
+    assert rel < 1e-4, f"grouped DIF failed at N={n}: rel={rel:.3e}"
+
+
+@pytest.mark.parametrize("glog", [1, 2, 3])
+def test_grouped_glog_axis_is_neutral(glog):
+    """glog changes group depth, never the result (glog=1 disables grouping)."""
+    n = 4096
+    x, ref = make_input(n, 4)
+    rel = max_err(fft_dit_grouped(x, tile=8, glog=glog), ref) / max_mag(ref)
+    assert rel < 1e-4, f"glog={glog} failed: rel={rel:.3e}"
+
+
+@pytest.mark.parametrize("maxp", [128, 4096, 8192])
+def test_grouped_maxp_axis_is_neutral(maxp):
+    """maxp only caps the group period (maxp=128 forces all singles)."""
+    n = 4096
+    x, ref = make_input(n, 5)
+    rel = max_err(fft_dif_grouped(x, tile=8, glog=2, maxp=maxp), ref) / max_mag(ref)
+    assert rel < 1e-4, f"maxp={maxp} failed: rel={rel:.3e}"
+
+
+@pytest.mark.parametrize("cells", [1, 4])
+def test_grouped_cells_axis_is_neutral(cells):
+    """cells only packs BLOCK windows per program; results must be identical."""
+    n = 65536
+    x, ref = make_input(n, 6)
+    rel = max_err(fft_dit_grouped(x, tile=8, glog=2, cells=cells), ref) / max_mag(ref)
+    assert rel < 1e-4, f"cells={cells} failed: rel={rel:.3e}"
 
 
 def test_known_signals():
@@ -197,6 +283,24 @@ if __name__ == "__main__":
         test_dif_sizes(n)
     for n in (8, 64, 1024, 4096, 65536, 1048576):
         test_fused_sizes(n)
+    for n in (8, 64, 1024, 4096, 65536, 1048576):
+        test_matrix_dit_sizes(n)
+    for n in (8, 64, 1024, 4096, 65536):
+        test_matrix_dif_sizes(n)
+    for tile in (8, 16, 64):
+        test_matrix_tile_axis_is_neutral(tile)
+    for rows in (1, 8):
+        test_matrix_rows_is_neutral(rows)
+    for n in (8, 64, 1024, 4096, 65536, 1048576):
+        test_grouped_dit_sizes(n)
+    for n in (8, 64, 1024, 4096, 65536):
+        test_grouped_dif_sizes(n)
+    for glog in (1, 2, 3):
+        test_grouped_glog_axis_is_neutral(glog)
+    for maxp in (128, 4096, 8192):
+        test_grouped_maxp_axis_is_neutral(maxp)
+    for cells in (1, 4):
+        test_grouped_cells_axis_is_neutral(cells)
     test_known_signals()
     test_sentinel_output_changes()
     test_negative_inputs_rejected()
