@@ -1,0 +1,69 @@
+XCCL /root/miniconda/envs/python310_torch29_cuda/lib/python3.10/site-packages/torch_xmlir/xccl//so/libbkcl.so loaded
+[35mSYMBOL_REWRITE [0m[32mtorch success[0m
+=== session 0 ===
+session 0: seed=20261015
+XCCL /root/miniconda/envs/python310_torch29_cuda/lib/python3.10/site-packages/torch_xmlir/xccl//so/libbkcl.so loaded
+[35mSYMBOL_REWRITE [0m[32mtorch success[0m
+  [N16B1] sel=fft_dit_fused@1024 fb=False m0=0.3262ms sel_ms=0.2140 sp=1.524x vend=ok
+  [N32B1] sel=fft_dit@1024 fb=True m0=0.3673ms sel_ms=0.3686 sp=0.996x vend=ok
+  [N1024B1] sel=fft_dit_matrix@256 fb=False m0=0.4433ms sel_ms=0.3551 sp=1.248x vend=ok
+  [N1024B16] sel=fft_dit_batch@1024 fb=True m0=1.7736ms sel_ms=1.7706 sp=1.002x vend=ok
+  [N1024B64] sel=fft_dit_batch@1024 fb=True m0=6.2719ms sel_ms=6.2777 sp=0.999x vend=ok
+  [N2048B1] sel=fft_dit_matrix@256 fb=False m0=0.4740ms sel_ms=0.3811 sp=1.244x vend=ok
+  [N2048B16] sel=fft_dit_batch@1024 fb=True m0=3.6175ms sel_ms=3.6048 sp=1.004x vend=ok
+  [N2048B64] sel=fft_dit_batch@1024 fb=True m0=13.1054ms sel_ms=13.1887 sp=0.994x vend=ok
+  [N4096B1] sel=fft_dit_matrix@256 fb=False m0=0.6167ms sel_ms=0.4675 sp=1.319x vend=None
+  [N4096B16] sel=fft_dit_batch@1024 fb=False m0=7.2782ms sel_ms=7.2453 sp=1.005x vend=None
+  [N4096B64] sel=fft_dit_batch@1024 fb=False m0=27.6716ms sel_ms=27.5919 sp=1.003x vend=None
+  [N65536B1] sel=fft_dit_radix4@256 fb=False m0=9.2639ms sel_ms=4.4699 sp=2.072x vend=None
+  [N65536B4] sel=fft_dit_batch@1024 fb=False m0=35.2802ms sel_ms=35.2497 sp=1.001x vend=None
+  [N1048576B1] sel=fft_dit_radix4@256 fb=False m0=160.6676ms sel_ms=86.0158 sp=1.868x vend=None
+  [fallback-profile-mismatch] sel=fft_dit@256 fb=True m0=0.4728ms sel_ms=0.4781 sp=0.989x vend=ok
+  [plan-overhead] N=16: reuse=0.2015ms one-shot=0.2165ms overhead=0.0150ms (7.5%)
+  [plan-overhead] N=32: reuse=0.3606ms one-shot=0.3767ms overhead=0.0161ms (4.5%)
+session 0: wrote /workspace/kunlunxin-fft/results/p800/release_matrix/raw_session0.jsonl
+=== session 1 ===
+session 1: seed=20268934
+XCCL /root/miniconda/envs/python310_torch29_cuda/lib/python3.10/site-packages/torch_xmlir/xccl//so/libbkcl.so loaded
+[35mSYMBOL_REWRITE [0m[32mtorch success[0m
+  [N16B1] sel=fft_dit_fused@1024 fb=False m0=0.3258ms sel_ms=0.2181 sp=1.494x vend=ok
+  [N32B1] sel=fft_dit@1024 fb=True m0=0.3712ms sel_ms=0.3687 sp=1.007x vend=ok
+  [N1024B1] sel=fft_dit_matrix@256 fb=False m0=0.4497ms sel_ms=0.3591 sp=1.252x vend=ok
+  [N1024B16] sel=fft_dit_batch@1024 fb=True m0=1.7684ms sel_ms=1.7723 sp=0.998x vend=ok
+  [N1024B64] sel=fft_dit_batch@1024 fb=True m0=6.1484ms sel_ms=6.1717 sp=0.996x vend=ok
+  [N2048B1] sel=fft_dit_matrix@256 fb=False m0=0.4769ms sel_ms=0.3872 sp=1.232x vend=ok
+  [N2048B16] sel=fft_dit_batch@1024 fb=True m0=3.5845ms sel_ms=3.6073 sp=0.994x vend=ok
+  [N2048B64] sel=fft_dit_batch@1024 fb=True m0=13.1185ms sel_ms=13.1717 sp=0.996x vend=ok
+  [N4096B1] sel=fft_dit_matrix@256 fb=False m0=0.6139ms sel_ms=0.4694 sp=1.308x vend=None
+  [N4096B16] sel=fft_dit_batch@1024 fb=False m0=7.1561ms sel_ms=7.1432 sp=1.002x vend=None
+  [N4096B64] sel=fft_dit_batch@1024 fb=False m0=27.4772ms sel_ms=27.5422 sp=0.998x vend=None
+  [N65536B1] sel=fft_dit_radix4@256 fb=False m0=9.1998ms sel_ms=4.4455 sp=2.069x vend=None
+  [N65536B4] sel=fft_dit_batch@1024 fb=False m0=35.1713ms sel_ms=35.1393 sp=1.001x vend=None
+  [N1048576B1] sel=fft_dit_radix4@256 fb=False m0=160.8047ms sel_ms=85.8058 sp=1.874x vend=None
+  [fallback-profile-mismatch] sel=fft_dit@256 fb=True m0=0.4891ms sel_ms=0.4761 sp=1.027x vend=ok
+  [plan-overhead] N=16: reuse=0.2034ms one-shot=0.2179ms overhead=0.0145ms (7.1%)
+  [plan-overhead] N=32: reuse=0.3569ms one-shot=0.3716ms overhead=0.0146ms (4.1%)
+session 1: wrote /workspace/kunlunxin-fft/results/p800/release_matrix/raw_session1.jsonl
+=== session 2 ===
+session 2: seed=20276853
+XCCL /root/miniconda/envs/python310_torch29_cuda/lib/python3.10/site-packages/torch_xmlir/xccl//so/libbkcl.so loaded
+[35mSYMBOL_REWRITE [0m[32mtorch success[0m
+  [N16B1] sel=fft_dit_fused@1024 fb=False m0=0.3450ms sel_ms=0.2407 sp=1.433x vend=ok
+  [N32B1] sel=fft_dit@1024 fb=True m0=0.3826ms sel_ms=0.3836 sp=0.997x vend=ok
+  [N1024B1] sel=fft_dit_matrix@256 fb=False m0=0.4769ms sel_ms=0.3800 sp=1.255x vend=ok
+  [N1024B16] sel=fft_dit_batch@1024 fb=True m0=1.7784ms sel_ms=1.7921 sp=0.992x vend=ok
+  [N1024B64] sel=fft_dit_batch@1024 fb=True m0=6.1552ms sel_ms=6.1638 sp=0.999x vend=ok
+  [N2048B1] sel=fft_dit_matrix@256 fb=False m0=0.5022ms sel_ms=0.4110 sp=1.222x vend=ok
+  [N2048B16] sel=fft_dit_batch@1024 fb=True m0=3.5231ms sel_ms=3.5194 sp=1.001x vend=ok
+  [N2048B64] sel=fft_dit_batch@1024 fb=True m0=12.9636ms sel_ms=12.9238 sp=1.003x vend=ok
+  [N4096B1] sel=fft_dit_matrix@256 fb=False m0=0.6119ms sel_ms=0.4749 sp=1.289x vend=None
+  [N4096B16] sel=fft_dit_batch@1024 fb=False m0=7.1682ms sel_ms=7.1564 sp=1.002x vend=None
+  [N4096B64] sel=fft_dit_batch@1024 fb=False m0=27.4736ms sel_ms=27.5797 sp=0.996x vend=None
+  [N65536B1] sel=fft_dit_radix4@256 fb=False m0=9.2029ms sel_ms=4.3940 sp=2.094x vend=None
+  [N65536B4] sel=fft_dit_batch@1024 fb=False m0=35.0613ms sel_ms=35.1632 sp=0.997x vend=None
+  [N1048576B1] sel=fft_dit_radix4@256 fb=False m0=160.6246ms sel_ms=86.0666 sp=1.866x vend=None
+  [fallback-profile-mismatch] sel=fft_dit@256 fb=True m0=0.4768ms sel_ms=0.4817 sp=0.990x vend=ok
+  [plan-overhead] N=16: reuse=0.1995ms one-shot=0.2173ms overhead=0.0178ms (8.9%)
+  [plan-overhead] N=32: reuse=0.3605ms one-shot=0.3726ms overhead=0.0121ms (3.4%)
+session 2: wrote /workspace/kunlunxin-fft/results/p800/release_matrix/raw_session2.jsonl
+aggregated 15 shapes -> /workspace/kunlunxin-fft/results/p800/release_matrix/summary.json
