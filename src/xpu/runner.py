@@ -40,15 +40,22 @@ import triton
 
 from .context import device_ready, xpu_context
 from .kernels import (
+    bitrev_batch_kernel,
+    bitrev_interleaved_batch_kernel,
     bitrev_kernel,
+    dif_stage2_batch_kernel,
+    dif_stage4_batch_kernel,
     dif_stage4_kernel,
     dif_stage_batch_kernel,
     dif_stage_kernel,
     dit_fused_kernel,
+    dit_stage4_batch_kernel,
     dit_stage4_kernel,
     dit_stage_batch_kernel,
     dit_stage_kernel,
+    local_matrix_batch_kernel,
     local_matrix_kernel,
+    local_matrix_packet_kernel,
     tail_group_kernel,
 )
 from .matrices import local_matrix_planar, tail_group_planar, tail_groups
@@ -884,6 +891,475 @@ def fft_dif_batch(
             )
             cr, ci = nr, ni
     return _from_so(cr, ci)
+
+
+def _fft_matrix_batch_tail(
+    cur_r,
+    cur_i,
+    direction: str,
+    fused_log: int,
+    n: int,
+    logn: int,
+    block: int,
+    b: int,
+    wr,
+    wi,
+):
+    """M2 batch tail: remaining global stages on the M4 batch-stage path.
+
+    The post-group stages are the same radix-2 global stages M0/M4 run; the
+    batch-aware stage kernels consume them with ``SPREAD=True`` (batch on
+    grid axis 1), one launch per stage, no fusion across the group boundary.
+    """
+    half = n >> 1
+    grid = (triton.cdiv(half, block), b)
+    stage = dit_stage_batch_kernel if direction == "dit" else dif_stage_batch_kernel
+    if direction == "dit":
+        span = range(fused_log, logn)
+    else:
+        span = range(logn - 1, fused_log - 1, -1)
+    for s in span:
+        stage_n = 1 << s
+        m = n // (stage_n << 1)
+        nr = torch.empty_like(cur_r)
+        ni = torch.empty_like(cur_i)
+        kw = (
+            {"BITREV_INPUT": False}
+            if direction == "dit"
+            else {"BITREV_OUTPUT": False}
+        )
+        _launch(
+            stage,
+            block,
+            grid,
+            cur_r,
+            cur_i,
+            nr,
+            ni,
+            wr,
+            wi,
+            stage_n,
+            m,
+            n,
+            b,
+            LOGN=logn,
+            SPREAD=True,
+            **kw,
+        )
+        cur_r, cur_i = nr, ni
+    return cur_r, cur_i
+
+
+def fft_dit_matrix_batch(
+    x: torch.Tensor,
+    block: int = 1024,
+    tile: int = 64,
+    rows: int = 8,
+    variant: str = "spread",
+    twiddle=None,
+) -> torch.Tensor:
+    """M2 batch: DIT FFT over ``(B, N)`` with the tile-local group in registers.
+
+    Batch-aware M2 (issue #3 P0.1): the batch axis enters the address
+    computation of every launch, not a host loop over rows. ``variant`` is the
+    data-space/data-time expansion knob; this round lowers ``spread`` only
+    (``Ud=B``, batch rides grid axis 1 -- each program owns ``ROWS`` tile-blocks
+    of one batch row, one matrix load amortized over those tiles, one GM
+    crossing per row per stage group). ``folded`` (``Td=B``, a per-worker
+    packet loop over multiple rows) is **not-lowered** here: index flattening
+    without worker residency would misattribute Td; the bounded packet-loop
+    probe lives in :func:`fft_dit_matrix_packet_batch`.
+
+    Flow: batched bit-reversal pass (gather cannot share a kernel with
+    ``tl.dot`` on this backend), batched register-resident matrix group, then
+    the batched M0 tail. Launches: ``2 + log2(N) - log2(tile)`` regardless of
+    ``B``. ``B=1`` degenerates to :func:`fft_dit_matrix`.
+    """
+    b, n = _validate_batch_input(x, block, variant)
+    if variant != "spread":
+        raise ValueError(
+            f"fft_dit_matrix_batch lowers variant='spread' (Ud=B) only this "
+            f"round; folded (Td) would flatten indices without worker "
+            f"residency. Got variant={variant!r}")
+    logn = log2_exact(n)
+    params = _matrix_group_params(n, tile, rows)
+    if params is None:
+        return fft_dit_batch(x, block=block, variant=variant, twiddle=twiddle)
+    eff_tile, rows_eff, grid = params
+    fused_log = log2_exact(eff_tile)
+
+    with xpu_context(x.device.index or 0):
+        xr, xi = _as_so(x)
+        br_r = torch.empty_like(xr)
+        br_i = torch.empty_like(xi)
+        _launch(
+            bitrev_batch_kernel,
+            block,
+            (triton.cdiv(n, block), b),
+            xr,
+            xi,
+            br_r,
+            br_i,
+            n,
+            b,
+            BITS=logn,
+        )
+        cur_r = torch.empty_like(xr)
+        cur_i = torch.empty_like(xi)
+        mr, mi = _local_matrices(eff_tile, "dit", x.device)
+        _launch(
+            local_matrix_batch_kernel,
+            eff_tile,
+            (grid, b),
+            br_r,
+            br_i,
+            cur_r,
+            cur_i,
+            mr,
+            mi,
+            n,
+            b,
+            ROWS=rows_eff,
+        )
+        if fused_log < logn:
+            if twiddle is None:
+                twiddle = twiddle_tables(n, x.device)
+            validate_twiddle(twiddle, n, x.device)
+            wr, wi = twiddle
+            cur_r, cur_i = _fft_matrix_batch_tail(
+                cur_r, cur_i, "dit", fused_log, n, logn, block, b, wr, wi
+            )
+    return _from_so(cur_r, cur_i)
+
+
+def fft_dif_matrix_batch(
+    x: torch.Tensor,
+    block: int = 1024,
+    tile: int = 64,
+    rows: int = 8,
+    variant: str = "spread",
+    twiddle=None,
+) -> torch.Tensor:
+    """M2 batch: DIF FFT over ``(B, N)`` with the tile-local group in registers.
+
+    The DIF mirror of :func:`fft_dit_matrix_batch`: batched global tail first,
+    then the batched register-resident matrix group, then the batched
+    bit-reversal output pass. Same ``spread``-only lowering contract and
+    ``2 + log2(N) - log2(tile)`` launches. ``B=1`` degenerates to
+    :func:`fft_dif_matrix`.
+    """
+    b, n = _validate_batch_input(x, block, variant)
+    if variant != "spread":
+        raise ValueError(
+            f"fft_dif_matrix_batch lowers variant='spread' (Ud=B) only this "
+            f"round; folded (Td) would flatten indices without worker "
+            f"residency. Got variant={variant!r}")
+    logn = log2_exact(n)
+    params = _matrix_group_params(n, tile, rows)
+    if params is None:
+        return fft_dif_batch(x, block=block, variant=variant, twiddle=twiddle)
+    eff_tile, rows_eff, grid = params
+    fused_log = log2_exact(eff_tile)
+
+    with xpu_context(x.device.index or 0):
+        cur_r, cur_i = _as_so(x)
+        if fused_log < logn:
+            if twiddle is None:
+                twiddle = twiddle_tables(n, x.device)
+            validate_twiddle(twiddle, n, x.device)
+            wr, wi = twiddle
+            cur_r, cur_i = _fft_matrix_batch_tail(
+                cur_r, cur_i, "dif", fused_log, n, logn, block, b, wr, wi
+            )
+        mr, mi = _local_matrices(eff_tile, "dif", x.device)
+        loc_r = torch.empty_like(cur_r)
+        loc_i = torch.empty_like(cur_i)
+        _launch(
+            local_matrix_batch_kernel,
+            eff_tile,
+            (grid, b),
+            cur_r,
+            cur_i,
+            loc_r,
+            loc_i,
+            mr,
+            mi,
+            n,
+            b,
+            ROWS=rows_eff,
+        )
+        out_r = torch.empty_like(loc_r)
+        out_i = torch.empty_like(loc_i)
+        _launch(
+            bitrev_batch_kernel,
+            block,
+            (triton.cdiv(n, block), b),
+            loc_r,
+            loc_i,
+            out_r,
+            out_i,
+            n,
+            b,
+            BITS=logn,
+        )
+        cur_r, cur_i = out_r, out_i
+    return _from_so(cur_r, cur_i)
+
+
+def fft_dit_radix4_batch(
+    x: torch.Tensor,
+    block: int = 1024,
+    variant: str = "spread",
+    twiddle=None,
+) -> torch.Tensor:
+    """M5 batch: radix-4 DIT FFT over ``(B, N)`` (flow ``batch-spread``).
+
+    Batch-aware M5 (issue #3 P0.2): the rank-1 radix-4 cascade with every
+    stage kernel addressing the batch axis (``Ud=B``, grid
+    ``(cdiv(N/4 or N/2, block), B)``). The optional odd-``log2(N)`` radix-2
+    tail reuses the M4 batch stage kernel (``BITREV_INPUT=False``); the mixed
+    digit-reversal stays folded into the first radix-4 stage via
+    ``DIGREV_INPUT``. ``spread`` only, same contract as
+    :func:`fft_dit_matrix_batch`. Launches: ``ceil(log2(N)/2)`` plus the odd
+    tail, regardless of ``B``.
+    """
+    b, n = _validate_batch_input(x, block, variant)
+    if variant != "spread":
+        raise ValueError(
+            f"fft_dit_radix4_batch lowers variant='spread' (Ud=B) only this "
+            f"round; folded (Td) is not-lowered for radix-4. "
+            f"Got variant={variant!r}")
+    logn = log2_exact(n)
+    if n < 4:
+        raise ValueError(f"radix-4 requires N >= 4, got N={n}")
+    if twiddle is None:
+        twiddle = twiddle_tables(n, x.device)
+    validate_twiddle(twiddle, n, x.device)
+    wr, wi = twiddle
+    stages = _r4_dit_stages(n)
+    grid4 = (triton.cdiv(n >> 2, block), b)
+    grid2 = (triton.cdiv(n >> 1, block), b)
+
+    with xpu_context(x.device.index or 0):
+        cr, ci = _as_so(x)
+        for kind, span in stages:
+            nr = torch.empty_like(cr)
+            ni = torch.empty_like(ci)
+            if kind == "r4":
+                stage_n = span >> 2
+                _launch(
+                    dit_stage4_batch_kernel,
+                    block,
+                    grid4,
+                    cr,
+                    ci,
+                    nr,
+                    ni,
+                    wr,
+                    wi,
+                    stage_n,
+                    n // span,
+                    n,
+                    b,
+                    BITS=logn,
+                    DIGREV_INPUT=(span == 4),
+                )
+            else:
+                _launch(
+                    dit_stage_batch_kernel,
+                    block,
+                    grid2,
+                    cr,
+                    ci,
+                    nr,
+                    ni,
+                    wr,
+                    wi,
+                    n >> 1,
+                    1,
+                    n,
+                    b,
+                    LOGN=logn,
+                    BITREV_INPUT=False,
+                    SPREAD=True,
+                )
+            cr, ci = nr, ni
+    return _from_so(cr, ci)
+
+
+def fft_dif_radix4_batch(
+    x: torch.Tensor,
+    block: int = 1024,
+    variant: str = "spread",
+    twiddle=None,
+) -> torch.Tensor:
+    """M5 batch: radix-4 DIF FFT over ``(B, N)`` (flow ``batch-spread``).
+
+    The DIF mirror of :func:`fft_dit_radix4_batch`: radix-4 groups
+    ``N, N/4, ...`` with the mixed digit-reversal on whichever stage is last
+    (radix-4 ``DIGREV_OUTPUT``, or the radix-2 tail
+    :func:`dif_stage2_batch_kernel` with ``DIGREV_OUTPUT=True``). Same
+    ``spread``-only contract and launch count as the DIT direction.
+    """
+    b, n = _validate_batch_input(x, block, variant)
+    if variant != "spread":
+        raise ValueError(
+            f"fft_dif_radix4_batch lowers variant='spread' (Ud=B) only this "
+            f"round; folded (Td) is not-lowered for radix-4. "
+            f"Got variant={variant!r}")
+    logn = log2_exact(n)
+    if n < 4:
+        raise ValueError(f"radix-4 requires N >= 4, got N={n}")
+    if twiddle is None:
+        twiddle = twiddle_tables(n, x.device)
+    validate_twiddle(twiddle, n, x.device)
+    wr, wi = twiddle
+    stages = _r4_dif_stages(n)
+    grid4 = (triton.cdiv(n >> 2, block), b)
+    grid2 = (triton.cdiv(n >> 1, block), b)
+
+    with xpu_context(x.device.index or 0):
+        cr, ci = _as_so(x)
+        for idx, (kind, span) in enumerate(stages):
+            last = idx == len(stages) - 1
+            nr = torch.empty_like(cr)
+            ni = torch.empty_like(ci)
+            if kind == "r4":
+                stage_n = span >> 2
+                _launch(
+                    dif_stage4_batch_kernel,
+                    block,
+                    grid4,
+                    cr,
+                    ci,
+                    nr,
+                    ni,
+                    wr,
+                    wi,
+                    stage_n,
+                    n // span,
+                    n,
+                    b,
+                    BITS=logn,
+                    DIGREV_OUTPUT=last,
+                )
+            else:
+                _launch(
+                    dif_stage2_batch_kernel,
+                    block,
+                    grid2,
+                    cr,
+                    ci,
+                    nr,
+                    ni,
+                    wr,
+                    wi,
+                    1,
+                    n >> 1,
+                    n,
+                    b,
+                    BITS=logn,
+                    DIGREV_OUTPUT=True,
+                )
+            cr, ci = nr, ni
+    return _from_so(cr, ci)
+
+
+def fft_dit_matrix_packet_batch(
+    x: torch.Tensor,
+    block: int = 1024,
+    tile: int = 64,
+    rows: int = 8,
+    packets: int = 2,
+    twiddle=None,
+) -> torch.Tensor:
+    """M2 packet loop (experimental, P2 canary): sequential Td on the group.
+
+    Flow: bit-reversal **into the interleaved re/im layout** (fused, zero
+    extra passes), then one packet-loop program per
+    ``(tile-block-group, packet-group)`` pair. Each program loops over its
+    ``packets`` consecutive batch rows with the packet index as a
+    compile-time scalar while the fused-pair local tables load **once**
+    before the loop and stay register-resident across iterations: the
+    worker consumes ``packets`` packets with ``packets x`` less matrix
+    global-memory traffic than the spread form -- the data-time expansion
+    (``Td=packets``) claim, not a flattened index. Output is plain SOA, so
+    the proven spread tail finishes the FFT (mixed dataflow by design: the
+    probe isolates the matrix-group residency claim).
+
+    Constraints probed directly on this backend: ``packets <= 2`` (the loop
+    spends two dot operations per packet; programs beyond four dot
+    operations silently miscompile -- no error, wrong values -- so larger
+    values are rejected), ``packets`` must divide ``B``, and only the DIT
+    flow is offered (the DIF flow would need an extra interleave pass; not
+    probed this round). Experimental: not a selector candidate; used by the
+    bounded canary measurement only.
+    """
+    b, n = _validate_batch_input(x, block, "spread")
+    if packets < 1 or (packets & (packets - 1)) != 0:
+        raise ValueError(f"packets must be a power of two, got {packets}")
+    if packets > 2:
+        raise ValueError(
+            f"packets={packets} exceeds this backend's ceiling of 2: the "
+            "packet loop spends two dot operations per packet and programs "
+            "beyond four dot operations silently miscompile (probed on "
+            "device; no error raised, wrong values returned)"
+        )
+    if b % packets != 0:
+        raise ValueError(f"packets={packets} must divide batch B={b}")
+    logn = log2_exact(n)
+    params = _matrix_group_params(n, tile, rows)
+    if params is None:
+        return fft_dit_batch(x, block=block, variant="spread", twiddle=twiddle)
+    eff_tile, rows_eff, grid = params
+    fused_log = log2_exact(eff_tile)
+
+    with xpu_context(x.device.index or 0):
+        xr, xi = _as_so(x)
+        ilv = torch.empty(b, 2 * n, dtype=torch.float32, device=x.device)
+        _launch(
+            bitrev_interleaved_batch_kernel,
+            block,
+            (triton.cdiv(n, block), b),
+            xr,
+            xi,
+            ilv,
+            n,
+            b,
+            BITS=logn,
+        )
+        mr, mi = _local_matrices(eff_tile, "dit", x.device)
+        wr = torch.empty(2 * eff_tile, eff_tile, dtype=torch.float32, device=x.device)
+        wi = torch.empty(2 * eff_tile, eff_tile, dtype=torch.float32, device=x.device)
+        wr[0::2] = mr
+        wr[1::2] = -mi
+        wi[0::2] = mi
+        wi[1::2] = mr
+        cur_r = torch.empty_like(xr)
+        cur_i = torch.empty_like(xi)
+        _launch(
+            local_matrix_packet_kernel,
+            eff_tile,
+            (grid, b // packets),
+            ilv,
+            cur_r,
+            cur_i,
+            wr,
+            wi,
+            n,
+            ROWS=rows_eff,
+            PACKETS=packets,
+        )
+        if fused_log < logn:
+            if twiddle is None:
+                twiddle = twiddle_tables(n, x.device)
+            validate_twiddle(twiddle, n, x.device)
+            wr_t, wi_t = twiddle
+            cur_r, cur_i = _fft_matrix_batch_tail(
+                cur_r, cur_i, "dit", fused_log, n, logn, block, b, wr_t, wi_t
+            )
+    return _from_so(cur_r, cur_i)
+
 
 def _r4_dit_stages(n: int) -> list:
     """M5 DIT stage sequence: radix-4 spans 4, 16, ... plus an optional

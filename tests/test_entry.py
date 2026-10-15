@@ -28,8 +28,12 @@ _KNOWN = {
     ("global-stage", "radix2-scalar", "dif", 1): "fft_dif",
     ("global-stage", "radix2-scalar", "dit", 4): "fft_dit_batch",
     ("global-stage", "radix4-scalar", "dit", 1): "fft_dit_radix4",
+    ("global-stage", "radix4-scalar", "dit", 4): "fft_dit_radix4_batch",
+    ("global-stage", "radix4-scalar", "dif", 16): "fft_dif_radix4_batch",
     ("fused-inplace", "radix2-scalar", "dit", 1): "fft_dit_fused",
     ("matrix-resident", "dense-dot-fft64", "dif", 1): "fft_dif_matrix",
+    ("matrix-resident", "dense-dot-fft64", "dit", 4): "fft_dit_matrix_batch",
+    ("matrix-resident", "dense-dot-fft64", "dif", 64): "fft_dif_matrix_batch",
     ("grouped-boundary", "composite-linear-map", "dit", 1): "fft_dit_grouped",
 }
 
@@ -50,10 +54,8 @@ def test_dispatch_covers_known_lowerings(real, unit, direction, batch, expect):
 
 @pytest.mark.parametrize("kwargs", [
     ("fused-inplace", "radix2-scalar", "dif", 1),   # no DIF fused lowering
-    ("matrix-resident", "dense-dot-fft64", "dit", 4),
-    ("global-stage", "radix4-scalar", "dit", 4),
     ("fused-inplace", "radix2-scalar", "dit", 4),  # batched M1: no lowering
-    ("grouped-boundary", "composite-linear-map", "dit", 16),
+    ("grouped-boundary", "composite-linear-map", "dit", 16),  # batched M3: none
 ])
 def test_dispatch_returns_none_for_unlowered(kwargs):
     real, unit, direction, batch = kwargs

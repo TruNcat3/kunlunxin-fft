@@ -21,6 +21,13 @@ Usage::
         results/p800/confirm_b1024.json results/p800/confirm_b256.json \
         --batch results/p800/confirm_batch.json \
         --out config/selector_table.json
+
+``--focus`` appends issue #3 batch entries from a run_batch_release
+summary.json: the focus run's own medians (median of session medians,
+all sessions correctness-gated) are compared against the stable batch
+incumbent (best of M4 folded/spread) under the same 2% promotion guard.
+A focus run with fewer than ``--min-focus-sessions`` sessions (default
+3, the issue's protocol floor) is refused.
 """
 from __future__ import annotations
 
@@ -91,6 +98,12 @@ def _err_field(key: str) -> str:
 
 def _finite_positive(v) -> bool:
     return isinstance(v, (int, float)) and math.isfinite(v) and v > 0
+
+
+def _median(xs):
+    s = sorted(xs)
+    return s[len(s) // 2] if len(s) % 2 else 0.5 * (s[len(s) // 2 - 1]
+                                                    + s[len(s) // 2])
 
 
 def _check_ms(row, key: str, threshold: float, path: str, n, rejections):
@@ -164,6 +177,195 @@ def _check_manifest_consistency(runs, table_profile_hash: str) -> None:
             f"run profile_hash {ref['manifest']['profile_hash']} != current "
             f"DeviceProfile hash {table_profile_hash}; re-measure under the "
             "current profile before building the table")
+
+
+_FOCUS_MANIFEST_KEYS = ("device", "profile_hash", "protocol_id",
+                        "error_threshold", "shapes", "candidates",
+                        "timing_scope")
+_FOCUS_CONSISTENCY_KEYS = ("device", "profile_hash", "protocol_id",
+                           "error_threshold")
+# Focus challengers entering the frozen table (issue #3 P0): batch M2/M5.
+# P2 packet canaries (m2_packet_*) stay experimental by design.
+def _focus_challenger_names(candidates):
+    return [c for c in candidates
+            if c in ("m2_batch", "m5_batch") or c.startswith("m2_t")]
+
+
+def _load_focus(path: str, rejections) -> dict:
+    """Load one run_batch_release summary.json (its own protocol)."""
+    with open(path) as f:
+        data = json.load(f)
+    man = data.get("manifest") or {}
+    missing = [k for k in _FOCUS_MANIFEST_KEYS if man.get(k) in (None, "")]
+    if missing:
+        raise ConfigError(
+            f"focus run {path}: manifest missing required keys {missing}; "
+            "refusing to build from an incomplete focus manifest")
+    thr = man["error_threshold"]
+    if (not isinstance(thr, (int, float)) or not math.isfinite(thr)
+            or not (0 < float(thr) < 1)):
+        raise ConfigError(
+            f"focus run {path}: error_threshold {thr!r} must be in (0, 1)")
+    shapes = data.get("shapes") or []
+    if not shapes:
+        raise ConfigError(f"focus run {path}: no shape results")
+    sessions = int(data.get("sessions") or man.get("sessions") or 0)
+    return {"path": path, "manifest": man, "shapes": shapes,
+            "sessions": sessions, "threshold": float(thr)}
+
+
+def _focus_ms(shape, name, threshold, path, rejections):
+    """Gated (median_ms, err_max) for one candidate, else None."""
+    cand = (shape.get("candidates") or {}).get(name)
+    if cand is None:
+        return None
+    ms = cand.get("median_ms")
+    if not _finite_positive(ms):
+        rejections.append(
+            f"{path} {shape.get('label')} key={name}: "
+            f"median not finite positive ({ms!r})")
+        return None
+    err = cand.get("err_max", cand.get("err"))
+    if not isinstance(err, (int, float)) or not math.isfinite(err):
+        rejections.append(
+            f"{path} {shape.get('label')} key={name}: missing/non-finite "
+            f"error ({err!r})")
+        return None
+    if err >= threshold:
+        rejections.append(
+            f"{path} {shape.get('label')} key={name}: max_rel_error "
+            f"{err:.3e} >= {threshold:g}")
+        return None
+    return ms
+
+
+def _focus_descriptor(name, block, batch, cand):
+    """Schema-v2 attribution for a focus challenger."""
+    params = dict(cand.get("params") or {})
+    params.setdefault("batch", batch)
+    if name.startswith("m2_"):
+        flow, real, unit = ("local-fused-tile", "matrix-resident",
+                            "dense-dot-fft64")
+    elif name.startswith("m5_"):
+        flow, real, unit = "batch-spread", "global-stage", "radix4-scalar"
+    else:
+        raise ConfigError(f"unmapped focus challenger: {name}")
+    return {"block": block, "flow_id": flow, "flow_realization": real,
+            "processing_unit": unit, "params": params}
+
+
+def _focus_incumbent_descriptor(name, block, batch):
+    variant = "spread" if name == "m4_spread" else "folded"
+    return {"block": block, "flow_id": f"batch-{variant}",
+            "flow_realization": "global-stage",
+            "processing_unit": "radix2-scalar",
+            "params": {"variant": variant, "batch": batch}}
+
+
+def build_focus_entries(focus_runs, guard=GUARD_PCT, min_sessions=3,
+                        rejections=None):
+    """(N, B, direction) entries from focus-run medians vs M4 incumbent.
+
+    Each candidate's value is the median of its per-run medians (runs are
+    independent schedules); the stable incumbent is the fastest gated M4
+    variant, the winner the fastest gated challenger — one of them, only
+    when the challenger clears the 2% guard.
+    """
+    rejections = rejections if rejections is not None else []
+    usable = []
+    for run in focus_runs:
+        if run["sessions"] < min_sessions:
+            rejections.append(
+                f"{run['path']}: {run['sessions']} sessions < required "
+                f"{min_sessions} (issue #3 protocol floor)")
+            continue
+        usable.append(run)
+    grouped = {}
+    for run in usable:
+        for shape in run["shapes"]:
+            key = (int(shape["N"]), int(shape["batch"]),
+                   shape["direction"])
+            grouped.setdefault(key, []).append((run, shape))
+
+    INCUMBENTS = ("incumbent_m4_folded", "m4_spread")
+    entries = []
+    for (n, b, d), pairs in sorted(grouped.items()):
+        thr = min(run["threshold"] for run, _ in pairs)
+        sessions = min(run["sessions"] for run, _ in pairs)
+
+        def _collect(names):
+            per_name = {}
+            blocks, cands = {}, {}
+            for run, shape in pairs:
+                blk = int(shape.get("incumbent_block") or 256)
+                for name in names:
+                    if name not in shape["candidates"]:
+                        continue
+                    ms = _focus_ms(shape, name, thr, run["path"], rejections)
+                    if ms is None:
+                        continue
+                    per_name.setdefault(name, []).append(ms)
+                    cands[name] = shape["candidates"][name]
+                    blocks[name] = int(
+                        shape["candidates"][name].get("block") or blk)
+            return per_name, blocks, cands
+
+        inc_by, inc_blocks, _ = _collect(INCUMBENTS)
+        ch_by, ch_blocks, ch_cands = _collect(
+            _focus_challenger_names(
+                set().union(*(s["candidates"] for _, s in pairs))))
+
+        if not inc_by:
+            if ch_by:
+                rejections.append(
+                    f"{n} B={b} {d}: challenger(s) measured but no gated "
+                    "incumbent control; refusing an entry without control")
+            continue
+        inc_vals = {k: float(_median(v)) for k, v in inc_by.items()}
+        inc_best = min(inc_vals, key=inc_vals.get)
+        inc_med = inc_vals[inc_best]
+
+        ch_vals = {k: float(_median(v)) for k, v in ch_by.items()}
+        if ch_vals:
+            ch_best = min(ch_vals, key=ch_vals.get)
+            ch_med = ch_vals[ch_best]
+            gain_pct = (inc_med - ch_med) / inc_med * 100.0
+        else:
+            ch_best, ch_med, gain_pct = None, None, None
+
+        if ch_best is not None and gain_pct >= guard:
+            desc = _focus_descriptor(ch_best, ch_blocks[ch_best], b,
+                                     ch_cands[ch_best])
+            reason = (f"focus challenger {ch_best} beats stable incumbent "
+                      f"{inc_best} by {gain_pct:.1f}% (>= {guard}%) across "
+                      f"{sessions} sessions")
+            win_block = ch_blocks[ch_best]
+        else:
+            desc = _focus_incumbent_descriptor(inc_best, inc_blocks[inc_best],
+                                               b)
+            win_block = inc_blocks[inc_best]
+            if ch_best is None:
+                reason = ("no focus challenger passed the correctness/"
+                          f"timing gates; stable incumbent {inc_best} kept")
+            else:
+                reason = (f"no focus challenger clears the {guard}% guard "
+                          f"(best {ch_best} gain {gain_pct:.1f}%); stable "
+                          f"incumbent {inc_best} kept")
+        entry = {"N": n, "batch": b, "direction": d,
+                 "incumbent_ms": inc_med, "incumbent_block":
+                 inc_blocks[inc_best],
+                 "challenger_ms": ch_med, "block": win_block,
+                 "evidence": {"incumbent": inc_best, "sessions": sessions,
+                              "protocol_id": pairs[0][0]["manifest"][
+                                  "protocol_id"],
+                              "focus_paths": [r["path"] for r, _ in pairs]},
+                 "reason": reason, **desc}
+        if ch_best is not None:
+            entry["evidence"]["challenger"] = ch_best
+            entry["evidence"]["gain_pct"] = round(gain_pct, 2)
+            entry["evidence"]["challenger_ms"] = ch_med
+        entries.append(entry)
+    return entries
 
 
 def build_b1_entry(rows_by_path, direction, n, run_by_path, guard=GUARD_PCT,
@@ -261,6 +463,10 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("runs", nargs="+", help="B=1 confirmation JSONs")
     ap.add_argument("--batch", default=None, help="batch confirmation JSON")
+    ap.add_argument("--focus", nargs="*", default=[],
+                    help="run_batch_release summary.json files (issue #3)")
+    ap.add_argument("--min-focus-sessions", type=int, default=3,
+                    help="focus runs below this session count are refused")
     ap.add_argument("--out", default="config/selector_table.json")
     ap.add_argument("--guard", type=float, default=GUARD_PCT)
     args = ap.parse_args()
@@ -281,6 +487,22 @@ def main() -> None:
         all_runs = all_runs + [_load_run(args.batch, rejections)]
     _check_manifest_consistency(all_runs, profile_hash)
     threshold = float(runs[0]["manifest"]["correctness_threshold"])
+
+    focus_runs = [_load_focus(p, rejections) for p in args.focus]
+    if focus_runs:
+        ref = focus_runs[0]["manifest"]
+        for run in focus_runs[1:]:
+            for k in _FOCUS_CONSISTENCY_KEYS:
+                if run["manifest"][k] != ref[k]:
+                    raise ConfigError(
+                        f"mixed focus protocols: {run['path']} {k}="
+                        f"{run['manifest'][k]!r} != {focus_runs[0]['path']} "
+                        f"{k}={ref[k]!r}; refusing to build")
+        if ref["profile_hash"] != profile_hash:
+            raise ConfigError(
+                f"focus profile_hash {ref['profile_hash']} != current "
+                f"DeviceProfile hash {profile_hash}; re-measure under the "
+                "current profile before building")
 
     rows_by_path = {r["path"]: r["rows"] for r in runs}
     run_by_path = {r["path"]: r for r in runs}
@@ -303,6 +525,19 @@ def main() -> None:
                                            threshold=threshold,
                                            rejections=rejections))
         sources.append(_rel(args.batch))
+    if focus_runs:
+        entries.extend(build_focus_entries(
+            focus_runs, guard=args.guard,
+            min_sessions=args.min_focus_sessions, rejections=rejections))
+        sources.extend(_rel(r["path"]) for r in focus_runs)
+        seen = {}
+        for e in entries:
+            key = (e["N"], e["batch"], e["direction"])
+            if key in seen:
+                raise ConfigError(
+                    f"duplicate table entry for {key} ({seen[key]} and a "
+                    "focus/confirm overlap); refusing to build")
+            seen[key] = e.get("reason", "?")
 
     table = {
         "schema_version": 2,

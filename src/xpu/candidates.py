@@ -275,10 +275,13 @@ def check_lowering(cand: Candidate, profile: DeviceProfile) -> Verdict:
             f"batch flow, got {cand.flow_id!r}"
         )
 
-    # 6. Data-space/time expansion (Ud/Td) is lowered exactly by the M4 batch
-    #    variants: spread puts B on grid axis 1 (Ud=B, td=1), folded splits B
-    #    out of the flat pair-space grid (Td=B, ud=1). Without a batch variant
-    #    the expansion has no consuming kernel.
+    # 6. Data-space/time expansion (Ud/Td) is lowered through batch variants:
+    #    M4 spreads (Ud=B) or folds (Td=B) the M0 stage cascade; M2 batch
+    #    spreads the matrix group (Ud=B, batch on grid axis 1); M5 batch
+    #    spreads the radix-4 cascade (Ud=B). A folded Td packet loop on
+    #    M2/M5 (one worker consuming multiple packets with residency) is
+    #    **not-lowered** this round -- index flattening without worker
+    #    residency would misattribute Td.
     if cand.batch_variant == "none":
         if cand.batch != 1:
             reasons.append(
@@ -302,18 +305,41 @@ def check_lowering(cand: Candidate, profile: DeviceProfile) -> Verdict:
             )
             return Verdict(candidate=cand, status=LoweringStatus.NOT_LOWERED,
                            reasons=tuple(reasons))
-        expect_flow = ("batch-spread" if cand.batch_variant == "spread"
-                       else "batch-folded")
-        if cand.flow_id != expect_flow:
-            reasons.append(
-                f"flow_id: batch_variant={cand.batch_variant!r} requires {expect_flow!r}, "
-                f"got {cand.flow_id!r}"
-            )
         if cand.batch <= 0 or (cand.batch & (cand.batch - 1)) != 0:
             reasons.append(f"batch: must be a power of two, got {cand.batch}")
-        if cand.fused_tile > 1:
+        if cand.batch_variant == "spread":
+            # M4/M5: the batched stage cascade is flow 'batch-spread'.
+            # M2 batch: the matrix group keeps flow 'local-fused-tile'; the
+            # batch is an expansion axis on that flow, not a new flow id.
+            if realization == "matrix-resident":
+                if cand.flow_id != "local-fused-tile":
+                    reasons.append(
+                        f"flow_id: matrix-resident batch keeps 'local-fused-tile', "
+                        f"got {cand.flow_id!r}"
+                    )
+            elif cand.flow_id != "batch-spread":
+                reasons.append(
+                    f"flow_id: spread variant requires 'batch-spread' for "
+                    f"{realization!r}, got {cand.flow_id!r}"
+                )
+        else:  # folded
+            if realization != "global-stage" or cand.processing_unit != "radix2-scalar":
+                reasons.append(
+                    f"batch_variant: folded (Td) lowers the M4 radix-2 stage "
+                    f"cascade only this round; {realization}/"
+                    f"{cand.processing_unit} folded is not-lowered"
+                )
+            elif cand.flow_id != "batch-folded":
+                reasons.append(
+                    f"flow_id: folded variant requires 'batch-folded', "
+                    f"got {cand.flow_id!r}"
+                )
+        if cand.fused_tile > 1 and not (
+            realization == "matrix-resident" and cand.batch_variant == "spread"
+        ):
             reasons.append(
-                f"fused_tile: the batched path is M0-stage-only; got fused_tile={cand.fused_tile}"
+                f"fused_tile: batched paths consume fused_tile only for the "
+                f"matrix-resident spread lowering; got fused_tile={cand.fused_tile}"
             )
         if cand.batch_variant == "spread":
             if cand.ud != cand.batch or cand.td != 1:
@@ -446,6 +472,55 @@ def enumerate_candidates(space: DesignSpace, profile: DeviceProfile, block: int 
                 )
                 v = check_lowering(cand, profile)
                 (legal if v.legal else rejected).append(v)
+
+    # M2 batch (issue #3 P0.1): the matrix group with the batch axis in the
+    # address computation (spread only; folded packet loops not-lowered).
+    for tile in space.matrix_tiles:
+        for rows in space.matrix_rows:
+            for batch in space.batch_candidates:
+                for dit_fold in space.dit_bitrev_input_fold:
+                    cand = Candidate(
+                        flow_id="local-fused-tile",
+                        processing_unit="dense-dot-fft64",
+                        radix=2,
+                        boundary_residence="gm",
+                        layout="planar-soa",
+                        block=block,
+                        fused_tile=tile,
+                        dit_bitrev_input_fold=bool(dit_fold),
+                        dif_bitrev_output_fold=True,
+                        batch=batch,
+                        batch_variant="spread",
+                        flow_realization="matrix-resident",
+                        rows=rows,
+                        ud=batch,
+                        td=1,
+                    )
+                    v = check_lowering(cand, profile)
+                    (legal if v.legal else rejected).append(v)
+
+    # M5 batch (issue #3 P0.2): the radix-4 cascade over a batch (spread
+    # only; folded packet loops not-lowered).
+    for batch in space.batch_candidates:
+        for dit_fold in space.dit_bitrev_input_fold:
+            cand = Candidate(
+                flow_id="batch-spread",
+                processing_unit="radix4-scalar",
+                radix=4,
+                boundary_residence="gm",
+                layout="planar-soa",
+                block=block,
+                fused_tile=1,
+                dit_bitrev_input_fold=bool(dit_fold),
+                dif_bitrev_output_fold=True,
+                batch=batch,
+                batch_variant="spread",
+                flow_realization="global-stage",
+                ud=batch,
+                td=1,
+            )
+            v = check_lowering(cand, profile)
+            (legal if v.legal else rejected).append(v)
     return legal, rejected
 
 

@@ -40,8 +40,13 @@ from src.xpu import (  # noqa: E402
     fft_dit_grouped,
     fft_dif_batch,
     fft_dit_batch,
+    fft_dif_matrix_batch,
+    fft_dit_matrix_batch,
+    fft_dit_matrix_packet_batch,
     fft_dif_radix4,
     fft_dit_radix4,
+    fft_dif_radix4_batch,
+    fft_dit_radix4_batch,
 )
 
 if not device_ready():  # pragma: no cover - guarded again by the fixture
@@ -347,6 +352,151 @@ def test_batch_negative_inputs_rejected():
         fft_dit_batch(good, block=1000)             # block power of two
 
 
+# --- batch-aware M2/M5 (issue #3 P0.1/P0.2) ---
+
+
+@pytest.mark.parametrize("b", [1, 4, 16, 64])
+@pytest.mark.parametrize("n", [64, 1024, 2048, 4096])
+def test_matrix_batch_dit_dif_sizes(n, b):
+    """M2 batch (spread, both directions) vs numpy per row."""
+    x, ref = make_batch_input(b, n, seed=21)
+    for name, fn in (("dit", fft_dit_matrix_batch), ("dif", fft_dif_matrix_batch)):
+        y = fn(x)
+        rel = max_err(y, ref) / max_mag(ref)
+        assert rel < 1e-4, f"M2-batch {name} N={n} B={b}: rel={rel:.3e}"
+
+
+@pytest.mark.parametrize("b", [16, 64])
+@pytest.mark.parametrize("n", [1024, 2048])
+def test_matrix_batch_focus_shapes(n, b):
+    """Issue #3 focus shapes: N in {1024, 2048} x B in {16, 64}, both
+    directions, plus the tile/rows axes stay semantics-neutral."""
+    x, ref = make_batch_input(b, n, seed=22)
+    for name, fn in (("dit", fft_dit_matrix_batch), ("dif", fft_dif_matrix_batch)):
+        y = fn(x, tile=64, rows=8)
+        rel = max_err(y, ref) / max_mag(ref)
+        assert rel < 1e-4, f"M2-batch focus {name} N={n} B={b}: rel={rel:.3e}"
+        for tile, rows in ((8, 1), (64, 4), (256, 2)):
+            if tile > n:
+                continue
+            y2 = fn(x, tile=tile, rows=rows)
+            rel2 = max_err(y2, ref) / max_mag(ref)
+            assert rel2 < 1e-4, (
+                f"M2-batch axis {name} N={n} B={b} tile={tile} rows={rows}: "
+                f"rel={rel2:.3e}"
+            )
+
+
+def test_matrix_batch_one_equals_rank1():
+    """B=1 batch M2 must match the rank-1 M2 path."""
+    x1, ref1 = make_input(4096, seed=23)
+    xb = x1.view(1, -1)
+    for name, fb, fr in (
+        ("dit", fft_dit_matrix_batch, fft_dit_matrix),
+        ("dif", fft_dif_matrix_batch, fft_dif_matrix),
+    ):
+        got = fb(xb).view(-1)
+        want = fr(x1)
+        wnp = want.real.cpu().numpy() + 1j * want.imag.cpu().numpy()
+        err = max_err(got, wnp)
+        assert err < 1e-3, f"M2-batch B=1 {name} != rank-1: err={err:.3e}"
+
+
+def test_matrix_batch_rejects_folded_and_bad_inputs():
+    """folded (Td) is not-lowered for M2 this round; the base batch contract
+    is re-checked through the M2 entry points."""
+    good = torch.complex(
+        torch.ones(4, 64, device="cuda"),
+        torch.zeros(4, 64, device="cuda"),
+    )
+    with pytest.raises(ValueError, match="spread"):
+        fft_dit_matrix_batch(good, variant="folded")
+    with pytest.raises(ValueError, match="spread"):
+        fft_dif_matrix_batch(good, variant="folded")
+    with pytest.raises(ValueError):
+        fft_dit_matrix_batch(good.view(-1))          # rank
+    with pytest.raises(ValueError):
+        fft_dit_matrix_batch(good, block=1000)       # block power of two
+
+
+@pytest.mark.parametrize("b", [1, 4, 16, 64])
+@pytest.mark.parametrize("n", [64, 256, 1024, 2048, 4096])
+def test_radix4_batch_dit_dif_sizes(n, b):
+    """M5 batch (spread, both directions) vs numpy per row."""
+    x, ref = make_batch_input(b, n, seed=31)
+    for name, fn in (("dit", fft_dit_radix4_batch),
+                     ("dif", fft_dif_radix4_batch)):
+        y = fn(x)
+        rel = max_err(y, ref) / max_mag(ref)
+        assert rel < 1e-4, f"M5-batch {name} N={n} B={b}: rel={rel:.3e}"
+
+
+@pytest.mark.parametrize("b", [16, 64])
+@pytest.mark.parametrize("n", [1024, 2048])
+def test_radix4_batch_focus_shapes(n, b):
+    """Issue #3 focus shapes for M5 batch: N in {1024, 2048} x B in {16, 64}."""
+    x, ref = make_batch_input(b, n, seed=32)
+    for name, fn in (("dit", fft_dit_radix4_batch),
+                     ("dif", fft_dif_radix4_batch)):
+        y = fn(x)
+        rel = max_err(y, ref) / max_mag(ref)
+        assert rel < 1e-4, f"M5-batch focus {name} N={n} B={b}: rel={rel:.3e}"
+
+
+def test_radix4_batch_one_equals_rank1():
+    """B=1 batch M5 must match the rank-1 M5 path."""
+    x1, _ = make_input(1024, seed=33)
+    xb = x1.view(1, -1)
+    for name, fb, fr in (
+        ("dit", fft_dit_radix4_batch, fft_dit_radix4),
+        ("dif", fft_dif_radix4_batch, fft_dif_radix4),
+    ):
+        got = fb(xb).view(-1)
+        want = fr(x1)
+        wnp = want.real.cpu().numpy() + 1j * want.imag.cpu().numpy()
+        err = max_err(got, wnp)
+        assert err < 1e-3, f"M5-batch B=1 {name} != rank-1: err={err:.3e}"
+
+
+def test_radix4_batch_rejects_folded():
+    """folded (Td) is not-lowered for radix-4 batch this round."""
+    good = torch.complex(
+        torch.ones(4, 64, device="cuda"),
+        torch.zeros(4, 64, device="cuda"),
+    )
+    with pytest.raises(ValueError, match="spread"):
+        fft_dit_radix4_batch(good, variant="folded")
+    with pytest.raises(ValueError, match="spread"):
+        fft_dif_radix4_batch(good, variant="folded")
+
+
+@pytest.mark.parametrize("packets", [1, 2])
+@pytest.mark.parametrize("n", [1024, 2048])
+def test_matrix_packet_batch_canary(n, packets):
+    """P2 canary: the sequential Td packet-loop probe must be numerically
+    correct (residency mechanism, not a new algorithm)."""
+    b = 16
+    x, ref = make_batch_input(b, n, seed=41)
+    y = fft_dit_matrix_packet_batch(x, packets=packets)
+    rel = max_err(y, ref) / max_mag(ref)
+    assert rel < 1e-4, f"packet canary N={n} B={b} packets={packets}: rel={rel:.3e}"
+
+
+def test_matrix_packet_batch_rejects_above_ceiling():
+    """``packets > 2`` must be rejected: the backend silently miscompiles
+    programs beyond four dot operations (no error raised, wrong values
+    returned -- probed on device), so the runner refuses instead of
+    returning garbage."""
+    x, _ = make_batch_input(16, 1024, seed=41)
+    with pytest.raises(ValueError, match="ceiling"):
+        fft_dit_matrix_packet_batch(x, packets=4)
+    with pytest.raises(ValueError, match="power of two"):
+        fft_dit_matrix_packet_batch(x, packets=3)
+    x1, _ = make_batch_input(1, 1024, seed=41)
+    with pytest.raises(ValueError, match="divide"):
+        fft_dit_matrix_packet_batch(x1, packets=2)
+
+
 @pytest.mark.parametrize("n", [8, 16, 32, 64, 256, 1024, 4096, 65536, 1048576])
 def test_radix4_dit_sizes(n):
     """M5 radix-4 DIT (baseline flow, new processing unit) vs numpy."""
@@ -447,6 +597,26 @@ if __name__ == "__main__":
                 test_batch_dit_dif_sizes(n, b, variant)
     test_batch_one_equals_baseline()
     test_batch_negative_inputs_rejected()
+    for n in (64, 1024, 2048, 4096):
+        for b in (1, 4, 16, 64):
+            test_matrix_batch_dit_dif_sizes(n, b)
+    for n in (1024, 2048):
+        for b in (16, 64):
+            test_matrix_batch_focus_shapes(n, b)
+    test_matrix_batch_one_equals_rank1()
+    test_matrix_batch_rejects_folded_and_bad_inputs()
+    for n in (64, 256, 1024, 2048, 4096):
+        for b in (1, 4, 16, 64):
+            test_radix4_batch_dit_dif_sizes(n, b)
+    for n in (1024, 2048):
+        for b in (16, 64):
+            test_radix4_batch_focus_shapes(n, b)
+    test_radix4_batch_one_equals_rank1()
+    test_radix4_batch_rejects_folded()
+    for n in (1024, 2048):
+        for packets in (1, 2):
+            test_matrix_packet_batch_canary(n, packets)
+    test_matrix_packet_batch_rejects_above_ceiling()
     test_known_signals()
     test_sentinel_output_changes()
     test_negative_inputs_rejected()

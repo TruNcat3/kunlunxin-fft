@@ -100,27 +100,27 @@ def _m0_plan(n, batch, direction, precision, reason, fallback,
 def _dispatch(sel: Selection) -> str | None:
     """Map a table Selection onto the runner function name, or None when no
     lowering implements that (realization, unit, direction, batch)
-    combination. Every non-M4 realization is single-transform only."""
+    combination. Batched M2 (matrix-resident) and M5 (radix-4) lower through
+    the batch-aware kernels; batched M1/M3 have no lowering."""
     key = (sel.flow_realization, sel.processing_unit, sel.direction)
     if key == ("global-stage", "radix2-scalar", "dit"):
         return "fft_dit" if sel.batch == 1 else "fft_dit_batch"
     if key == ("global-stage", "radix2-scalar", "dif"):
         return "fft_dif" if sel.batch == 1 else "fft_dif_batch"
-    if sel.batch != 1:
-        # batched M1/M2/M3/M5 have no lowering this round; the M4 stage
-        # flow above is the only batched path.
-        return None
     if key == ("global-stage", "radix4-scalar", "dit"):
-        return "fft_dit_radix4"
+        return "fft_dit_radix4" if sel.batch == 1 else "fft_dit_radix4_batch"
     if key == ("global-stage", "radix4-scalar", "dif"):
-        return "fft_dif_radix4"
+        return "fft_dif_radix4" if sel.batch == 1 else "fft_dif_radix4_batch"
+    if key == ("matrix-resident", "dense-dot-fft64", "dit"):
+        return "fft_dit_matrix" if sel.batch == 1 else "fft_dit_matrix_batch"
+    if key == ("matrix-resident", "dense-dot-fft64", "dif"):
+        return "fft_dif_matrix" if sel.batch == 1 else "fft_dif_matrix_batch"
+    if sel.batch != 1:
+        # batched M1/M3 have no lowering this round.
+        return None
     if key == ("fused-inplace", "radix2-scalar", "dit"):
         # M1 is DIT-only in this tree; there is no DIF fused lowering.
         return "fft_dit_fused"
-    if key == ("matrix-resident", "dense-dot-fft64", "dit"):
-        return "fft_dit_matrix"
-    if key == ("matrix-resident", "dense-dot-fft64", "dif"):
-        return "fft_dif_matrix"
     if key == ("grouped-boundary", "composite-linear-map", "dit"):
         return "fft_dit_grouped"
     if key == ("grouped-boundary", "composite-linear-map", "dif"):
@@ -183,6 +183,13 @@ def _invoke(fn, x, direction, block, params):
     if name in ("fft_dit_matrix", "fft_dif_matrix"):
         return fn(x, block=block, tile=int(params.get("tile", 64)),
                   rows=int(params.get("rows", 8)))
+    if name in ("fft_dit_matrix_batch", "fft_dif_matrix_batch"):
+        return fn(x, block=block, tile=int(params.get("tile", 64)),
+                  rows=int(params.get("rows", 8)),
+                  variant=str(params.get("variant", "spread")))
+    if name in ("fft_dit_radix4_batch", "fft_dif_radix4_batch"):
+        return fn(x, block=block,
+                  variant=str(params.get("variant", "spread")))
     if name in ("fft_dit_grouped", "fft_dif_grouped"):
         return fn(x, block=block, tile=int(params.get("tile", 64)),
                   rows=int(params.get("rows", 8)),

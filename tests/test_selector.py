@@ -41,11 +41,23 @@ def test_table_loads_and_matches_profile():
     assert len(keys) == len(set(keys)), "duplicate table keys"
 
 
+def _focus_sources():
+    """Focus-run summaries recorded in the committed table's sources."""
+    if not TABLE.exists():
+        return []
+    t = json.loads(TABLE.read_text())
+    return [ROOT / s for s in t.get("sources", ())
+            if "batch_gate" in s or "batch_release" in s]
+
+
 def test_table_rebuild_is_deterministic(tmp_path):
-    """Rebuilding from the committed confirmation runs must reproduce the
-    committed table (no hand edits)."""
+    """Rebuilding from the committed confirmation + focus runs must
+    reproduce the committed table (no hand edits)."""
     if not TABLE.exists() or not all(p.exists() for p in CONFIRMS):
         pytest.skip("confirmation artifacts not present")
+    focus = [p for p in _focus_sources() if p.exists()]
+    if focus != _focus_sources():
+        pytest.skip("focus run artifacts not present")
     out = tmp_path / "selector_table.json"
     # relative paths keep table["sources"] stable (the rebuild must match
     # the committed file byte-for-byte in content, not depend on abs paths)
@@ -53,6 +65,8 @@ def test_table_rebuild_is_deterministic(tmp_path):
            *[str(p.relative_to(ROOT)) for p in CONFIRMS], "--out", str(out)]
     if BATCH_CONFIRM.exists():
         cmd += ["--batch", str(BATCH_CONFIRM.relative_to(ROOT))]
+    if focus:
+        cmd += ["--focus", *[str(p.relative_to(ROOT)) for p in focus]]
     subprocess.run(cmd, cwd=ROOT, check=True)
     assert json.loads(out.read_text()) == json.loads(TABLE.read_text())
 

@@ -529,6 +529,396 @@ def local_matrix_kernel(
     tl.store(Yi + off, oi)
 
 
+
+@triton.jit
+def bitrev_batch_kernel(
+    Xr,
+    Xi,
+    Yr,
+    Yi,
+    N,
+    B,
+    BITS: tl.constexpr,
+    BLOCK: tl.constexpr,
+):
+    """M2/M5 batch: out-of-place bit-reversal over ``(B, N)`` (spread, Ud=B).
+
+    Batch rides grid axis 1 (``base = pid1 * N``); every load/store is rebased
+    by the row base while the per-row reversal uses only the unbased index, so
+    batch items never mix. The separate pass mirrors the rank-1 M2 constraint:
+    a gather cannot share a kernel with the dense dot builtin (XPU MLIR
+    assertion; the literal builtin name is kept out of this docstring because
+    the vendor ASTSource scan substring-matches kernel source for it).
+    """
+    off = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
+    base = tl.program_id(1) * N
+    mask = off < N
+    src = base + _bit_reverse(off, BITS)
+    tl.store(Yr + base + off, tl.load(Xr + src, mask=mask), mask=mask)
+    tl.store(Yi + base + off, tl.load(Xi + src, mask=mask), mask=mask)
+
+
+@triton.jit
+def bitrev_interleaved_batch_kernel(
+    Xr,
+    Xi,
+    Y,
+    N,
+    B,
+    BITS: tl.constexpr,
+    BLOCK: tl.constexpr,
+):
+    """Bit-reversal writing the re/im-INTERLEAVED ``(B, 2N)`` packet layout.
+
+    Same gather as :func:`bitrev_batch_kernel`, but the output writes each
+    reversed element's real/imag parts as adjacent floats (``Y[2*off]``,
+    ``Y[2*off+1]`` per row), which the packet-loop group consumes as one
+    contiguous ``2*BLOCK``-wide span. Fusing the layout conversion into the
+    reversal keeps the packet flow's pass count identical to the spread
+    flow (zero extra passes). Feeds the experimental packet probe only.
+    """
+    off = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
+    base = tl.program_id(1) * N
+    mask = off < N
+    src = base + _bit_reverse(off, BITS)
+    re = tl.load(Xr + src, mask=mask)
+    im = tl.load(Xi + src, mask=mask)
+    ioff = tl.program_id(1) * (2 * N) + off * 2
+    tl.store(Y + ioff, re, mask=mask)
+    tl.store(Y + ioff + 1, im, mask=mask)
+
+
+@triton.jit
+def local_matrix_batch_kernel(
+    Xr,
+    Xi,
+    Yr,
+    Yi,
+    Mr,
+    Mi,
+    N,
+    B,
+    ROWS: tl.constexpr,
+    BLOCK: tl.constexpr,
+):
+    """M2 batch (spread, Ud=B): register-resident local micro-FFT per row.
+
+    Batch-aware version of :func:`local_matrix_kernel`: grid is
+    ``(tiles // ROWS, B)``, program ``(p0, p1)`` owns ``ROWS`` consecutive
+    tile-blocks of batch row ``p1`` (``off = p1*N + (p0*ROWS+row)*BLOCK+col``).
+    The tile matrix is N- and B-independent, so it is loaded unbased and shared
+    across batch rows; each row still crosses device memory exactly once (one
+    load, one store) with stage intermediates held in registers. ``tl.dot``
+    shapes and the four-dot complex product are identical to the rank-1 kernel.
+    """
+    pid = tl.program_id(0)
+    bidx = tl.program_id(1)
+    row = tl.arange(0, ROWS)[:, None]
+    col = tl.arange(0, BLOCK)[None, :]
+    off = bidx * N + (pid * ROWS + row) * BLOCK + col
+    ar = tl.load(Xr + off)
+    ai = tl.load(Xi + off)
+    moff = tl.arange(0, BLOCK)[:, None] * BLOCK + tl.arange(0, BLOCK)[None, :]
+    mr = tl.load(Mr + moff)
+    mi = tl.load(Mi + moff)
+    orr = tl.dot(ar, mr, input_precision="ieee") - tl.dot(ai, mi, input_precision="ieee")
+    oi = tl.dot(ar, mi, input_precision="ieee") + tl.dot(ai, mr, input_precision="ieee")
+    tl.store(Yr + off, orr)
+    tl.store(Yi + off, oi)
+
+
+@triton.jit
+def dit_stage4_batch_kernel(
+    Xr,
+    Xi,
+    Yr,
+    Yi,
+    Wr,
+    Wi,
+    n,
+    M,
+    N,
+    B,
+    BITS: tl.constexpr,
+    BLOCK: tl.constexpr,
+    DIGREV_INPUT: tl.constexpr,
+):
+    """M5 batch (spread, Ud=B): one radix-4 DIT stage over ``(B, N)``.
+
+    Same butterfly and twiddle fold as :func:`dit_stage4_kernel`; batch rides
+    grid axis 1 and every X/Y address is rebased by ``base = pid1 * N``.
+    Twiddle loads stay unbased (the table is N-scoped, shared across rows).
+    ``DIGREV_INPUT`` folds the mixed digit-reversal into the first stage using
+    the unbased per-row index, exactly as the rank-1 kernel does.
+    """
+    off = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
+    base = tl.program_id(1) * N
+    mask = off < (N >> 2)
+
+    j = off % n
+    i = ((off // n) * 4) * n + j
+
+    if DIGREV_INPUT:
+        src0 = base + _dit_digit_reverse(i, BITS)
+        src1 = base + _dit_digit_reverse(i + n, BITS)
+        src2 = base + _dit_digit_reverse(i + 2 * n, BITS)
+        src3 = base + _dit_digit_reverse(i + 3 * n, BITS)
+    else:
+        src0 = base + i
+        src1 = base + i + n
+        src2 = base + i + 2 * n
+        src3 = base + i + 3 * n
+
+    ar = tl.load(Xr + src0, mask=mask)
+    ai = tl.load(Xi + src0, mask=mask)
+    br = tl.load(Xr + src1, mask=mask)
+    bi = tl.load(Xi + src1, mask=mask)
+    cr = tl.load(Xr + src2, mask=mask)
+    ci = tl.load(Xi + src2, mask=mask)
+    dr = tl.load(Xr + src3, mask=mask)
+    di = tl.load(Xi + src3, mask=mask)
+
+    jm = j * M
+    w2 = jm << 1
+    w3 = jm + w2
+    big = w3 > (N >> 1)
+    k3 = tl.where(big, N - w3, w3)
+    wi3s = tl.where(big, -1.0, 1.0)
+    w1r = tl.load(Wr + jm, mask=mask)
+    w1i = tl.load(Wi + jm, mask=mask)
+    w2r = tl.load(Wr + w2, mask=mask)
+    w2i = tl.load(Wi + w2, mask=mask)
+    w3r = tl.load(Wr + k3, mask=mask)
+    w3i = tl.load(Wi + k3, mask=mask) * wi3s
+
+    b1r = br * w1r - bi * w1i
+    b1i = br * w1i + bi * w1r
+    b2r = cr * w2r - ci * w2i
+    b2i = cr * w2i + ci * w2r
+    b3r = dr * w3r - di * w3i
+    b3i = dr * w3i + di * w3r
+
+    y0r = ar + b1r + b2r + b3r
+    y0i = ai + b1i + b2i + b3i
+    y1r = ar + b1i - b2r - b3i
+    y1i = ai - b1r - b2i + b3r
+    y2r = ar - b1r + b2r - b3r
+    y2i = ai - b1i + b2i - b3i
+    y3r = ar - b1i - b2r + b3i
+    y3i = ai + b1r - b2i - b3r
+
+    tl.store(Yr + base + i, y0r, mask=mask)
+    tl.store(Yi + base + i, y0i, mask=mask)
+    tl.store(Yr + base + i + n, y1r, mask=mask)
+    tl.store(Yi + base + i + n, y1i, mask=mask)
+    tl.store(Yr + base + i + 2 * n, y2r, mask=mask)
+    tl.store(Yi + base + i + 2 * n, y2i, mask=mask)
+    tl.store(Yr + base + i + 3 * n, y3r, mask=mask)
+    tl.store(Yi + base + i + 3 * n, y3i, mask=mask)
+
+
+@triton.jit
+def dif_stage4_batch_kernel(
+    Xr,
+    Xi,
+    Yr,
+    Yi,
+    Wr,
+    Wi,
+    n,
+    M,
+    N,
+    B,
+    BITS: tl.constexpr,
+    BLOCK: tl.constexpr,
+    DIGREV_OUTPUT: tl.constexpr,
+):
+    """M5 batch (spread, Ud=B): one radix-4 DIF stage over ``(B, N)``.
+
+    The DIF mirror of :func:`dit_stage4_batch_kernel`: column DFT first, then
+    the twiddle ``W**(c*j*M)`` on output quarter ``c``; ``DIGREV_OUTPUT``
+    stores the final stage through the mixed digit-reversed permutation
+    (unbased per-row index, rebased store).
+    """
+    off = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
+    base = tl.program_id(1) * N
+    mask = off < (N >> 2)
+
+    j = off % n
+    i = ((off // n) * 4) * n + j
+
+    ar = tl.load(Xr + base + i, mask=mask)
+    ai = tl.load(Xi + base + i, mask=mask)
+    br = tl.load(Xr + base + i + n, mask=mask)
+    bi = tl.load(Xi + base + i + n, mask=mask)
+    cr = tl.load(Xr + base + i + 2 * n, mask=mask)
+    ci = tl.load(Xi + base + i + 2 * n, mask=mask)
+    dr = tl.load(Xr + base + i + 3 * n, mask=mask)
+    di = tl.load(Xi + base + i + 3 * n, mask=mask)
+
+    y0r = ar + br + cr + dr
+    y0i = ai + bi + ci + di
+    y1r = ar + bi - cr - di
+    y1i = ai - br - ci + dr
+    y2r = ar - br + cr - dr
+    y2i = ai - bi + ci - di
+    y3r = ar - bi - cr + di
+    y3i = ai + br - ci - dr
+
+    jm = j * M
+    w2 = jm << 1
+    w3 = jm + w2
+    big = w3 > (N >> 1)
+    k3 = tl.where(big, N - w3, w3)
+    wi3s = tl.where(big, -1.0, 1.0)
+    w1r = tl.load(Wr + jm, mask=mask)
+    w1i = tl.load(Wi + jm, mask=mask)
+    w2r = tl.load(Wr + w2, mask=mask)
+    w2i = tl.load(Wi + w2, mask=mask)
+    w3r = tl.load(Wr + k3, mask=mask)
+    w3i = tl.load(Wi + k3, mask=mask) * wi3s
+
+    t1r = y1r * w1r - y1i * w1i
+    t1i = y1r * w1i + y1i * w1r
+    t2r = y2r * w2r - y2i * w2i
+    t2i = y2r * w2i + y2i * w2r
+    t3r = y3r * w3r - y3i * w3i
+    t3i = y3r * w3i + y3i * w3r
+
+    if DIGREV_OUTPUT:
+        d0 = base + _dif_digit_reverse(i, BITS)
+        d1 = base + _dif_digit_reverse(i + n, BITS)
+        d2 = base + _dif_digit_reverse(i + 2 * n, BITS)
+        d3 = base + _dif_digit_reverse(i + 3 * n, BITS)
+    else:
+        d0 = base + i
+        d1 = base + i + n
+        d2 = base + i + 2 * n
+        d3 = base + i + 3 * n
+
+    tl.store(Yr + d0, y0r, mask=mask)
+    tl.store(Yi + d0, y0i, mask=mask)
+    tl.store(Yr + d1, t1r, mask=mask)
+    tl.store(Yi + d1, t1i, mask=mask)
+    tl.store(Yr + d2, t2r, mask=mask)
+    tl.store(Yi + d2, t2i, mask=mask)
+    tl.store(Yr + d3, t3r, mask=mask)
+    tl.store(Yi + d3, t3i, mask=mask)
+
+
+
+@triton.jit
+def dif_stage2_batch_kernel(
+    Xr,
+    Xi,
+    Yr,
+    Yi,
+    Wr,
+    Wi,
+    n,
+    M,
+    N,
+    B,
+    BITS: tl.constexpr,
+    BLOCK: tl.constexpr,
+    DIGREV_OUTPUT: tl.constexpr,
+):
+    """M5 batch (spread, Ud=B): radix-2 DIF tail stage over ``(B, N)``.
+
+    Odd ``log2(N)`` M5 DIF cascades end on a radix-2 stage that must store
+    through the mixed digit-reversed permutation (the ``REV_MODE=2`` of the
+    rank-1 :func:`dif_stage_kernel`); the M4 batch kernel only offers plain
+    bit-reversal, so this tail is its own kernel. Same butterfly as
+    :func:`dif_stage_batch_kernel` (spread addressing only).
+    """
+    off = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
+    base = tl.program_id(1) * N
+    half = N >> 1
+    mask = off < half
+
+    j = off % n
+    i = ((off // n) << 1) * n + j
+    w = j * M
+    wr = tl.load(Wr + w, mask=mask)
+    wi = tl.load(Wi + w, mask=mask)
+    ar = tl.load(Xr + base + i, mask=mask)
+    ai = tl.load(Xi + base + i, mask=mask)
+    br = tl.load(Xr + base + i + n, mask=mask)
+    bi = tl.load(Xi + base + i + n, mask=mask)
+    sr = ar + br
+    si = ai + bi
+    dr = ar - br
+    di = ai - bi
+    drw = dr * wr - di * wi
+    diw = dr * wi + di * wr
+
+    if DIGREV_OUTPUT:
+        d0 = base + _dif_digit_reverse(i, BITS)
+        d1 = base + _dif_digit_reverse(i + n, BITS)
+    else:
+        d0 = base + i
+        d1 = base + i + n
+    tl.store(Yr + d0, sr, mask=mask)
+    tl.store(Yi + d0, si, mask=mask)
+    tl.store(Yr + d1, drw, mask=mask)
+    tl.store(Yi + d1, diw, mask=mask)
+
+
+
+@triton.jit
+def local_matrix_packet_kernel(
+    X,
+    Yr,
+    Yi,
+    WR,
+    WI,
+    N,
+    ROWS: tl.constexpr,
+    BLOCK: tl.constexpr,
+    PACKETS: tl.constexpr,
+):
+    """M2 packet loop (experimental, P2): sequential Td with resident tables.
+
+    Grid is ``(tiles // ROWS, B // PACKETS)``; program ``(p0, p1)`` loops
+    over its ``PACKETS`` consecutive batch rows with the packet index as a
+    compile-time scalar (``k`` from ``static_range``), so every per-iteration
+    offset stays in the affine row form the backend lowers. The fused-pair
+    tables ``(2*BLOCK, BLOCK)`` are loaded **once before the loop** and
+    reused for each packet: one worker consumes ``PACKETS`` packets while
+    the tables stay register-resident -- matrix global-memory traffic drops
+    ``PACKETS x`` versus the spread form (one program per packet row), which
+    is the data-time expansion (``Td=PACKETS``) claim under test.
+
+    Input rows are re/im interleaved (from
+    :func:`bitrev_interleaved_batch_kernel`), so a contiguous
+    ``(ROWS, 2*BLOCK)`` load feeds the fused pair-product as **two** dot
+    operations per packet. Ceilings probed directly on this backend and
+    enforced by the runner: ``PACKETS <= 2`` (programs beyond four dot
+    operations silently miscompile -- no error, wrong results), and
+    non-affine row offsets in pointer arithmetic (stacked/div/shift/select/
+    load-table forms all crash the offset pass), hence the scalar-unroll
+    loop. Bit-reversal and the global tail run outside as the proven spread
+    kernels (mixed dataflow by design; ``WR``/``WI`` pair-interleave the
+    local tile matrices ``[re; -im]``/``[im; re]`` along the K axis).
+    """
+    pid = tl.program_id(0)
+    p1 = tl.program_id(1)
+    row = tl.arange(0, ROWS)[:, None]
+    col1 = tl.arange(0, BLOCK)[None, :]
+    col2 = tl.arange(0, 2 * BLOCK)[None, :]
+    moff = tl.arange(0, 2 * BLOCK)[:, None] * BLOCK + tl.arange(0, BLOCK)[None, :]
+    wr = tl.load(WR + moff)
+    wi = tl.load(WI + moff)
+    for k in tl.static_range(PACKETS):
+        off_i = (p1 * PACKETS + k) * (2 * N) + (pid * ROWS + row) * (2 * BLOCK) + col2
+        in_r = tl.load(X + off_i)
+        orr = tl.dot(in_r, wr, input_precision="ieee")
+        oi = tl.dot(in_r, wi, input_precision="ieee")
+        off_o = (p1 * PACKETS + k) * N + (pid * ROWS + row) * BLOCK + col1
+        tl.store(Yr + off_o, orr)
+        tl.store(Yi + off_o, oi)
+
+
 @triton.jit
 def tail_group_kernel(
     Xr,

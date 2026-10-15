@@ -154,7 +154,8 @@ def test_radix4_is_legal_on_baseline_flow():
     legal, rejected = enumerate_candidates(ds, p, block=1024)
     r4_flows = {v.candidate.flow_id for v in legal
                 if v.candidate.processing_unit == "radix4-scalar"}
-    assert r4_flows == {"baseline-global-stage"}
+    # rank-1 M5 on the baseline flow; batch M5 (issue #3) on batch-spread
+    assert r4_flows == {"baseline-global-stage", "batch-spread"}
 
 
 def test_arithmetic_cost_radix4_vs_radix2():
@@ -349,12 +350,14 @@ def test_dot_free_kernels_do_not_trigger_sdnn_flag():
 
     path = Path(__file__).resolve().parents[1] / "src" / "xpu" / "kernels.py"
     tree = ast.parse(path.read_text())
+    dot_kernels = {"local_matrix_kernel", "local_matrix_batch_kernel",
+                   "local_matrix_packet_kernel"}
     for node in tree.body:
         if not isinstance(node, ast.FunctionDef):
             continue
         seg = ast.get_source_segment(path.read_text(), node) or ""
         if "tl.dot" in seg or "tt.dot" in seg:
-            assert node.name == "local_matrix_kernel", (
+            assert node.name in dot_kernels, (
                 f"{node.name} source contains a dot substring but does not call it"
             )
 
