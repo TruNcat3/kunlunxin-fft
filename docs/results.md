@@ -359,3 +359,59 @@ from the committed confirmation JSONs and that every challenger clears the
 guard. The conservative `selected_candidate` (M0) remains the launch default;
 the table is the measured opt-in layered on top, per the plan's
 "never slower than the incumbent without opt-in" rule.
+
+## Round D: selector execution entry + independent validation (commit bbafd7f)
+
+The review's last gap was that the selector was a static table without a
+real execution path. Closed on master:
+
+- **Safety gates** (`scripts/build_selector_table.py`, schema v2): per-row
+  (finite positive ms, error below the run's threshold) and per-run
+  (shared device/profile/precision/protocol, profile matches the current
+  `DeviceProfile`) rejection with logged reasons; a cross-direction M1 bug
+  (DIT-only `m1_t64` could win DIF entries) is fixed — DIF at `N=8,16`
+  now selects M2, and `tests/test_selector.py` forbids DIF `fused-inplace`.
+- **`select()` profile gate**: `profile_hash=None` abstains; a missing
+  profile can never bypass the table.
+- **Execution entry** (`src/xpu/entry.py::plan_fft`/`run_fft`): resolves the
+  frozen table onto the exact runner function; abstain, profile mismatch, or
+  an undispatchable combination executes M0 and reports the reason in the
+  `ExecutionReport`. `run_fft` returns the report alongside the output.
+
+Independent validation (3 process sessions, interleaved M0 vs selected,
+correctness first, raw per-trial rows):
+[raw/summary/report](https://github.com/TruNcat3/kunlunxin-fft/tree/master/results/p800/selected_sessions).
+Manifest `dirty=true` records only the untracked session outputs being
+written in-tree; the executed code is commit `bbafd7f`.
+
+| shape | executed | fallback | session speedup (m0/selected, median of 3) | correct |
+|---|---|---|---:|---|
+| N=16 B=1 DIT (small, M1) | `fft_dit_fused` | no | **1.347x** | yes |
+| N=2048 B=1 DIT (mid, M2) | `fft_dit_matrix` | no | **1.971x** | yes |
+| N=65536 B=1 DIT (long, M5) | `fft_dit_radix4` | no | **2.150x** | yes |
+| N=4096 B=16 DIT (batch) | `fft_dit_batch` folded | no | 0.996x (same-variant parity) | yes |
+| N=4096 B=64 DIT (batch) | `fft_dit_batch` folded | no | 0.998x (same-variant parity) | yes |
+| N=32 B=1 DIT (out-of-table) | `fft_dit` | **yes** (abstain) | 0.951x (fallback cost) | yes |
+| N=2048 B=1 DIF (profile mismatch) | `fft_dif` | **yes** (abstain) | 1.615x (M2 would win; fallback verified) | yes |
+
+Every fallback probe verified `ExecutionReport.fallback=true` with the M0
+function actually executed; a non-pow2 `N=3000` is rejected before launch
+(`rejected-before-launch`, recorded per session).
+
+Controlled ablation (N=4096 DIT, one session, raw rows in the same
+directory):
+
+| candidate | flow | unit | launches | median ms | vs M0 |
+|---|---|---|---:|---:|---:|
+| M0 | global-stage | radix2-scalar | 12 | 1.0760 | 1.000x |
+| M1 (flow-only, same core) | fused-inplace | radix2-scalar | 8 | 1.4888 | **0.723x** |
+| M2 (core change) | matrix-resident | dense-dot-fft64 | 8 | 0.7438 | **1.447x** |
+| M5 (core change, same flow as M0) | global-stage | radix4-scalar | 6 | 0.9296 | **1.158x** |
+
+At `N=4096` the gain is a **processing-unit effect** (M2's dense-dot core
+1.45x, M5's radix-4 1.16x under the same global-stage flow), not a
+flow-organization effect: the flow-only M1 (same radix2 core, 8 launches)
+regresses to 0.72x, consistent with the phase-3 M1 large-N diagnosis.
+Speedups are session-level medians; the 2% guard band is an engineering
+protection, not a significance claim.
+

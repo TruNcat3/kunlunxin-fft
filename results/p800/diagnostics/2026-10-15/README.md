@@ -11,6 +11,7 @@ unaggregated stdout of the sessions that produced it.
 | `roundb-b256.log` | Round B block-256 session, same sizes/protocol |
 | `roundb-batch.log` | batch probe session (`B=1,4,16,64` x `{spread,folded}` at `N=64,4096,65536`, flows m0/m4/vendor) |
 | `hw-suite.log` | `pytest -q -m hardware` (card 6) over the phase-3 size grid — `106 passed, 36 deselected, EXIT=0` |
+| `selected-sessions.log` | stdout of the 3-session selector validation (`scripts/run_selected_sessions.py`, commit `bbafd7f`) — correctness gates, fallback probes, `rejected-before-launch` record, `EXIT=0` |
 | `confirm_*.progress.json` | atomic per-case breadcrumbs written by bench during the sessions (`last_started`/`last_completed`, pid, timestamps) — evidence of the hang-mitigation path, not timing data |
 
 ## How to check the numbers against the logs

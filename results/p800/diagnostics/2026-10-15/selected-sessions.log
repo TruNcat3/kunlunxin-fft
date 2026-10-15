@@ -1,0 +1,41 @@
+=== session 0 ===
+session 0: seed=20261015
+XCCL /root/miniconda/envs/python310_torch29_cuda/lib/python3.10/site-packages/torch_xmlir/xccl//so/libbkcl.so loaded
+[35mSYMBOL_REWRITE [0m[32mtorch success[0m
+  [shape] N=16 B=1 dit: sel=fft_dit_fused fallback=False sel_err=9.76e-08 m0_err=9.77e-08 correct=True
+  [shape] N=2048 B=1 dit: sel=fft_dit_matrix fallback=False sel_err=7.29e-07 m0_err=2.70e-07 correct=True
+  [shape] N=65536 B=1 dit: sel=fft_dit_radix4 fallback=False sel_err=2.76e-07 m0_err=4.49e-07 correct=True
+  [shape] N=4096 B=16 dit: sel=fft_dit_batch fallback=False sel_err=3.49e-07 m0_err=3.49e-07 correct=True
+  [shape] N=4096 B=64 dit: sel=fft_dit_batch fallback=False sel_err=3.37e-07 m0_err=3.37e-07 correct=True
+  [fallback-out-of-table] N=32 B=1 dit: sel=fft_dit fallback=True sel_err=7.63e-08 m0_err=7.63e-08 correct=True
+  [fallback-profile-mismatch] N=2048 B=1 dif: sel=fft_dif fallback=True sel_err=2.39e-07 m0_err=2.51e-07 correct=True
+  [rejected-non-pow2] N=3000: size must be a positive power of two, got 3000
+session 0: wrote /workspace/kunlunxin-fft/results/p800/selected_sessions/raw_session0.jsonl
+=== session 1 ===
+session 1: seed=20268934
+XCCL /root/miniconda/envs/python310_torch29_cuda/lib/python3.10/site-packages/torch_xmlir/xccl//so/libbkcl.so loaded
+[35mSYMBOL_REWRITE [0m[32mtorch success[0m
+  [shape] N=16 B=1 dit: sel=fft_dit_fused fallback=False sel_err=1.09e-07 m0_err=1.09e-07 correct=True
+  [shape] N=2048 B=1 dit: sel=fft_dit_matrix fallback=False sel_err=5.70e-07 m0_err=2.91e-07 correct=True
+  [shape] N=65536 B=1 dit: sel=fft_dit_radix4 fallback=False sel_err=2.79e-07 m0_err=4.75e-07 correct=True
+  [shape] N=4096 B=16 dit: sel=fft_dit_batch fallback=False sel_err=3.30e-07 m0_err=3.30e-07 correct=True
+  [shape] N=4096 B=64 dit: sel=fft_dit_batch fallback=False sel_err=3.83e-07 m0_err=3.83e-07 correct=True
+  [fallback-out-of-table] N=32 B=1 dit: sel=fft_dit fallback=True sel_err=8.78e-08 m0_err=8.78e-08 correct=True
+  [fallback-profile-mismatch] N=2048 B=1 dif: sel=fft_dif fallback=True sel_err=2.79e-07 m0_err=2.58e-07 correct=True
+  [rejected-non-pow2] N=3000: size must be a positive power of two, got 3000
+session 1: wrote /workspace/kunlunxin-fft/results/p800/selected_sessions/raw_session1.jsonl
+=== session 2 ===
+session 2: seed=20276853
+XCCL /root/miniconda/envs/python310_torch29_cuda/lib/python3.10/site-packages/torch_xmlir/xccl//so/libbkcl.so loaded
+[35mSYMBOL_REWRITE [0m[32mtorch success[0m
+  [shape] N=16 B=1 dit: sel=fft_dit_fused fallback=False sel_err=7.47e-08 m0_err=7.47e-08 correct=True
+  [shape] N=2048 B=1 dit: sel=fft_dit_matrix fallback=False sel_err=5.64e-07 m0_err=2.78e-07 correct=True
+  [shape] N=65536 B=1 dit: sel=fft_dit_radix4 fallback=False sel_err=2.77e-07 m0_err=4.85e-07 correct=True
+  [shape] N=4096 B=16 dit: sel=fft_dit_batch fallback=False sel_err=3.89e-07 m0_err=3.89e-07 correct=True
+  [shape] N=4096 B=64 dit: sel=fft_dit_batch fallback=False sel_err=3.25e-07 m0_err=3.25e-07 correct=True
+  [fallback-out-of-table] N=32 B=1 dit: sel=fft_dit fallback=True sel_err=1.57e-07 m0_err=1.57e-07 correct=True
+  [fallback-profile-mismatch] N=2048 B=1 dif: sel=fft_dif fallback=True sel_err=2.46e-07 m0_err=2.35e-07 correct=True
+  [rejected-non-pow2] N=3000: size must be a positive power of two, got 3000
+session 2: wrote /workspace/kunlunxin-fft/results/p800/selected_sessions/raw_session2.jsonl
+aggregated 7 shapes -> /workspace/kunlunxin-fft/results/p800/selected_sessions/summary.json
+EXIT=0

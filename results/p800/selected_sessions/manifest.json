@@ -1,0 +1,12 @@
+{
+  "commit": "bbafd7fff78c5b62fde5f9d7b9d4e27982f7d31d",
+  "dirty": true,
+  "device": "kunlunxin-p800",
+  "profile_hash": "a78b86793c7142a0",
+  "driver": "6",
+  "correctness_threshold": 0.0001,
+  "seed_base": 20261015,
+  "table_path": "config/selector_table.json",
+  "protocol": "3 independent process sessions; per shape correctness first, then interleaved randomized M0 vs selected; raw per-trial samples retained; 2% guard is an engineering band, not a significance claim",
+  "selection_semantics": "search-stage median improvement from the frozen table; session-level speedups reported separately"
+}

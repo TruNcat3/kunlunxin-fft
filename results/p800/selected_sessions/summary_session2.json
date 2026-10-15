@@ -1,0 +1,202 @@
+{
+  "session": 2,
+  "shapes": [
+    {
+      "N": 16,
+      "batch": 1,
+      "direction": "dit",
+      "label": "shape",
+      "executed": "fft_dit_fused",
+      "fallback": false,
+      "selection_source": "table",
+      "selection_reason": "challenger m1_t64@block1024 beats M0 incumbent m0_dit@block1024 by 44.6% (>= 2.0%)",
+      "block": 1024,
+      "flow_realization": "fused-inplace",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "tile": 64
+      },
+      "m0_median_ms": 0.3320329124107957,
+      "selected_median_ms": 0.2397550269961357,
+      "speedup_m0_over_selected": 1.3848840484005671,
+      "m0_err": 7.474005091698853e-08,
+      "selected_err": 7.474005091698853e-08,
+      "correct": true
+    },
+    {
+      "N": 2048,
+      "batch": 1,
+      "direction": "dit",
+      "label": "shape",
+      "executed": "fft_dit_matrix",
+      "fallback": false,
+      "selection_source": "table",
+      "selection_reason": "challenger m2_dit_t64@block256 beats M0 incumbent m0_dit@block256 by 33.0% (>= 2.0%)",
+      "block": 256,
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "tile": 64,
+        "rows": 8
+      },
+      "m0_median_ms": 0.8127130568027496,
+      "selected_median_ms": 0.4122919635847211,
+      "speedup_m0_over_selected": 1.9712076115588577,
+      "m0_err": 2.784866397177956e-07,
+      "selected_err": 5.643356218618342e-07,
+      "correct": true
+    },
+    {
+      "N": 65536,
+      "batch": 1,
+      "direction": "dit",
+      "label": "shape",
+      "executed": "fft_dit_radix4",
+      "fallback": false,
+      "selection_source": "table",
+      "selection_reason": "challenger m5_r4_dit@block256 beats M0 incumbent m0_dit@block256 by 52.4% (>= 2.0%)",
+      "block": 256,
+      "flow_realization": "global-stage",
+      "processing_unit": "radix4-scalar",
+      "params": {
+        "radix": 4
+      },
+      "m0_median_ms": 9.512802003882825,
+      "selected_median_ms": 4.424837999977171,
+      "speedup_m0_over_selected": 2.149864470503079,
+      "m0_err": 4.85131797978129e-07,
+      "selected_err": 2.7709605934753535e-07,
+      "correct": true
+    },
+    {
+      "N": 4096,
+      "batch": 16,
+      "direction": "dit",
+      "label": "shape",
+      "executed": "fft_dit_batch",
+      "fallback": false,
+      "selection_source": "table",
+      "selection_reason": "folded kept (spread gain -7.9% < 2.0%)",
+      "block": 1024,
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "variant": "folded",
+        "batch": 16
+      },
+      "m0_median_ms": 7.06108205486089,
+      "selected_median_ms": 7.070482010021806,
+      "speedup_m0_over_selected": 0.9986705354532276,
+      "m0_err": 3.887420069140515e-07,
+      "selected_err": 3.887420069140515e-07,
+      "correct": true
+    },
+    {
+      "N": 4096,
+      "batch": 64,
+      "direction": "dit",
+      "label": "shape",
+      "executed": "fft_dit_batch",
+      "fallback": false,
+      "selection_source": "table",
+      "selection_reason": "folded kept (spread gain -13.5% < 2.0%)",
+      "block": 1024,
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "variant": "folded",
+        "batch": 64
+      },
+      "m0_median_ms": 27.928316965699196,
+      "selected_median_ms": 27.992445044219494,
+      "speedup_m0_over_selected": 0.9977090933493307,
+      "m0_err": 3.2517475528118967e-07,
+      "selected_err": 3.2517475528118967e-07,
+      "correct": true
+    },
+    {
+      "N": 32,
+      "batch": 1,
+      "direction": "dit",
+      "label": "fallback-out-of-table",
+      "executed": "fft_dit",
+      "fallback": true,
+      "selection_source": "abstain",
+      "selection_reason": "no measured entry for N=32 batch=1 direction=dit; fall back to M0",
+      "block": 1024,
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar",
+      "params": {},
+      "m0_median_ms": 0.36814308259636164,
+      "selected_median_ms": 0.3902319585904479,
+      "speedup_m0_over_selected": 0.943395522822187,
+      "m0_err": 1.567092135066606e-07,
+      "selected_err": 1.567092135066606e-07,
+      "correct": true
+    },
+    {
+      "N": 2048,
+      "batch": 1,
+      "direction": "dif",
+      "label": "fallback-profile-mismatch",
+      "executed": "fft_dif",
+      "fallback": true,
+      "selection_source": "abstain",
+      "selection_reason": "profile hash ffffffffffffffff != table a78b86793c7142a0; re-measure before selecting",
+      "block": 256,
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar",
+      "params": {},
+      "m0_median_ms": 0.8129129419103265,
+      "selected_median_ms": 0.5034690257161856,
+      "speedup_m0_over_selected": 1.6146235426379139,
+      "m0_err": 2.3545843262336254e-07,
+      "selected_err": 2.464782303172187e-07,
+      "correct": true
+    },
+    {
+      "session": 2,
+      "label": "rejected-non-pow2",
+      "N": 3000,
+      "batch": 1,
+      "direction": "dit",
+      "status": "rejected-before-launch",
+      "error": "size must be a positive power of two, got 3000",
+      "correct": null
+    }
+  ],
+  "ablation": [
+    {
+      "candidate": "m0",
+      "median_ms": 1.0671579511836171,
+      "err": 3.6423003904303675e-07,
+      "launches": 12,
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar"
+    },
+    {
+      "candidate": "m1_t64",
+      "median_ms": 1.4751290436834097,
+      "err": 3.6423003904303675e-07,
+      "launches": 8,
+      "flow_realization": "fused-inplace",
+      "processing_unit": "radix2-scalar"
+    },
+    {
+      "candidate": "m2_dit_t64",
+      "median_ms": 0.727765029296279,
+      "err": 8.997408003492052e-07,
+      "launches": 8,
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64"
+    },
+    {
+      "candidate": "m5_r4_dit",
+      "median_ms": 0.9203410008922219,
+      "err": 1.9578750643135178e-07,
+      "launches": 6,
+      "flow_realization": "global-stage",
+      "processing_unit": "radix4-scalar"
+    }
+  ]
+}
