@@ -142,6 +142,10 @@ def _make_input(n, batch, seed):
     import numpy as np
     import torch
     rng = np.random.default_rng(seed)
+    if batch == 1:
+        re = rng.standard_normal(n).astype(np.float32)
+        im = rng.standard_normal(n).astype(np.float32)
+        return torch.complex(torch.from_numpy(re), torch.from_numpy(im)).cuda()
     re = rng.standard_normal((batch, n)).astype(np.float32)
     im = rng.standard_normal((batch, n)).astype(np.float32)
     return torch.complex(torch.from_numpy(re), torch.from_numpy(im)).cuda()
@@ -150,6 +154,10 @@ def _make_input(n, batch, seed):
 def _ref_np(n, batch, seed):
     import numpy as np
     rng = np.random.default_rng(seed)
+    if batch == 1:
+        re = rng.standard_normal(n).astype(np.float32)
+        im = rng.standard_normal(n).astype(np.float32)
+        return np.fft.fft(re + 1j * im)
     re = rng.standard_normal((batch, n)).astype(np.float32)
     im = rng.standard_normal((batch, n)).astype(np.float32)
     return np.fft.fft(re + 1j * im)

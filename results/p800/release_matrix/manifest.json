@@ -1,0 +1,18 @@
+{
+  "commit": "18c3f02355000cc82bd444f38ec76a6cf94bab2f",
+  "dirty": false,
+  "device": "kunlunxin-p800",
+  "driver": "6",
+  "toolchain": "torch 2.9.0+cu129 + torch_xmlir",
+  "profile_hash": "a78b86793c7142a0",
+  "config_hash": "a78b86793c7142a0",
+  "selector_table_sha256": "309483cca022b624cffa833af53a3c6a219d17785334221f49fa27520172d436",
+  "protocol_id": "release-matrix-v2:plan-reuse:interleave:correctness-first:3sess",
+  "warmup": 10,
+  "trials": 30,
+  "seed_base": 20261015,
+  "timing_scope": "api wall time (dispatch+alloc+layout+sync), ms",
+  "error_threshold": 0.0001,
+  "error_definition": "max_rel_error = max(|got-ref|)/max(|ref|), numpy complex128 reference",
+  "selection_semantics": "frozen table; search-stage median improvement guard; plan-reuse timings use execute_fft_plan after one plan_fft"
+}
