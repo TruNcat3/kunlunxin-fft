@@ -38,8 +38,10 @@ Hardware: single Kunlunxin **P800 OAM** (12 clusters x 64 cores, 96 GiB HBM, dri
 | `baseline-global-stage` (M5) | `fft_dit_radix4` / `fft_dif_radix4` | Same flow, radix-4 core: digit-reversal folded into the boundary stage, radix-2 tail for odd `log2(N)`. |
 
 The lowering-contract check runs before timing: candidates are checked for
-`residence=gm, layout=planar-soa` with unit/radix consistency (`radix-2` and
-`radix-4` both legal on the baseline flow; M1 fusion stays radix-2-only);
+`boundary_residence=gm, layout=planar-soa` with unit/radix consistency
+(`radix2-scalar` and `radix4-scalar` both legal on the baseline flow; M1
+fusion stays radix-2-only; the schema-v2 split records `flow_realization`
+and `local_residence` separately from the processing unit);
 `selected_candidate` defaults to the conservative M0 (`lowest fused_tile`, stable
 sort keeps the incumbent first) so every challenger must prove itself by
 measurement. The analytic arithmetic ledger (`candidates.arithmetic_cost`) reports
@@ -99,11 +101,16 @@ confirmed) — it is mandatory. The barrier plus the in-place store→load depen
 serializes the memory pipeline that M0's out-of-place stages keep fully independent.
 At small `N` the launch reduction dominates and M1 wins; at large `N` barrier cost
 dominates and M1 loses. This is a **resource/dependency bottleneck of the pointer-based
-fusion form**, not an algorithmic limit. Register residence (never round-tripping
-through memory, hence no inter-stage fence) is the fix — and it is **landed as M2** via
-a dense matrix linear map through `tl.dot`, a form the lowering accepts without the
-rejected tensor-subscript gather. The tensor-subscript limitation stays canaried and
-scoped in [Device Stack](device-stack.md); no shipped kernel depends on it.
+fusion form**, not an algorithmic limit. Residency that never round-trips
+through memory across stages (hence no inter-stage fence) is the fix — and it is
+**landed as M2** via a dense matrix linear map through `tl.dot`, a form the
+lowering accepts without the rejected tensor-subscript gather. The residency
+attribution (M1 intermediates cache-resident per launch; M2
+register+dot-implicit) is **supported by the correctness ablation above and
+structural analysis of the lowering**; this stack exposes no cache/occupancy
+counters, so it is not counter-confirmed. The tensor-subscript limitation stays
+canaried and scoped in [Device Stack](device-stack.md); no shipped kernel
+depends on it.
 
 ## Honest reading
 
@@ -160,8 +167,8 @@ and the vendor error string is retained in the raw JSON.
 
 ### Latency by flow
 
-![api_ms vs N](plots/api_ms_vs_n.png)
-![speedup vs M0](plots/speedup_vs_m0.png)
+![api_ms vs N](https://github.com/TruNcat3/kunlunxin-fft/blob/master/results/p800/plots/api_ms_vs_n.png)
+![speedup vs M0](https://github.com/TruNcat3/kunlunxin-fft/blob/master/results/p800/plots/speedup_vs_m0.png)
 
 Geometric-mean speedup vs the M0 baseline, DIT (same for DIF within noise):
 
@@ -171,8 +178,8 @@ Geometric-mean speedup vs the M0 baseline, DIT (same for DIF within noise):
 | M2 matrix tile=64 (DIT) | 1.80x | 1.53x | 1.65x |
 | M2 matrix tile=64 (DIF) | 1.91x | 1.57x | 1.72x |
 | M3 grouped tile=8 (DIT) | 1.58x | 1.57x | 1.58x |
-| M5 radix-4 (DIT) | 1.03x | **1.69x** | 1.34x |
-| M5 radix-4 (DIF) | 1.00x | **1.77x** | 1.35x |
+| M5 radix-4 (DIT) | 1.03x | **1.69x** | 1.33x |
+| M5 radix-4 (DIF) | 1.01x | **1.71x** | 1.32x |
 
 At the highlighted large sizes (median api_ms, DIT):
 
@@ -217,7 +224,7 @@ trips matter when memory dominates; the add cost matters when launches do.
 Batch is a workload axis, never a B-vs-1 speedup: throughput is amortized
 `B * M0_ms / M4_ms` (higher = better packing of the same stage grid).
 
-![batch throughput](plots/batch_throughput.png)
+![batch throughput](https://github.com/TruNcat3/kunlunxin-fft/blob/master/results/p800/plots/batch_throughput.png)
 
 | B (folded, DIT) | `N <= 1024` | `N >= 4096` |
 |---|---:|---:|
@@ -226,13 +233,16 @@ Batch is a workload axis, never a B-vs-1 speedup: throughput is amortized
 | 16 | 11.52x | 1.25x |
 | 64 | 28.22x | 1.27x |
 
-`spread` tracks `folded` within ~5% (raw rows carry both). Amortization is
+`spread` tracks `folded` within ~5% **from `N >= 2048` up** (raw rows carry
+both); in the launch-bound regime `N <= 1024` the folded variant wins — up to
+**4.11x at `N=8, B=64`** — so the two variants must not be pooled below
+`N=2048`. Amortization is
 strong in the launch-bound regime and converges to ~1.2-1.3x once memory
 dominates; per-element correctness holds at every (B, N) (max err 7.2e-7).
 
 ### Block sweep (every declared legal block)
 
-![block sweep](plots/block_sweep.png)
+![block sweep](https://github.com/TruNcat3/kunlunxin-fft/blob/master/results/p800/plots/block_sweep.png)
 
 Runs at `B=1`, sizes `{2^3, 2^6, 2^10, 2^12, 2^14, 2^16, 2^18, 2^20}` (full range,
 all highlighted sizes), raw rows:

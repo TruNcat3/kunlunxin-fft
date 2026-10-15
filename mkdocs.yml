@@ -27,3 +27,4 @@ nav:
   - Results: results.md
   - Development:
       - Migration convergence plan: development/migration-convergence-plan.md
+      - Incident 2026-10-14 bench hang: development/incidents/2026-10-14-p800-bench-hang.md

@@ -91,8 +91,8 @@ def test_manifest_rejects_unknown_field():
 
 def test_baseline_candidate_is_legal():
     p = DeviceProfile.load()
-    c = Candidate(flow_id="baseline-global-stage", processing_unit="radix-2",
-                  radix=2, residence="gm", layout="planar-soa",
+    c = Candidate(flow_id="baseline-global-stage", processing_unit="radix2-scalar",
+                  radix=2, boundary_residence="gm", layout="planar-soa",
                   block=1024, fused_tile=1)
     v = check_lowering(c, p)
     assert v.legal, v.reasons
@@ -101,8 +101,8 @@ def test_baseline_candidate_is_legal():
 
 def test_fused_tile_candidate_is_legal():
     p = DeviceProfile.load()
-    c = Candidate(flow_id="local-fused-tile", processing_unit="radix-2",
-                  radix=2, residence="gm", layout="planar-soa",
+    c = Candidate(flow_id="local-fused-tile", processing_unit="radix2-scalar",
+                  radix=2, boundary_residence="gm", layout="planar-soa",
                   block=1024, fused_tile=64)
     v = check_lowering(c, p)
     assert v.legal, v.reasons
@@ -111,8 +111,8 @@ def test_fused_tile_candidate_is_legal():
 def test_on_chip_residence_is_not_lowered():
     """Multi-stage on-chip residence must be rejected, not silently scored."""
     p = DeviceProfile.load()
-    c = Candidate(flow_id="baseline-global-stage", processing_unit="radix-2",
-                  radix=2, residence="shared", layout="planar-soa",
+    c = Candidate(flow_id="baseline-global-stage", processing_unit="radix2-scalar",
+                  radix=2, boundary_residence="shared", layout="planar-soa",
                   block=1024, fused_tile=1)
     v = check_lowering(c, p)
     assert not v.legal
@@ -123,15 +123,15 @@ def test_on_chip_residence_is_not_lowered():
 def test_radix4_is_legal_on_baseline_flow():
     """M5: radix-4 lowers on the same flow as radix-2; unit/radix must agree."""
     p = DeviceProfile.load()
-    c = Candidate(flow_id="baseline-global-stage", processing_unit="radix-4",
-                  radix=4, residence="gm", layout="planar-soa",
+    c = Candidate(flow_id="baseline-global-stage", processing_unit="radix4-scalar",
+                  radix=4, boundary_residence="gm", layout="planar-soa",
                   block=1024, fused_tile=1)
     v = check_lowering(c, p)
     assert v.legal, v.reasons
     # unit/radix mismatch is still rejected
     mismatch = Candidate(flow_id="baseline-global-stage",
-                         processing_unit="radix-4", radix=2,
-                         residence="gm", layout="planar-soa",
+                         processing_unit="radix4-scalar", radix=2,
+                         boundary_residence="gm", layout="planar-soa",
                          block=1024, fused_tile=1)
     v = check_lowering(mismatch, p)
     assert not v.legal
@@ -139,21 +139,21 @@ def test_radix4_is_legal_on_baseline_flow():
     # unimplemented cores stay not-lowered
     other = Candidate(flow_id="baseline-global-stage",
                       processing_unit="radix-8", radix=8,
-                      residence="gm", layout="planar-soa",
+                      boundary_residence="gm", layout="planar-soa",
                       block=1024, fused_tile=1)
     v = check_lowering(other, p)
     assert not v.legal
     # M1 fusion remains radix-2-only (enumeration-level, see below)
     fused_r4 = Candidate(flow_id="local-fused-tile",
-                         processing_unit="radix-4", radix=4,
-                         residence="gm", layout="planar-soa",
+                         processing_unit="radix4-scalar", radix=4,
+                         boundary_residence="gm", layout="planar-soa",
                          block=1024, fused_tile=64)
     assert check_lowering(fused_r4, p).legal  # contract allows tile>1...
     # ...but enumeration must not pair radix-4 with the fused flow
     ds = DesignSpace.load()
     legal, rejected = enumerate_candidates(ds, p, block=1024)
     r4_flows = {v.candidate.flow_id for v in legal
-                if v.candidate.processing_unit == "radix-4"}
+                if v.candidate.processing_unit == "radix4-scalar"}
     assert r4_flows == {"baseline-global-stage"}
 
 
@@ -177,8 +177,8 @@ def test_arithmetic_cost_radix4_vs_radix2():
 
 def test_batch_expansion_is_not_lowered():
     p = DeviceProfile.load()
-    c = Candidate(flow_id="baseline-global-stage", processing_unit="radix-2",
-                  radix=2, residence="gm", layout="planar-soa",
+    c = Candidate(flow_id="baseline-global-stage", processing_unit="radix2-scalar",
+                  radix=2, boundary_residence="gm", layout="planar-soa",
                   block=1024, fused_tile=1, ud=4)
     v = check_lowering(c, p)
     assert not v.legal
@@ -186,8 +186,8 @@ def test_batch_expansion_is_not_lowered():
 
 def test_non_power_of_two_block_rejected():
     p = DeviceProfile.load()
-    c = Candidate(flow_id="baseline-global-stage", processing_unit="radix-2",
-                  radix=2, residence="gm", layout="planar-soa",
+    c = Candidate(flow_id="baseline-global-stage", processing_unit="radix2-scalar",
+                  radix=2, boundary_residence="gm", layout="planar-soa",
                   block=1000, fused_tile=1)
     v = check_lowering(c, p)
     assert not v.legal
@@ -388,12 +388,12 @@ def test_tail_group_kernel_unrolls_k_loop():
 def test_batch_expansion_lowers_with_variant():
     """spread (Ud=B) and folded (Td=B) are the two lowered batch points."""
     p = DeviceProfile.load()
-    spread = Candidate(flow_id="batch-spread", processing_unit="radix-2",
-                       radix=2, residence="gm", layout="planar-soa",
+    spread = Candidate(flow_id="batch-spread", processing_unit="radix2-scalar",
+                       radix=2, boundary_residence="gm", layout="planar-soa",
                        block=1024, fused_tile=1, batch=4, batch_variant="spread",
                        ud=4, td=1)
-    folded = Candidate(flow_id="batch-folded", processing_unit="radix-2",
-                       radix=2, residence="gm", layout="planar-soa",
+    folded = Candidate(flow_id="batch-folded", processing_unit="radix2-scalar",
+                       radix=2, boundary_residence="gm", layout="planar-soa",
                        block=1024, fused_tile=1, batch=4, batch_variant="folded",
                        ud=1, td=4)
     for c in (spread, folded):
@@ -406,8 +406,8 @@ def test_batch_variant_axis_mismatch_rejected():
     p = DeviceProfile.load()
 
     def cand(**kw):
-        base = dict(flow_id="batch-spread", processing_unit="radix-2", radix=2,
-                    residence="gm", layout="planar-soa", block=1024,
+        base = dict(flow_id="batch-spread", processing_unit="radix2-scalar", radix=2,
+                    boundary_residence="gm", layout="planar-soa", block=1024,
                     fused_tile=1, batch=4, batch_variant="spread", ud=4, td=1)
         base.update(kw)
         return Candidate(**base)
@@ -420,8 +420,8 @@ def test_batch_variant_axis_mismatch_rejected():
         cand(flow_id="batch-folded"),      # flow must match variant
         cand(batch_variant="none"),        # variant removed but Ud kept
         cand(flow_id="batch-spread", batch_variant="folded", ud=1, td=4),
-        Candidate(flow_id="baseline-global-stage", processing_unit="radix-2",
-                  radix=2, residence="gm", layout="planar-soa", block=1024,
+        Candidate(flow_id="baseline-global-stage", processing_unit="radix2-scalar",
+                  radix=2, boundary_residence="gm", layout="planar-soa", block=1024,
                   fused_tile=1, ud=8),     # expansion without any variant
     ]
     for c in bad:
@@ -445,4 +445,97 @@ def test_enumeration_includes_batch_points():
     sel = selected_candidate(legal)
     assert sel.candidate.flow_id == "baseline-global-stage"
     assert sel.candidate.batch_variant == "none"
-    assert sel.candidate.processing_unit == "radix-2"  # incumbent stays radix-2
+    assert sel.candidate.processing_unit == "radix2-scalar"  # incumbent stays radix-2
+
+
+# --- schema v2 attribution (flow_realization / local_residence) ---
+
+
+def test_enumeration_registers_m2_and_m3():
+    """M2/M3 must surface as enumerated legal candidates, not ad-hoc points."""
+    ds = DesignSpace.load()
+    p = DeviceProfile.load()
+    legal, _ = enumerate_candidates(ds, p, block=1024)
+    realizations = {v.candidate.to_dict()["flow_realization"] for v in legal}
+    assert {"global-stage", "fused-inplace", "matrix-resident",
+            "grouped-boundary"} <= realizations
+    units = {v.candidate.processing_unit for v in legal}
+    assert {"radix2-scalar", "radix4-scalar", "dense-dot-fft64",
+            "composite-linear-map"} <= units
+
+
+def test_schema_v2_attribution_fields():
+    """to_dict carries the split attribution axes with evidenced values."""
+    p = DeviceProfile.load()
+    cases = [
+        (Candidate(flow_id="baseline-global-stage",
+                   processing_unit="radix2-scalar", radix=2,
+                   boundary_residence="gm", layout="planar-soa",
+                   block=1024, fused_tile=1),
+         "global-stage", "none"),
+        (Candidate(flow_id="local-fused-tile",
+                   processing_unit="radix2-scalar", radix=2,
+                   boundary_residence="gm", layout="planar-soa",
+                   block=1024, fused_tile=64),
+         "fused-inplace", "cache"),
+        (Candidate(flow_id="local-fused-tile",
+                   processing_unit="dense-dot-fft64", radix=2,
+                   boundary_residence="gm", layout="planar-soa",
+                   block=1024, fused_tile=64, rows=8,
+                   flow_realization="matrix-resident"),
+         "matrix-resident", "register+implicit-dot"),
+        (Candidate(flow_id="local-fused-tile",
+                   processing_unit="composite-linear-map", radix=2,
+                   boundary_residence="gm", layout="planar-soa",
+                   block=1024, fused_tile=8, rows=8, glog=2, maxp=4096,
+                   cells=1, flow_realization="grouped-boundary"),
+         "grouped-boundary", "register"),
+    ]
+    for cand, realization, local_res in cases:
+        v = check_lowering(cand, p)
+        assert v.legal, v.reasons
+        d = cand.to_dict()
+        assert d["flow_realization"] == realization
+        assert d["local_residence"] == local_res
+        assert d["boundary_residence"] == "gm"
+
+
+def test_local_residence_fabrication_rejected():
+    """A flow may only claim residency the realization evidences."""
+    p = DeviceProfile.load()
+    c = Candidate(flow_id="local-fused-tile", processing_unit="radix2-scalar",
+                  radix=2, boundary_residence="gm", layout="planar-soa",
+                  block=1024, fused_tile=64, local_residence="register")
+    v = check_lowering(c, p)
+    assert not v.legal
+    assert any("local_residence" in r for r in v.reasons)
+
+
+def test_report_tail_groups_matches_matrices():
+    """report._tail_groups must equal matrices.tail_groups on the grid.
+
+    The report module clones the greedy partition to stay numpy-free; the
+    clone and the original must never diverge.
+    """
+    import sys as _sys
+
+    from src.xpu.matrices import tail_groups
+
+    scripts = Path(__file__).resolve().parents[1] / "scripts"
+    _sys.path.insert(0, str(scripts))
+    try:
+        import report as report_mod
+    finally:
+        _sys.path.pop(0)
+    for tile, logn, glog, maxp in (
+        (8, 16, 2, 4096),
+        (8, 16, 1, 4096),
+        (64, 16, 3, 8192),
+        (64, 16, 3, 128),
+        (16, 20, 2, 1024),
+        (64, 16, 2, 8192),
+        (8, 4, 2, 4096),
+        (64, 16, 4, 4096),
+    ):
+        assert report_mod._tail_groups(tile, logn, glog, maxp) == \
+            tail_groups(tile, logn, glog, maxp), (tile, logn, glog, maxp)

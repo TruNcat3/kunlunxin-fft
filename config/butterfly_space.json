@@ -36,6 +36,19 @@
       "candidates": [1, 4, 16, 64],
       "variants": ["spread", "folded"],
       "note": "M4 data-space/time expansion over the (B, N) batch axis. 'spread' maps batch to grid axis 1 (Ud=B, flow batch-spread); 'folded' splits the batch out of a flat pair-space grid (Td=B, flow batch-folded). Both consume B in dit/dif_stage_batch_kernel and keep the M0 stage count (log2(N) launches); batch=1 degenerates to the baseline. The batch axis is a workload axis, not an assumed speedup (plan sections 6/7)."
+    },
+    "register_matrix": {
+      "tiles": [64],
+      "rows": [8],
+      "note": "M2 register-resident local matrix (flow_realization=matrix-resident, processing_unit=dense-dot-fft64). The tile stage group is a dense (BLOCK x BLOCK) linear map through 4x tl.dot; one program owns `rows` consecutive tile-blocks, the group crosses device memory exactly once (one load, one store) and all stage intermediates stay in registers feeding the implicit dot. tiles/rows are powers of two; runtime still requires the tile to divide N (runner clamps eff_tile)."
+    },
+    "grouped_boundary": {
+      "tiles": [8],
+      "rows": [8],
+      "glog": [2],
+      "maxp": [4096],
+      "cells": [1],
+      "note": "M3 execution-group boundary tail (flow_realization=grouped-boundary, processing_unit=composite-linear-map). Tail stages half-span n >= tile are partitioned into execution groups of up to `glog` consecutive stages with period n0<<g <= maxp (see src/xpu/matrices.py tail_groups); a group is one pointer-form linear map so only group boundaries cross global memory. `cells` is how many BLOCK windows one group-kernel program owns. `rows` matches the runner default (tile-blocks per program); bench does not expose it as a CLI flag."
     }
   },
 
@@ -54,7 +67,7 @@
     "butterfly_count_per_stage": "N/2",
     "stage_count": "log2(N)",
     "dft_matrix": [false],
-    "dft_matrix_note": "No matrix-unit / DFT-matrix path; the P800 matrix engine is not reachable from a Triton kernel on this toolchain"
+    "dft_matrix_note": "No hardware matrix-unit path; the P800 matrix engine is not reachable from a Triton kernel on this toolchain. The M2 register_matrix flow is different: it lowers through Triton's tl.dot builtin (compiler-generated code), which does work - see P.register_matrix."
   },
 
   "H": {

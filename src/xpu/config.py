@@ -127,6 +127,15 @@ class DesignSpace:
     batch_variants: tuple
     layout_in: str
     layout_out: str
+    # M2 register-resident matrix axes (P.register_matrix)
+    matrix_tiles: tuple
+    matrix_rows: tuple
+    # M3 execution-group boundary axes (P.grouped_boundary)
+    grouped_tiles: tuple
+    grouped_rows: tuple
+    grouped_glog: tuple
+    grouped_maxp: tuple
+    grouped_cells: tuple
 
     @staticmethod
     def load() -> "DesignSpace":
@@ -173,6 +182,40 @@ class DesignSpace:
             "butterfly_space.json: P.batch_expansion.variants must be 'spread'/'folded'",
         )
 
+        # M2 register-resident matrix axes (tiles x rows the matrix kernel
+        # consumes). Required: the lowering contract enumerates M2 from these.
+        reg = p.get("register_matrix")
+        _require(isinstance(reg, dict), "butterfly_space.json: P.register_matrix required")
+        matrix_tiles = reg.get("tiles")
+        matrix_rows = reg.get("rows")
+        for name, vals in (("tiles", matrix_tiles), ("rows", matrix_rows)):
+            _require(
+                isinstance(vals, list) and vals
+                and all(isinstance(t, int) and t > 0 and (t & (t - 1)) == 0 for t in vals),
+                f"butterfly_space.json: P.register_matrix.{name} must be powers of two",
+            )
+
+        # M3 execution-group boundary axes (tile x rows x glog x maxp x cells).
+        grp = p.get("grouped_boundary")
+        _require(isinstance(grp, dict), "butterfly_space.json: P.grouped_boundary required")
+        grouped_tiles = grp.get("tiles")
+        grouped_rows = grp.get("rows")
+        grouped_maxp = grp.get("maxp")
+        grouped_cells = grp.get("cells")
+        for name, vals in (("tiles", grouped_tiles), ("rows", grouped_rows),
+                           ("maxp", grouped_maxp), ("cells", grouped_cells)):
+            _require(
+                isinstance(vals, list) and vals
+                and all(isinstance(t, int) and t > 0 and (t & (t - 1)) == 0 for t in vals),
+                f"butterfly_space.json: P.grouped_boundary.{name} must be powers of two",
+            )
+        grouped_glog = grp.get("glog")
+        _require(
+            isinstance(grouped_glog, list) and grouped_glog
+            and all(isinstance(g, int) and g >= 1 for g in grouped_glog),
+            "butterfly_space.json: P.grouped_boundary.glog must be ints >= 1",
+        )
+
         lay = d.get("L", {})
         _require(isinstance(lay.get("in"), list) and lay["in"], "butterfly_space.json: L.in required")
         _require(isinstance(lay.get("out"), list) and lay["out"], "butterfly_space.json: L.out required")
@@ -188,6 +231,13 @@ class DesignSpace:
             batch_variants=tuple(batch_variants),
             layout_in=lay["in"][0],
             layout_out=lay["out"][0],
+            matrix_tiles=tuple(matrix_tiles),
+            matrix_rows=tuple(matrix_rows),
+            grouped_tiles=tuple(grouped_tiles),
+            grouped_rows=tuple(grouped_rows),
+            grouped_glog=tuple(grouped_glog),
+            grouped_maxp=tuple(grouped_maxp),
+            grouped_cells=tuple(grouped_cells),
         )
 
 
@@ -236,12 +286,12 @@ class Manifest:
     direction: str = "forward"
     precision: str = "fp32"
     flow_id: str = "baseline-global-stage"
-    processing_unit: str = "radix-2"
+    processing_unit: str = "radix2-scalar"   # schema v2 vocabulary
     us: int = 1
     ts: int = 1
     ud: int = 1
     td: int = 1
-    residence: str = "gm"
+    boundary_residence: str = "gm"           # schema v2 (was: residence)
     layout: str = "planar-soa"
     block: int = 1024
     fused_tile: int = 1
