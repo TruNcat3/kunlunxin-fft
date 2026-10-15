@@ -65,6 +65,7 @@ updates this table in the same change.
 |---|---|
 | supported+tested | implemented, correctness-gated in the current suites, and present in the published matrix |
 | supported+pending-evidence | implemented and correctness-gated; scale/session evidence still owed this round (E-group noted) |
+| implemented-hardware-unverified | the code path exists and is host-tested, but no hardware scale/session evidence has been recorded at the stated shapes; do not quote performance for it |
 | planned-this-round | committed by this plan (P0/P1/P2); not implemented yet |
 | roadmap | future rounds; explicitly non-blocking |
 | rejected-before-launch | rejected at the validation/lowering layer with a structured reason; never silently scored |
@@ -84,10 +85,11 @@ updates this table in the same change.
 | Batch | batched M1/M2/M3/M5 | roadmap (section 8b); this round explicitly rejects batch for rank-1-only flows before launch (entry dispatch: non-M4 batched table entries fall back to M4/M0 with the reason) | lowering contract; `src/xpu/entry.py::_dispatch` |
 | Algorithm flows | M0..M5 (see [architecture](../architecture.md)) | supported+tested | `tests/test_fft.py`; bench correctness phase; phase-3 rows |
 | Vendor comparison | `N<=2048`, `B=1` | supported+tested | phase-3 vendor rows; interleaved again in E1 |
-| Vendor comparison | `N<=2048`, `B>1` | supported+pending-evidence (E1) | the current runner passes rank-1 `x` to `torch.fft.fft`; batched vendor rows must be re-measured at real `(B, N)` before any batched external speedup is claimed |
+| Vendor comparison | `N=1024,2048`, `B=16,64` | supported+tested | release matrix: `torch.fft.fft` received the identical rank-2 fp32 forward C2C tensor at these exact `(B,N)` points and ran ok (3 sessions) |
+| Vendor comparison | `N<=2048`, other batches (`B=256..`) | supported+pending-evidence (roadmap, E1) | the vendor path accepts rank-2 `(B,N)`; untested batches must be measured before any batched external speedup is claimed |
 | Vendor comparison | `N>2048` | rejected-by-vendor, recorded as `unsupported`; internal comparisons only | vendor `NOT IMPLEMENTED` error retained in the raw row |
 | External speedup claims | matched vendor-supported shapes only | acceptance rule (section 8) | — |
-| Runtime selector | frozen winner table + unified execution entry + M0 fallback with reason | supported+tested **and pending-nothing** — implemented in PR #1 and validated in the plan-reuse release matrix (3 sessions, incumbent-block control) | `config/selector_table.json`, `src/xpu/selector.py`, `src/xpu/entry.py`, `results/p800/release_matrix/` |
+| Runtime selector | frozen winner table + unified execution entry + M0 fallback with reason | supported+tested **within the frozen table and the tested release-matrix shapes** (implemented in PR #1; plan-reuse validated in 3 sessions with incumbent-block control; not a claim of universal product-level coverage outside that scope) | `config/selector_table.json`, `src/xpu/selector.py`, `src/xpu/entry.py`, `results/p800/release_matrix/` |
 | Structured failure outcomes | `unsupported/infeasible/compile-failed/incorrect/timeout/oom` | planned-this-round (P0) | — |
 
 DIT and DIF are two algorithm organizations of the **same forward transform**;
@@ -214,7 +216,7 @@ full E1--E6 grids above remain the roadmap, not the release gate:
 
 | Purpose | N | Batch | Compared implementations |
 |---|---:|---|---|
-| Vendor overlap, small/mid | 1024, 2048 | 1, 16, 64 | M0, the frozen selected plan, the measured oracle at the shape, and the real batched vendor — only where `torch.fft.fft` actually succeeds at that `(N, B)` |
+| Vendor overlap, small/mid | 1024, 2048 | 1, 16, 64 | M0, the frozen selected plan, and the real batched vendor — only where `torch.fft.fft` actually succeeds at that `(N, B)`. (No independent measured-oracle column in this session: the oracle remains a historical search-stage concept, not part of the release-matrix comparison.) |
 | Batch trend | 4096 | 1, 16, 64 | batched M0 (M4), frozen selected, one spread/folded ablation |
 | Long transform | 65536 | 1, 4 | M0, frozen selected, one related ablation |
 | Capacity | 1048576 | 1 | correctness + latency/coverage record; existing phase-3/confirm evidence may be reused under the same protocol; excluded from external geometric means |
@@ -254,7 +256,10 @@ shape under the same guard; the table itself — never a prose summary — is
 the source of which variant wins where (e.g. spread wins at
 `N=65536, B=16`; folded is kept elsewhere in the current table).
 
-### P2: batched lowering and deployment selection
+### P2: batched lowering and deployment selection (future work, non-blocking)
+
+None of the items below blocks this round's migration instance; they are
+recorded for a later round that re-expands the batch space.
 
 - [ ] Today only the M0-stage flow has a batched lowering (M4 spread/folded);
   M1/M2/M3/M5 accept rank-1 inputs only. **This round explicitly keeps
@@ -262,8 +267,9 @@ the source of which variant wins where (e.g. spread wins at
   those flows lands here; the entry dispatch rejects rank-1-only flows at
   `B>1` before launch and falls back to M4/M0 with the reason. A later round
   may promote one flow to a batched lowering under the same funnel.
-- [ ] Extend only the promising processing flows to representative batches;
-  repeating the M4/M0 flow at more batches is not sufficient.
+- [ ] Future work: extend the promising processing flows to representative
+  batches — merely repeating the M4/M0 flow at more batch values is not
+  enough to claim broader batch coverage.
 - [ ] Keep flow organization and processing-unit selection as separate fields
   (`flow_realization` vs `processing_unit` in `src/xpu/candidates.py`
   schema v2). Compare cores under the same flow and flows under the same
@@ -319,7 +325,7 @@ Store the following artifacts:
 | `summary.csv` | generated per-shape/per-candidate statistics |
 | `selection.json` | chosen plan, applicability, confidence/reason, and fallback |
 | `profile/` | raw traces/counters and exact collection commands for anchor points |
-| `report.md` | question, result, causal evidence, limitations, and unresolved cases |
+| `server_report.md` | question, result, causal evidence, limitations, and unresolved cases |
 
 Minimum raw schema:
 
@@ -390,7 +396,7 @@ require the full E1--E6 grids):
   worst case 0.990x on the profile-mismatch fallback).**
 - [x] Raw rows, the frozen table, the actually executed configuration, and
   the automatic summary are cross-linkable (`raw_session*.jsonl` ->
-  `summary.json` -> `report.md`; table rebuilds byte-identically from the
+  `summary.json` -> `server_report.md`; table rebuilds byte-identically from the
   committed confirmation JSONs).
 
 Release-matrix acceptance (minimal matrix above; executed in
@@ -475,4 +481,3 @@ do not re-expand the full Cartesian product.
 5. [cuButterfly runtime selector](https://github.com/TruNcat3/cuButterfly/blob/main/docs/runtime_selector.md)
 6. [Ascend measurement methodology](https://github.com/TruNcat3/ascend-fft/blob/master/docs/benchmarks/methodology.md)
 7. [Ascend migration convergence contract](https://github.com/TruNcat3/ascend-fft/blob/master/docs/benchmarks/pr7-migration-convergence.md)
-
