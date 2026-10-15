@@ -54,8 +54,10 @@ ABLATION_CANDIDATES = ("m0", "m1_t64", "m2_dit_t64", "m5_r4_dit")
 
 
 def _median(xs):
-    xs = sorted(xs)
-    return xs[len(xs) // 2] if xs else None
+    """Standard median (even sample counts average the two centers)."""
+    import statistics
+    xs = list(xs)
+    return statistics.median(xs) if xs else None
 
 
 def _git(*args):
@@ -89,12 +91,9 @@ def _manifest(table_hash_note=None):
 
 
 def _err_vs_np(got, ref_np):
-    """numpy complex128 reference, same definition as the bench."""
-    import numpy as np
-    g = got.detach().cpu().numpy()
-    scale = max(np.abs(ref_np).max(), 1e-12)
-    return float(max(np.abs(g.real - ref_np.real).max(),
-                     np.abs(g.imag - ref_np.imag).max()) / scale)
+    """numpy complex128 reference; shared contract in src/xpu/error_metric."""
+    from src.xpu.error_metric import max_rel_error
+    return max_rel_error(got.detach().cpu().numpy(), ref_np)
 
 
 def _make_input(n, batch, seed):

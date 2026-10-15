@@ -50,6 +50,7 @@ import json
 import math
 import os
 import random
+import statistics
 import subprocess
 import sys
 import time
@@ -81,8 +82,9 @@ VENDOR_MAX_N = 2048
 
 
 def _median(xs):
-    xs = sorted(xs)
-    return xs[len(xs) // 2] if xs else None
+    """Standard median (even sample counts average the two centers)."""
+    xs = list(xs)
+    return statistics.median(xs) if xs else None
 
 
 def _pct(xs, q):
@@ -131,8 +133,10 @@ def _manifest(seed, warmup, trials):
         "seed_base": seed,
         "timing_scope": "api wall time (dispatch+alloc+layout+sync), ms",
         "error_threshold": 1e-4,
-        "error_definition": "max_rel_error = max(|got-ref|)/max(|ref|), "
-                            "numpy complex128 reference",
+        "error_definition": (
+            "max_rel_error = max(max(|Re(got-ref)|, |Im(got-ref)|)) "
+            "/ max(|ref|); non-finite inputs yield inf; "
+            "numpy complex128 reference"),
         "selection_semantics": (
             "frozen table; search-stage median improvement guard; "
             "plan-reuse timings use execute_fft_plan after one plan_fft"),
@@ -140,11 +144,8 @@ def _manifest(seed, warmup, trials):
 
 
 def _err_vs_np(got, ref_np):
-    import numpy as np
-    g = got.detach().cpu().numpy()
-    scale = max(np.abs(ref_np).max(), 1e-12)
-    return float(max(np.abs(g.real - ref_np.real).max(),
-                     np.abs(g.imag - ref_np.imag).max()) / scale)
+    from src.xpu.error_metric import max_rel_error
+    return max_rel_error(got.detach().cpu().numpy(), ref_np)
 
 
 def _err_gate(err, threshold=1e-4):

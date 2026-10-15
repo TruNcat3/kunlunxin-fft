@@ -14,11 +14,11 @@
     "seed_base": 20261015,
     "timing_scope": "api wall time (dispatch+alloc+layout+sync), ms",
     "error_threshold": 0.0001,
-    "error_definition": "max_rel_error = max(|got-ref|)/max(|ref|), numpy complex128 reference",
+    "error_definition": "max_rel_error = max(max(|Re(got-ref)|, |Im(got-ref)|)) / max(|ref|); non-finite inputs yield inf; numpy complex128 reference",
     "selection_semantics": "frozen table; search-stage median improvement guard; plan-reuse timings use execute_fft_plan after one plan_fft",
     "device_index": "6",
     "warmup_note": "originally recorded the CLI default (10); the executed interleave warmup was 3 rounds (hardcoded at run time). Corrected post-review without re-running; run_release_matrix.py now consumes --warmup.",
-    "aggregation_note": "summary.json/csv/server_report.md re-aggregated offline from summary_session{0,1,2}.json (plan-overhead and extras are medians across all 3 sessions, not session 0)."
+    "aggregation_note": "summary.json/csv/server_report.md re-aggregated offline from summary_session{0,1,2}.json (plan-overhead and extras are medians across all 3 sessions, not session 0). Session summaries and raw rows were produced by the original run and are not re-sampled; the 2026-10-15 follow-up switched _median to statistics.median (standard, even counts average the two centers) \u2014 with 3 sessions the cross-session medians are unchanged. The shared max_rel_error (src/xpu/error_metric.py) now returns inf for any non-finite component so an imaginary NaN cannot be swallowed; existing raw rows contained no non-finite errors, so published numbers are unaffected."
   },
   "sessions": 3,
   "shapes": [

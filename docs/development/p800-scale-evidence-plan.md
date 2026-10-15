@@ -86,7 +86,7 @@ updates this table in the same change.
 | Algorithm flows | M0..M5 (see [architecture](../architecture.md)) | supported+tested | `tests/test_fft.py`; bench correctness phase; phase-3 rows |
 | Vendor comparison | `N<=2048`, `B=1` | supported+tested | phase-3 vendor rows; interleaved again in E1 |
 | Vendor comparison | `N=1024,2048`, `B=16,64` | supported+tested | release matrix: `torch.fft.fft` received the identical rank-2 fp32 forward C2C tensor at these exact `(B,N)` points and ran ok (3 sessions) |
-| Vendor comparison | `N<=2048`, other batches (`B=256..`) | supported+pending-evidence (roadmap, E1) | the vendor path accepts rank-2 `(B,N)`; untested batches must be measured before any batched external speedup is claimed |
+| Vendor comparison | `N<=2048`, other batches (`B=256..`) | implemented-hardware-unverified (roadmap, E1) | the vendor path accepts rank-2 `(B,N)`; untested batches must be measured before any batched external speedup is claimed |
 | Vendor comparison | `N>2048` | rejected-by-vendor, recorded as `unsupported`; internal comparisons only | vendor `NOT IMPLEMENTED` error retained in the raw row |
 | External speedup claims | matched vendor-supported shapes only | acceptance rule (section 8) | — |
 | Runtime selector | frozen winner table + unified execution entry + M0 fallback with reason | supported+tested **within the frozen table and the tested release-matrix shapes** (implemented in PR #1; plan-reuse validated in 3 sessions with incumbent-block control; not a claim of universal product-level coverage outside that scope) | `config/selector_table.json`, `src/xpu/selector.py`, `src/xpu/entry.py`, `results/p800/release_matrix/` |
@@ -143,9 +143,10 @@ E-group correctness gates:
 | E6 | — | correctness re-checked periodically and at the end of the run, not only at admission |
 
 One error contract for all layers: the reference is numpy `complex128`;
-`max_rel_error = max(|got-ref|) / max(|ref|)` over the peak-normalized
-real/imag deviation (the `rel < 1e-4` gate in `config/test_matrix.json` and
-`err_vs` in the bench). The vendor `torch.fft.fft` is a performance baseline
+`max_rel_error = max(max(|Re(got-ref)|, |Im(got-ref)|)) / max(|ref|)`
+(non-finite inputs yield `inf`; shared helper `src/xpu/error_metric.py`;
+the `rel < 1e-4` gate in `config/test_matrix.json` and `err_vs` in the
+bench). The vendor `torch.fft.fft` is a performance baseline
 only (`N<=2048`), never the numeric reference. Seeded-random input is primary;
 impulse/constant/single-tone patterns isolate anomalies (section 7).
 
