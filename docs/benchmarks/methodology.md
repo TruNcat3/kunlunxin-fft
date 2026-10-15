@@ -40,4 +40,4 @@ Phase 3 使用 block=1024、warmup=10、trials=50，commit `12965bca` 且 `dirty
 18 个长度和更宽候选，适合趋势/消融。其 GM bytes 与 launch counts 是实现结构推导的解析账本，
 不是硬件 counter；不能标成实测带宽或 sector。
 
-下一页：[消融与交叉点](ablations.md)。
+下一页：[C2C 性能](c2c.md)。

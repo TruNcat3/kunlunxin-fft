@@ -27,7 +27,7 @@ markdown_extensions:
 nav:
   - 阅读入口: index.md
   - 开始使用:
-      - 安装与环境: getting-started/installation.md
+      - 安装: getting-started/installation.md
       - 首次运行: getting-started/quickstart.md
       - 故障排查: reference/troubleshooting.md
   - 使用指南:
@@ -38,17 +38,24 @@ nav:
       - 为什么混合展开: design/motivation.md
       - 架构与数据流: design/architecture.md
       - 计算核心与 lowering: design/kernels.md
+      - 性能模型: design/performance-model.md
+      - 实数变换边界: design/real-transforms.md
       - 选择器: design/selector.md
   - 实验与结果:
       - 实验设计与结果汇总: benchmarks/results.md
       - 测量协议: benchmarks/methodology.md
+      - C2C 性能: benchmarks/c2c.md
+      - 端到端与应用: benchmarks/end-to-end.md
+      - 规模切片: benchmarks/scale.md
       - 消融与交叉点: benchmarks/ablations.md
       - 原始数据与复现: benchmarks/reproducibility.md
       - 相关工作与基线: benchmarks/related-work.md
   - 开发指南:
       - 工程结构: development/repository-layout.md
-      - P800 设备路径: development/device-stack.md
       - 性能与故障诊断: development/profiling.md
+      - 增加设计点: development/adding-design-points.md
+      - 测试策略与扩展矩阵: testing.md
+      - P800 设备路径: development/device-stack.md
       - 验证与发布: development/validation-and-release.md
   - 参考:
       - 配置文件: reference/configuration.md

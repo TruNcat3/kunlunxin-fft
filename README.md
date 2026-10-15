@@ -31,7 +31,8 @@ selector 和保守 fallback。
   session；不代表其他软件栈、硬件或未测语义。
 
 完整逐点数据、负点和计时边界见[实验结果](docs/benchmarks/results.md)与
-[测量协议](docs/benchmarks/methodology.md)。
+[测量协议](docs/benchmarks/methodology.md)。按实验目的继续阅读[C2C 性能](docs/benchmarks/c2c.md)、
+[端到端口径](docs/benchmarks/end-to-end.md)和[规模切片](docs/benchmarks/scale.md)。
 
 ## 快速开始
 
@@ -87,14 +88,28 @@ Kunlunxin-FFT 保留这套方法层抽象，但所有 kernel、布局和 lowerin
 [设计动机](docs/design/motivation.md)和[架构与数据流](docs/design/architecture.md)。本观点和
 方法论来源于 cuButterfly；本仓库的独立内容是 P800 lowering、实现、选择器和实测证据。
 
+### 当前完成度
+
+| 层次 | 当前状态 |
+|---|---|
+| 方法抽象与合法 lowering | 已迁移并实测 M0--M5 |
+| 单变换局部融合/核心选择 | 已完成首轮优化，代表点相对 M0 为 `1.23x--2.07x` |
+| Batch 高效局部核心 | 尚未接入 M2/M5；当前主要是 M4 global-stage radix-2 |
+| 自动硬件 profile/成本模型 | 路线图中，当前使用静态 profile 与冻结表 |
+| 跨 worker persistent pipeline | 路线图中，不是当前发布路径 |
+
+新增实现应先阅读[增加设计点](docs/development/adding-design-points.md)和[测试策略](docs/testing.md)，
+再更新 selector 与发布证据。当前收敛任务集中在
+[Issue #3](https://github.com/TruNcat3/kunlunxin-fft/issues/3)。
+
 ## 阅读顺序
 
 | 读者 | 建议路径 |
 |---|---|
 | 首次使用 | [安装](docs/getting-started/installation.md) -> [首次运行](docs/getting-started/quickstart.md) -> [支持范围](docs/reference/support.md) |
-| 了解方法 | [设计动机](docs/design/motivation.md) -> [架构与数据流](docs/design/architecture.md) -> [计算核心](docs/design/kernels.md) |
-| 阅读实验 | [结果汇总](docs/benchmarks/results.md) -> [测量协议](docs/benchmarks/methodology.md) -> [消融分析](docs/benchmarks/ablations.md) |
-| 复现/开发 | [数据与复现](docs/benchmarks/reproducibility.md) -> [工程结构](docs/development/repository-layout.md) -> [验证与发布](docs/development/validation-and-release.md) |
+| 了解方法 | [设计动机](docs/design/motivation.md) -> [架构与数据流](docs/design/architecture.md) -> [计算核心](docs/design/kernels.md) -> [性能模型](docs/design/performance-model.md) |
+| 阅读实验 | [结果汇总](docs/benchmarks/results.md) -> [测量协议](docs/benchmarks/methodology.md) -> [C2C](docs/benchmarks/c2c.md) -> [端到端](docs/benchmarks/end-to-end.md) -> [规模切片](docs/benchmarks/scale.md) |
+| 复现/开发 | [数据与复现](docs/benchmarks/reproducibility.md) -> [增加设计点](docs/development/adding-design-points.md) -> [测试策略](docs/testing.md) -> [验证与发布](docs/development/validation-and-release.md) |
 
 在线文档：<https://truncat3.github.io/kunlunxin-fft/>。
 

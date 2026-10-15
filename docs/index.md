@@ -2,8 +2,10 @@
 
 Kunlunxin-FFT 是一个面向昆仑芯平台的 FFT 算子库，也是
 [cuButterfly](https://github.com/TruNcat3/cuButterfly) 混合空间-时间数据流方法在 P800 上的
-迁移实例。当前版本完成了可执行设备路径、M0--M5 候选、冻结 selector、plan reuse、batch 路径、
-正确性门禁和正式 release matrix。
+迁移实例。它继承方法层的阶段/数据展开、局部驻留和计算核心分层，但针对 Triton/XPU 工具链
+重新实现 lowering、候选执行和硬件绑定选择。当前版本完成了可执行设备路径、M0--M5 候选、冻结
+selector、plan reuse、batch 路径、正确性门禁和正式 release matrix；完整 batch 驻留、自动校准
+和 persistent pipeline 仍在路线图中。
 
 <div class="project-affiliation">
   <div class="project-affiliation__logo">
@@ -36,9 +38,9 @@ Kunlunxin-FFT 是一个面向昆仑芯平台的 FFT 算子库，也是
 | 目标 | 第一步 | 然后阅读 |
 |---|---|---|
 | 在 P800 上运行 | [安装与环境](getting-started/installation.md) | [首次运行](getting-started/quickstart.md)、[Plan 与选型](user-guide/plans.md) |
-| 理解为什么这样设计 | [为什么混合展开](design/motivation.md) | [架构与数据流](design/architecture.md)、[计算核心](design/kernels.md) |
-| 判断性能结论 | [实验设计与结果汇总](benchmarks/results.md) | [测量协议](benchmarks/methodology.md)、[消融](benchmarks/ablations.md) |
-| 复现或扩展 | [原始数据与复现](benchmarks/reproducibility.md) | [工程结构](development/repository-layout.md)、[验证与发布](development/validation-and-release.md) |
+| 理解为什么这样设计 | [为什么混合展开](design/motivation.md) | [架构与数据流](design/architecture.md)、[计算核心](design/kernels.md)、[性能模型](design/performance-model.md) |
+| 判断性能结论 | [实验设计与结果汇总](benchmarks/results.md) | [C2C](benchmarks/c2c.md)、[端到端](benchmarks/end-to-end.md)、[规模切片](benchmarks/scale.md) |
+| 复现或扩展 | [原始数据与复现](benchmarks/reproducibility.md) | [增加设计点](development/adding-design-points.md)、[测试策略](testing.md)、[验证与发布](development/validation-and-release.md) |
 
 ## 当前接口边界
 
@@ -46,4 +48,4 @@ Kunlunxin-FFT 是一个面向昆仑芯平台的 FFT 算子库，也是
 rank-1 单变换或 `(B, N)` batch。DIT/DIF 都是 forward FFT 的分解。内部 planar lowering 不是
 用户输入格式。未覆盖能力见[支持范围](reference/support.md)和[未来计划](roadmap.md)。
 
-下一页：[安装与环境](getting-started/installation.md)。
+下一页：[安装](getting-started/installation.md)。
