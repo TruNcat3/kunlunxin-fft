@@ -20,6 +20,7 @@ from .config import (  # noqa: F401
     git_commit,
     git_dirty,
 )
+from .entry import ExecutionPlan, ExecutionReport, plan_fft  # noqa: F401
 from .selector import Selection, load_table, select  # noqa: F401
 
 # Torch-dependent symbols, resolved lazily on first attribute access.
@@ -49,6 +50,7 @@ _TORCH_ATTRS = {
     "dit_stage4_kernel": "kernels",
     "dif_stage4_kernel": "kernels",
     "log2_exact": "runner",
+    "run_fft": "entry",
     "time_call": "runner",
     "time_call_detailed": "runner",
     "twiddle_tables": "runner",
@@ -61,6 +63,8 @@ __all__ = [
     "ConfigError",
     "DesignSpace",
     "DeviceProfile",
+    "ExecutionPlan",
+    "ExecutionReport",
     "Manifest",
     "SizeMatrix",
     "Selection",
@@ -68,6 +72,7 @@ __all__ = [
     "git_commit",
     "git_dirty",
     "load_table",
+    "plan_fft",
     "select",
     # torch-dependent
     "bit_reverse_permute",
@@ -95,6 +100,7 @@ __all__ = [
     "dit_stage4_kernel",
     "dif_stage4_kernel",
     "log2_exact",
+    "run_fft",
     "time_call",
     "time_call_detailed",
     "twiddle_tables",

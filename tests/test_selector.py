@@ -105,7 +105,8 @@ def test_select_abstains_outside_matrix(kwargs):
     if not TABLE.exists():
         pytest.skip("selector table not built")
     t = load_table(str(TABLE))
-    s = select(profile_hash=None, table=t, **kwargs)
+    p = DeviceProfile.load()
+    s = select(profile_hash=p.hash(), table=t, **kwargs)
     assert s.source == "abstain"
     assert not s.selected
     assert s.reason
@@ -120,6 +121,111 @@ def test_select_abstains_on_profile_mismatch():
     assert "profile hash" in s.reason
 
 
+def test_select_abstains_on_missing_profile():
+    """profile_hash=None must never bypass the table (review P0)."""
+    if not TABLE.exists():
+        pytest.skip("selector table not built")
+    t = load_table(str(TABLE))
+    s = select("dit", 2048, profile_hash=None, table=t)
+    assert s.source == "abstain"
+    assert "profile_hash is required" in s.reason
+
+
+def test_table_rejects_cross_direction_m1():
+    """M1 is DIT-only; a DIF entry may never claim fused-inplace."""
+    if not TABLE.exists():
+        pytest.skip("selector table not built")
+    t = load_table(str(TABLE))
+    for e in t["entries"]:
+        if e["direction"] == "dif":
+            assert e["flow_realization"] != "fused-inplace", (
+                f"DIF entry N={e['N']} batch={e['batch']} claims "
+                f"fused-inplace, which has no DIF lowering")
+
+
 def test_missing_table_raises_config_error(tmp_path):
     with pytest.raises(ConfigError):
         load_table(str(tmp_path / "nope.json"))
+
+
+# --- builder safety gates (review P0) -------------------------------------
+
+def _fake_run(tmp_path, name, *, profile_hash=None,
+              err=1e-7, ms=0.5, device="kunlunxin-p800",
+              threshold=1e-4, dirty=False):
+    """Minimal confirmation-shaped run with one controllable row."""
+    if profile_hash is None:
+        profile_hash = DeviceProfile.load().hash()
+    row = {"n": 2048, "dit_err": err, "dif_err": err,
+           "m0_dit_ms": ms, "m0_dit_err": err,
+           "m0_dif_ms": ms, "m0_dif_err": err,
+           "m2_dit_t64_ms": ms / 2, "m2_dit_t64_err": err,
+           "m2_dif_t64_ms": ms / 2, "m2_dif_t64_err": err,
+           "m5_r4_dit_ms": ms / 2, "m5_r4_dit_err": err,
+           "m5_r4_dif_ms": ms / 2, "m5_r4_dif_err": err}
+    data = {"manifest": {
+        "device": device, "profile_hash": profile_hash, "precision": "fp32",
+        "correctness_threshold": threshold, "block": 1024, "dirty": dirty,
+        "extra": {"matrix_rows": 8, "glog": 2, "maxp": 4096, "cells": 1},
+    }, "rows": [row]}
+    path = tmp_path / name
+    path.write_text(json.dumps(data))
+    return path
+
+
+def _build(tmp_path, *runs, batch=None):
+    out = tmp_path / "t.json"
+    cmd = [sys.executable, "scripts/build_selector_table.py",
+           *[str(r) for r in runs], "--out", str(out)]
+    if batch is not None:
+        cmd += ["--batch", str(batch)]
+    return subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True), out
+
+
+def test_builder_rejects_failing_correctness(tmp_path):
+    """A challenger whose error is at/above threshold must not enter."""
+    run = _fake_run(tmp_path, "bad.json", err=2e-4)  # >= 1e-4
+    proc, out = _build(tmp_path, run)
+    assert proc.returncode == 0
+    table = json.loads(out.read_text())
+    assert table["rejections"], "expected logged rejections"
+    for e in table["entries"]:
+        assert e["flow_realization"] != "matrix-resident"
+        # with every challenger rejected the M0 incumbent stays
+        assert e["flow_realization"] == "global-stage"
+        assert e["processing_unit"] == "radix2-scalar"
+
+
+def test_builder_rejects_non_finite_ms(tmp_path):
+    run = _fake_run(tmp_path, "nan.json", ms=float("nan"))
+    proc, out = _build(tmp_path, run)
+    assert proc.returncode == 0
+    table = json.loads(out.read_text())
+    assert table["rejections"]
+    for e in table["entries"]:
+        assert e["flow_realization"] == "global-stage"
+
+
+def test_builder_rejects_mixed_profile(tmp_path):
+    a = _fake_run(tmp_path, "a.json", profile_hash="aaaaaaaaaaaaaaaa")
+    b = _fake_run(tmp_path, "b.json", profile_hash="bbbbbbbbbbbbbbbb")
+    proc, _ = _build(tmp_path, a, b)
+    assert proc.returncode != 0
+    assert "mixed-profile" in (proc.stderr + proc.stdout)
+
+
+def test_builder_rejects_incomplete_manifest(tmp_path):
+    run = _fake_run(tmp_path, "inc.json")
+    data = json.loads(run.read_text())
+    del data["manifest"]["profile_hash"]
+    run.write_text(json.dumps(data))
+    proc, _ = _build(tmp_path, run)
+    assert proc.returncode != 0
+    assert "missing required keys" in (proc.stderr + proc.stdout)
+
+
+def test_builder_rejects_profile_mismatch_vs_current(tmp_path):
+    run = _fake_run(tmp_path, "other.json", profile_hash="0" * 16)
+    proc, _ = _build(tmp_path, run)
+    assert proc.returncode != 0
+    assert "re-measure under the current profile" in (proc.stderr + proc.stdout)

@@ -10,8 +10,11 @@ table built from measured confirmation sessions, never a model. Contract:
   incumbent at the same shape; a challenger that does not beat the incumbent
   by the promotion guard (default 2%, an engineering guard — not a
   statistical claim) keeps M0. M0 itself is always a legal fallback.
+* **Profile gate**: ``profile_hash`` is required. ``None`` abstains — a
+  missing profile can never bypass the table, so a caller that has not
+  resolved the current device profile falls back to M0 instead of guessing.
 * **Abstain**: any key outside the measured matrix (unknown N, batch or
-  precision not measured, profile-hash mismatch) returns
+  precision not measured, profile-hash mismatch, missing profile) returns
   ``source="abstain"`` with the reason — the caller must fall back to the
   conservative M0 path rather than guess.
 
@@ -30,8 +33,10 @@ from .config import ConfigError
 TABLE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__)))), "config", "selector_table.json")
 
-# Promotion guard: a challenger must improve the paired median by at least
-# this percentage to replace the incumbent (plan section 5/P2).
+# Promotion guard: a challenger must improve the search-stage median by at
+# least this percentage to replace the incumbent (plan section 5/P2). The
+# comparison is between aggregated medians of one run schedule, not paired
+# per-trial medians.
 GUARD_PCT = 2.0
 
 
@@ -92,7 +97,11 @@ def select(direction: str, n: int, batch: int = 1, precision: str = "fp32",
     if precision != table["precision"]:
         return _abstain(n, direction, batch, precision,
                         f"table measured {table['precision']}, got {precision!r}")
-    if profile_hash is not None and profile_hash != table["profile_hash"]:
+    if profile_hash is None:
+        return _abstain(n, direction, batch, precision,
+                        "profile_hash is required; None cannot bypass the "
+                        "table (fall back to M0)")
+    if profile_hash != table["profile_hash"]:
         return _abstain(n, direction, batch, precision,
                         f"profile hash {profile_hash} != table "
                         f"{table['profile_hash']}; re-measure before selecting")

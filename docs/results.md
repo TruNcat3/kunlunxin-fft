@@ -325,23 +325,35 @@ confirmation matrix reverses a phase-3 conclusion.
 from the Round B runs) maps
 `(profile_hash, precision=fp32, direction, N, batch)` to
 `(block, flow_realization, processing_unit, params)`. Promotion guard: a
-challenger must beat the M0 incumbent by **>=2%** paired-median improvement
-(engineering guard, not a significance claim); otherwise M0 stays. Any key
+challenger must beat the M0 incumbent by **>=2%** search-stage median
+improvement (aggregated medians within one run schedule — not paired
+per-trial medians; engineering guard, not a significance claim); otherwise
+M0 stays. Any key
 outside the measured matrix **abstains** (`src/xpu/selector.py::select`)
-— unknown N, unmeasured batch/precision, or a profile-hash mismatch return
-`source="abstain"` and the caller must fall back to M0, never guess.
+— unknown N, unmeasured batch/precision, a missing profile, or a
+profile-hash mismatch return `source="abstain"` and the caller must fall
+back to M0, never guess.
 
 B=1 winners (14 entries, `N x {dit,dif}`):
 
 | N regime | dit | dif |
 |---|---|---|
-| 8, 16 | M1 fused (block 1024) | M1 fused (block 1024) |
+| 8, 16 | M1 fused (block 1024) | M2 matrix (block 1024) |
 | 1024, 2048, 4096 | M2 matrix (block 256) | M2 at 2048/4096; **M5 radix-4 at 1024** |
 | 65536, 1048576 | M5 radix-4 (block 256) | M5 radix-4 (block 256) |
 
-Batch entries (18): the folded M4 variant at every probed `(N,B)` — the
-spread variant only wins where it clears the 2% guard (never on this probe).
-Every table entry records its incumbent, challenger, and evidence keys, and
+The DIF entries at `N=8,16` were corrected in the review round: the
+first table build compared the DIT-only M1 timing (`m1_t64`) against the
+DIF incumbent (M1 has no DIF lowering in this tree); the rebuilt table
+(safety-gated, schema v2) selects M2 there instead, and
+`tests/test_selector.py` now pins that no DIF entry may claim
+`fused-inplace`.
+
+Batch entries (18): the table itself decides the M4 variant per shape —
+the spread variant wins where it clears the 2% guard (notably
+`N=65536, B=16`, ~2.9%/2.8% over folded) and folded is kept everywhere
+else. Every table entry records its incumbent, challenger, and evidence
+keys, and
 `tests/test_selector.py` pins that the committed table rebuilds byte-identically
 from the committed confirmation JSONs and that every challenger clears the
 guard. The conservative `selected_candidate` (M0) remains the launch default;
