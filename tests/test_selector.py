@@ -153,7 +153,9 @@ def test_missing_table_raises_config_error(tmp_path):
 def _fake_run(tmp_path, name, *, profile_hash=None,
               err=1e-7, ms=0.5, device="kunlunxin-p800",
               threshold=1e-4, dirty=False, warmup=10, trials=30,
-              dtype="complex64"):
+              dtype="complex64", precision="fp32",
+              timing_scope="api wall time (synchronized), ms",
+              protocol_id="confirm-round:test:api_ms"):
     """Minimal confirmation-shaped run with one controllable row."""
     if profile_hash is None:
         profile_hash = DeviceProfile.load().hash()
@@ -165,9 +167,11 @@ def _fake_run(tmp_path, name, *, profile_hash=None,
            "m5_r4_dit_ms": ms / 2, "m5_r4_dit_err": err,
            "m5_r4_dif_ms": ms / 2, "m5_r4_dif_err": err}
     data = {"manifest": {
-        "device": device, "profile_hash": profile_hash, "precision": "fp32",
+        "device": device, "profile_hash": profile_hash,
+        "precision": precision,
         "correctness_threshold": threshold, "block": 1024, "dirty": dirty,
         "warmup": warmup, "trials": trials, "dtype": dtype,
+        "timing_scope": timing_scope, "protocol_id": protocol_id,
         "extra": {"matrix_rows": 8, "glog": 2, "maxp": 4096, "cells": 1},
     }, "rows": [row]}
     path = tmp_path / name
@@ -257,4 +261,39 @@ def test_builder_rejects_missing_protocol_fields(tmp_path):
     run.write_text(json.dumps(data))
     proc, _ = _build(tmp_path, run)
     assert proc.returncode != 0
-    assert "missing required keys" in (proc.stderr + proc.stdout)
+
+
+def test_builder_rejects_mixed_timing_scope(tmp_path):
+    """Same device/profile but different timing scope is mixed protocol."""
+    a = _fake_run(tmp_path, "ts1.json",
+                  timing_scope="api wall time (synchronized), ms")
+    b = _fake_run(tmp_path, "ts2.json",
+                  timing_scope="device_event only")
+    proc, _ = _build(tmp_path, a, b)
+    assert proc.returncode != 0
+    assert "mixed-profile" in (proc.stderr + proc.stdout)
+
+
+def test_builder_rejects_mixed_protocol_id(tmp_path):
+    a = _fake_run(tmp_path, "pid1.json", protocol_id="round-a")
+    b = _fake_run(tmp_path, "pid2.json", protocol_id="round-b")
+    proc, _ = _build(tmp_path, a, b)
+    assert proc.returncode != 0
+    assert "mixed-profile" in (proc.stderr + proc.stdout)
+
+
+def test_builder_rejects_non_fp32_precision(tmp_path):
+    """Only FP32 tables are built; fp64 measurements are refused."""
+    run = _fake_run(tmp_path, "fp64.json", precision="fp64",
+                    dtype="complex128")
+    proc, _ = _build(tmp_path, run)
+    assert proc.returncode != 0
+    assert "precision" in (proc.stderr + proc.stdout)
+
+
+def test_builder_rejects_dtype_precision_mismatch(tmp_path):
+    run = _fake_run(tmp_path, "mismatch.json", precision="fp32",
+                    dtype="complex128")
+    proc, _ = _build(tmp_path, run)
+    assert proc.returncode != 0
+    assert "does not match" in (proc.stderr + proc.stdout)

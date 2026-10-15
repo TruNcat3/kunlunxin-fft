@@ -107,12 +107,21 @@ def _manifest(seed, warmup, trials):
     from src.xpu.config import DeviceProfile
     p = DeviceProfile.load()
     table_path = os.path.join(ROOT, "config", "selector_table.json")
+    toolchain = f"torch {torch.__version__} + torch_xmlir"
+    try:
+        import torch_xmlir
+        vd = torch_xmlir.get_version_dict()
+        toolchain += (f" (XPYTORCH {vd.get('XPYTORCH', '?')}, "
+                      f"XRE {vd.get('XRE', '?')})")
+    except Exception:
+        pass
     return {
         "commit": _git("rev-parse", "HEAD"),
         "dirty": bool(_git("status", "--porcelain")),
         "device": p.device,
-        "driver": os.environ.get("CUDA_VISIBLE_DEVICES", ""),
-        "toolchain": f"torch {torch.__version__} + torch_xmlir",
+        "driver": p.driver,
+        "device_index": os.environ.get("CUDA_VISIBLE_DEVICES", ""),
+        "toolchain": toolchain,
         "profile_hash": p.hash(),
         "config_hash": p.hash(),
         "selector_table_sha256": _sha256(table_path),
@@ -136,6 +145,19 @@ def _err_vs_np(got, ref_np):
     scale = max(np.abs(ref_np).max(), 1e-12)
     return float(max(np.abs(g.real - ref_np.real).max(),
                      np.abs(g.imag - ref_np.imag).max()) / scale)
+
+
+def _err_gate(err, threshold=1e-4):
+    """NaN-safe correctness gate: non-finite errors are never 'correct'."""
+    return (isinstance(err, (int, float)) and math.isfinite(err)
+            and err < threshold)
+
+
+def _interleave_warmup(fns, rounds):
+    """Call each candidate once per round (count consumed by unit tests)."""
+    for _ in range(int(rounds)):
+        for fn in fns:
+            fn()
 
 
 def _make_input(n, batch, seed):
@@ -230,12 +252,12 @@ def run_shape(session, n, batch, direction, trials, seed, table, raw,
     # --- correctness gates (before any timing) --------------------------
     y_sel = execute_fft_plan(plan, x)
     sel_err = _err_vs_np(y_sel, ref)
-    if sel_err >= 1e-4:
+    if not _err_gate(sel_err):
         raise SystemExit(f"[{tag}] selected correctness failed: {sel_err}")
     bdesc = _baseline_desc(direction, batch)
     y_m0 = _baseline_invoke(x, direction, batch, inc_block)
     m0_err = _err_vs_np(y_m0, ref)
-    if m0_err >= 1e-4:
+    if not _err_gate(m0_err):
         raise SystemExit(f"[{tag}] m0 correctness failed: {m0_err}")
 
     # candidate registry: label -> (callable, attribution dict)
@@ -264,7 +286,7 @@ def run_shape(session, n, batch, direction, trials, seed, table, raw,
         try:
             y_v = _vendor()
             v_err = _err_vs_np(y_v, ref)
-            vend_status = "ok" if v_err < 1e-4 else "incorrect"
+            vend_status = "ok" if _err_gate(v_err) else "incorrect"
             if vend_status != "ok":
                 raise SystemExit(f"[{tag}] vendor correctness failed: {v_err}")
             cands["vendor"] = (
@@ -281,7 +303,7 @@ def run_shape(session, n, batch, direction, trials, seed, table, raw,
     for extra in extra_candidates:
         name, fn, desc = extra
         err = _err_vs_np(fn(), ref)
-        if err >= 1e-4:
+        if not _err_gate(err):
             raise SystemExit(f"[{tag}] extra {name} correctness failed: {err}")
         desc = dict(desc, err=err)
         cands[name] = (fn, desc)
@@ -289,9 +311,7 @@ def run_shape(session, n, batch, direction, trials, seed, table, raw,
     # --- plan-reuse interleaved timing ----------------------------------
     rng = random.Random(seed * 1000003 + session)
     samples = {k: [] for k in cands}
-    for _ in range(3):  # short interleave warmup
-        for fn in cands.values():
-            fn[0]()
+    _interleave_warmup([fn for fn, _ in cands.values()], warmup)
     torch.cuda.synchronize()
     rows = []
     order_names = list(cands)
@@ -391,7 +411,7 @@ def _extra_m2(x, n, batch, direction, block):
               "reason": "long-size M2 ablation", "err": None})]
 
 
-def _plan_overhead_probe(session, seed, table, raw):
+def _plan_overhead_probe(session, seed, table, raw, warmup):
     """One-shot run_fft vs plan-reuse at N=16 and N=32 (plan cost column)."""
     import torch
     from src.xpu.config import DeviceProfile
@@ -402,11 +422,11 @@ def _plan_overhead_probe(session, seed, table, raw):
         x = _make_input(n, 1, seed)
         plan = plan_fft("dit", n, profile_hash=ph, table=table)
         reuse = _median([_timed_call(
-            (lambda: execute_fft_plan(plan, x)), warmup=5)
+            (lambda: execute_fft_plan(plan, x)), warmup=warmup)
             for _ in range(20)])
         one_shot = _median([_timed_call(
             (lambda: run_fft(x, "dit", profile_hash=ph, table=table)),
-            warmup=5) for _ in range(20)])
+            warmup=warmup) for _ in range(20)])
         overhead = one_shot - reuse
         out.append({"N": n, "plan_reuse_ms": reuse, "one_shot_ms": one_shot,
                     "plan_overhead_ms": overhead,
@@ -461,7 +481,8 @@ def run_child(args):
         args.session, *PROFILE_MISMATCH_SHAPE[:3],
         PROFILE_MISMATCH_SHAPE[3], seed, table, raw, args.warmup,
         profile_override="f" * 16, label="fallback-profile-mismatch"))
-    overhead = _plan_overhead_probe(args.session, seed, table, raw)
+    overhead = _plan_overhead_probe(args.session, seed, table, raw,
+                                    args.warmup)
     with open(os.path.join(out_dir, f"summary_session{args.session}.json"),
               "w") as f:
         json.dump({"session": args.session, "shapes": results,
@@ -471,8 +492,11 @@ def run_child(args):
 
 
 def run_parent(args):
-    import torch
     out_dir = os.path.abspath(args.out)
+    if args.aggregate_only:
+        _aggregate(out_dir, args)
+        return
+    import torch  # noqa: F401  (device stack import before any session)
     if os.path.exists(os.path.join(out_dir, "summary.json")) \
             and not args.overwrite:
         raise SystemExit(f"{out_dir} already holds a finished run; "
@@ -491,20 +515,56 @@ def run_parent(args):
         env["PYTHONPATH"] = ROOT + os.pathsep + env.get("PYTHONPATH", "")
         print(f"=== session {s} ===", flush=True)
         subprocess.run(cmd, cwd=ROOT, env=env, check=True)
-    import statistics
+    _aggregate(out_dir, args)
+
+
+def _aggregate(out_dir, args):
+    """Rebuild summary/csv/report from the per-session JSONs (offline)."""
     per_session = []
-    for s in range(args.sessions):
-        with open(os.path.join(out_dir, f"summary_session{s}.json")) as f:
+    s = 0
+    while True:
+        p = os.path.join(out_dir, f"summary_session{s}.json")
+        if not os.path.exists(p):
+            break
+        with open(p) as f:
             per_session.append(json.load(f))
+        s += 1
+    if not per_session:
+        raise SystemExit(f"no summary_session*.json under {out_dir}")
     shapes = {}
-    overhead = per_session[0]["plan_overhead"]
+    overhead_by_n = {}
     for ss in per_session:
         for r in ss["shapes"]:
             shapes.setdefault(r["label"], []).append(r)
+        for o in ss.get("plan_overhead", ()):
+            overhead_by_n.setdefault(o["N"], []).append(o)
+    overhead = []
+    for n in sorted(overhead_by_n):
+        rows = overhead_by_n[n]
+        reuse = _median([r["plan_reuse_ms"] for r in rows])
+        one = _median([r["one_shot_ms"] for r in rows])
+        overhead.append({
+            "N": n, "sessions": len(rows),
+            "plan_reuse_ms": reuse, "one_shot_ms": one,
+            "plan_overhead_ms": one - reuse,
+            "overhead_pct": (one - reuse) / reuse * 100.0,
+            "per_session": [{"plan_reuse_ms": r["plan_reuse_ms"],
+                             "one_shot_ms": r["one_shot_ms"]}
+                            for r in rows],
+        })
     agg = []
     for label, rs in sorted(shapes.items()):
         sp = [r["speedup_m0_over_selected"] for r in rs
               if r["speedup_m0_over_selected"]]
+        extras = {}
+        for name in rs[0].get("extra", {}):
+            meds = [r["extra"][name]["median_ms"] for r in rs
+                    if name in r.get("extra", {})
+                    and r["extra"][name].get("median_ms") is not None]
+            meta = next((r["extra"][name] for r in rs
+                         if name in r.get("extra", {})), {})
+            extras[name] = dict(meta, median_ms=_median(meds),
+                                sessions=len(meds))
         agg.append({
             "label": label, "N": rs[0]["N"], "batch": rs[0]["batch"],
             "direction": rs[0]["direction"],
@@ -525,20 +585,23 @@ def run_parent(args):
             "vendor_status": rs[0]["vendor_status"],
             "vendor_median_ms": _median([r["vendor_median_ms"] for r in rs
                                          if r["vendor_median_ms"]]),
-            "all_correct": all(r["selected"]["err"] < 1e-4
-                               and r["m0_incumbent"]["err"] < 1e-4
-                               for r in rs),
+            "all_correct": all(
+                _err_gate(r["selected"]["err"]) and _err_gate(
+                    r["m0_incumbent"]["err"]) for r in rs),
             "selection_reason": rs[0]["selected"]["reason"],
-            "extras": rs[0]["extra"],
+            "extras": extras,
         })
-    summary = {"manifest": man, "sessions": args.sessions,
+    with open(os.path.join(out_dir, "manifest.json")) as f:
+        man = json.load(f)
+    summary = {"manifest": man, "sessions": len(per_session),
                "shapes": agg, "plan_overhead": overhead}
     with open(os.path.join(out_dir, "summary.json"), "w") as f:
         json.dump(summary, f, indent=2)
         f.write("\n")
     _write_csv(out_dir, agg)
     _write_report(out_dir, summary)
-    print(f"aggregated {len(agg)} shapes -> {out_dir}/summary.json")
+    print(f"aggregated {len(agg)} shapes, {len(overhead)} overhead points "
+          f"from {len(per_session)} sessions -> {out_dir}/summary.json")
 
 
 def _write_csv(out_dir, agg):
@@ -597,8 +660,10 @@ def _write_report(out_dir, summary):
         "API column, never a kernel regression. Vendor rows enter speedups "
         "only when `torch.fft.fft` executed the identical (B, N) fp32 "
         "forward C2C tensor successfully; failures stay as "
-        "`unsupported + error`. Speedups are session-level medians over "
-        f"{summary['sessions']} independent process sessions.",
+        "`unsupported + error`. Speedups, plan-overhead, and ablation "
+        "columns are session-level medians over "
+        f"{summary['sessions']} independent process sessions, rebuilt "
+        "offline from summary_session*.json (raw rows keep every trial).",
         "",
     ]
     with open(os.path.join(out_dir, "server_report.md"), "w") as f:
@@ -614,6 +679,9 @@ def main():
     ap.add_argument("--out", default=os.path.join(
         ROOT, "results", "p800", "release_matrix"))
     ap.add_argument("--overwrite", action="store_true")
+    ap.add_argument("--aggregate-only", action="store_true",
+                    help="rebuild summary/csv/report from existing "
+                         "summary_session*.json (offline, no device)")
     ap.add_argument("--session", type=int, default=None,
                     help="internal: run one child session")
     args = ap.parse_args()

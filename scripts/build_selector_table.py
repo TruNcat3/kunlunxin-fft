@@ -45,7 +45,10 @@ _UNIT = {
 _M1_DIRECTIONS = ("dit",)
 
 _MANIFEST_KEYS = ("device", "profile_hash", "precision",
-                  "correctness_threshold", "warmup", "trials", "dtype")
+                  "correctness_threshold", "warmup", "trials", "dtype",
+                  "timing_scope", "protocol_id")
+
+_SUPPORTED_PRECISIONS = {"fp32": "complex64"}
 
 
 def _descriptor(key: str, block: int, extra: dict) -> dict:
@@ -125,6 +128,18 @@ def _load_run(path: str, rejections) -> dict:
         raise ConfigError(
             f"run {path}: correctness_threshold {thr!r} must be a finite "
             "number in (0, 1); refusing to build")
+    precision = manifest["precision"]
+    want_dtype = _SUPPORTED_PRECISIONS.get(precision)
+    if want_dtype is None:
+        raise ConfigError(
+            f"run {path}: precision {precision!r} is not a supported "
+            f"table precision ({sorted(_SUPPORTED_PRECISIONS)}); "
+            "refusing to merge mixed-precision measurements")
+    if manifest["dtype"] != want_dtype:
+        raise ConfigError(
+            f"run {path}: dtype {manifest['dtype']!r} does not match "
+            f"precision {precision!r} (expected {want_dtype}); "
+            "refusing to build")
     return {
         "path": path,
         "rows": data["rows"],

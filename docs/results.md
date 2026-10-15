@@ -378,6 +378,16 @@ real execution path. Closed on master:
   an undispatchable combination executes M0 and reports the reason in the
   `ExecutionReport`. `run_fft` returns the report alongside the output.
 
+> **Superseded / non-publication evidence.** The Round D session table and
+> ablation below predate the release-matrix protocol and carry known
+> measurement-scope issues (baseline not pinned to the table's
+> `incumbent_block`; one-shot plan overhead mixed into selected timings;
+> profile-mismatch speedup against a would-be winner rather than the
+> executed M0). They remain as historical development evidence only. The
+> **current official evidence** is the release matrix further below
+> (`results/p800/release_matrix/`, plan-reuse timing, incumbent-block
+> control, per-candidate attribution).
+
 Independent validation (3 process sessions, interleaved M0 vs selected,
 correctness first, raw per-trial rows):
 [raw/summary/report](https://github.com/TruNcat3/kunlunxin-fft/tree/master/results/p800/selected_sessions).
@@ -431,6 +441,15 @@ at the table entry's `incumbent_block`; one-shot `run_fft` plan overhead
 is measured separately at N=16/32 and is never counted as a kernel
 regression. Per-candidate raw rows record the executed runner, block,
 flow, unit, and selection source (`baseline-control` for m0 rows).
+Evidence is **raw + session-summary traceable**: `raw_session{0,1,2}.jsonl`
+carry every trial with its attribution; `summary_session{S}.json` hold the
+per-session aggregates; `summary.json`/`summary.csv`/`server_report.md`
+are regenerated offline from those session summaries
+(`run_release_matrix.py --aggregate-only`) — plan-overhead and ablation
+columns are medians across all three sessions, not a single session. A
+full raw-only rebuilder (regenerating session summaries from the raw
+rows alone) is an offline follow-up and does not require device
+re-measurement.
 
 | shape | selected | fallback | speedup (m0/selected, median of 3 sessions) | vendor | correct |
 |---|---|---|---:|---|---|
@@ -455,10 +474,11 @@ every shape; the worst case is the profile-mismatch fallback at 0.990x
 (1.0%, within noise). Matched-`(B,N)` vendor calls at N=1024/2048 ran
 successfully on the identical fp32 forward C2C tensor and are recorded
 with their medians, but no speedup gate is placed on vendor. One-shot
-plan overhead (measured at N=16/32): 0.015 ms / 7.5% and 0.016 ms /
-4.5% — this is the cost of re-running `plan_fft` per call, not a
-kernel regression. Ablations inside the matrix: folded 7.26 ms beats
-spread 7.64 ms at N=4096 B=16 (~5%, consistent with the table choice);
-M2 at N=65536 B=1 reaches 1.62x, below M5's 2.07x at the same size.
+plan overhead (3-session medians at N=16/32): 0.016 ms / 7.9% and
+0.012 ms / 3.4% — this is the cost of re-running `plan_fft` per call,
+not a kernel regression. Ablations inside the matrix (3-session
+medians): folded 7.18 ms beats spread 7.56 ms at N=4096 B=16 (~5%,
+consistent with the table choice); M2 at N=65536 B=1 reaches 1.62x,
+below M5's 2.07x at the same size.
 
 

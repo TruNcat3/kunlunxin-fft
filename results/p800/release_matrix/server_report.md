@@ -1,7 +1,7 @@
 # Release matrix server report
 
-commit `410d9ae9cdb3` dirty=False device=kunlunxin-p800 driver=6 protocol=`release-matrix-v2:plan-reuse:interleave:correctness-first:3sess`
-profile_hash=`a78b86793c7142a0` table_sha256=`309483cca022b624…` warmup=10 trials=30 seed=20261015
+commit `410d9ae9cdb3` dirty=False device=kunlunxin-p800 driver=515.58 protocol=`release-matrix-v2:plan-reuse:interleave:correctness-first:3sess`
+profile_hash=`a78b86793c7142a0` table_sha256=`309483cca022b624…` warmup=3 trials=30 seed=20261015
 
 | label | N | B | incumbent block | selected | sel block | flow | unit | fb | m0 ms | sel ms | speedup | vendor | correct |
 |---|---:|---:|---:|---|---:|---|---|---|---:|---:|---:|---|---|
@@ -25,7 +25,7 @@ profile_hash=`a78b86793c7142a0` table_sha256=`309483cca022b624…` warmup=10 tri
 
 | N | plan-reuse ms | one-shot ms | overhead ms | % |
 |---:|---:|---:|---:|---:|
-| 16 | 0.2015 | 0.2165 | 0.0150 | 7.5% |
-| 32 | 0.3606 | 0.3767 | 0.0161 | 4.5% |
+| 16 | 0.2015 | 0.2173 | 0.0158 | 7.9% |
+| 32 | 0.3605 | 0.3726 | 0.0121 | 3.4% |
 
-The 2% guard applies to plan-reuse `selected` vs the same-block `m0_incumbent`; one-shot plan overhead is a separate convenience-API column, never a kernel regression. Vendor rows enter speedups only when `torch.fft.fft` executed the identical (B, N) fp32 forward C2C tensor successfully; failures stay as `unsupported + error`. Speedups are session-level medians over 3 independent process sessions.
+The 2% guard applies to plan-reuse `selected` vs the same-block `m0_incumbent`; one-shot plan overhead is a separate convenience-API column, never a kernel regression. Vendor rows enter speedups only when `torch.fft.fft` executed the identical (B, N) fp32 forward C2C tensor successfully; failures stay as `unsupported + error`. Speedups, plan-overhead, and ablation columns are session-level medians over 3 independent process sessions, rebuilt offline from summary_session*.json (raw rows keep every trial).

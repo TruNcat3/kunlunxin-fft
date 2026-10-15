@@ -194,13 +194,44 @@ def _invoke(fn, x, direction, block, params):
     raise AssertionError(f"unmapped runner function {fn}")
 
 
+def _check_plan_input(plan: "ExecutionPlan", shape, dtype_name: str) -> None:
+    """Host-testable shape/dtype contract for plan-reuse execution.
+
+    A plan resolved for one shape must never silently launch against a
+    different tensor: rank/N/batch and dtype are validated before any
+    runner call.
+    """
+    want = _SUPPORTED_DTYPES.get(plan.precision, "complex64")
+    if dtype_name != want:
+        raise TypeError(
+            f"x must be {want} for plan precision={plan.precision}, "
+            f"got {dtype_name}")
+    shape = tuple(int(s) for s in shape)
+    if plan.batch == 1:
+        if len(shape) != 1 or shape[0] != plan.n:
+            raise ValueError(
+                f"plan expects rank-1 x with N={plan.n} (batch=1); "
+                f"got shape {shape}")
+    else:
+        if len(shape) != 2 or shape != (plan.batch, plan.n):
+            raise ValueError(
+                f"plan expects x shape ({plan.batch}, {plan.n}); "
+                f"got shape {shape}")
+
+
 def execute_fft_plan(plan: ExecutionPlan, x):
     """Execute a resolved plan without re-querying the table (plan-reuse).
 
     ``x`` must already sit on the XPU device with the plan's semantics
-    (rank-1 for B=1, rank-2 for batched). The one-time plan/dispatch cost
+    (rank-1 for B=1, rank-2 for batched) and the plan's dtype; the shape
+    and dtype are validated before launch. The one-time plan/dispatch cost
     of :func:`plan_fft` is **not** included here.
     """
+    import torch  # local import: entry stays host-importable for planning
+
+    if not isinstance(x, torch.Tensor):
+        raise TypeError(f"x must be a torch.Tensor, got {type(x).__name__}")
+    _check_plan_input(plan, tuple(x.shape), str(x.dtype).split(".")[-1])
     module = __import__("src.xpu.runner", fromlist=[plan.executed])
     fn = getattr(module, plan.executed)
     return _invoke(fn, x, plan.direction, plan.block or DEFAULT_BLOCK,

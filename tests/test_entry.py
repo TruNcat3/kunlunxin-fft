@@ -17,6 +17,8 @@ sys.path.insert(0, str(ROOT))
 from src.xpu.config import DeviceProfile  # noqa: E402
 from src.xpu.entry import plan_fft  # noqa: E402
 from src.xpu.entry import _dispatch  # noqa: E402
+from src.xpu.entry import _check_plan_input  # noqa: E402
+from src.xpu.entry import ExecutionPlan  # noqa: E402
 from src.xpu.selector import Selection, load_table  # noqa: E402
 
 TABLE = ROOT / "config" / "selector_table.json"
@@ -175,3 +177,40 @@ def test_entry_module_does_not_import_torch():
     lines = [ln for ln in src.splitlines()
              if "import torch" in ln and not ln.strip().startswith("#")]
     assert all("    import torch" in ln for ln in lines), lines
+
+
+def _plan(n=16, batch=1, precision="fp32"):
+    return ExecutionPlan(
+        n=n, batch=batch, direction="dit", precision=precision,
+        selection_source="table", reason="t", fallback=False,
+        executed="fft_dit", block=1024, flow_id="x",
+        flow_realization="global-stage", processing_unit="radix2-scalar",
+        params={})
+
+
+def test_plan_input_accepts_matching_shapes():
+    _check_plan_input(_plan(16, 1), (16,), "complex64")
+    _check_plan_input(_plan(4096, 16), (16, 4096), "complex64")
+
+
+def test_plan_input_rejects_wrong_n():
+    """An N=16 plan must not silently execute an N=32 tensor."""
+    with pytest.raises(ValueError, match="N=16"):
+        _check_plan_input(_plan(16, 1), (32,), "complex64")
+
+
+def test_plan_input_rejects_wrong_rank_for_b1():
+    with pytest.raises(ValueError, match="rank-1"):
+        _check_plan_input(_plan(16, 1), (1, 16), "complex64")
+
+
+def test_plan_input_rejects_wrong_batch_or_rank():
+    with pytest.raises(ValueError, match=r"\(4, 4096\)"):
+        _check_plan_input(_plan(4096, 4), (16, 4096), "complex64")
+    with pytest.raises(ValueError, match=r"\(4, 4096\)"):
+        _check_plan_input(_plan(4096, 4), (4096,), "complex64")
+
+
+def test_plan_input_rejects_wrong_dtype():
+    with pytest.raises(TypeError, match="complex64"):
+        _check_plan_input(_plan(16, 1), (16,), "float32")

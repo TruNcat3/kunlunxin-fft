@@ -60,7 +60,9 @@
         "m4",
         "vendor"
       ]
-    }
+    },
+    "timing_scope": "api wall time (synchronized), ms",
+    "protocol_id": "confirm-round:bench.py:interleave:warmup10:trials30:api_ms"
   },
   "candidates": {
     "legal": [
