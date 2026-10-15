@@ -33,7 +33,7 @@ The remaining gap is the **shape and evidence structure**:
 
 - four batch values do not identify saturation and tail breakpoints;
 - M4 batches the M0 stage flow and does not prove that M2/M3/M5 have efficient
-  batched lowerings;
+  batched lowerings (batched M2/M3/M5 are roadmap, section 8b);
 - no equal-work experiment separates length dependence from data-volume
   dependence;
 - application-proxy and long-running stability evidence is missing;
@@ -41,8 +41,15 @@ The remaining gap is the **shape and evidence structure**:
   comparisons, not external speedups;
 - stored Phase 3 rows contain aggregates rather than every independent trial;
   and
-- the runtime selector still needs a measured, independently validated
-  `winner -> table -> fallback` deployment loop.
+- **historical gap (now closed by PR #1 + the release matrix):** the runtime
+  selector originally shipped as a table without a measured, independently
+  validated `winner -> table -> fallback` deployment loop. That loop now
+  exists — `src/xpu/entry.py::plan_fft`/`run_fft`/`execute_fft_plan` plus the
+  three-session release matrix in
+  [results/p800/release_matrix/](https://github.com/TruNcat3/kunlunxin-fft/tree/master/results/p800/release_matrix)
+  — so the item below is recorded as historical context, not as outstanding
+  work. What remains for later rounds is expanding the validated shape set
+  (E1--E6 grids), not building the loop itself.
 
 The next experiment must fill these gaps without evaluating every candidate at
 every large shape.
@@ -72,15 +79,15 @@ updates this table in the same change.
 | Length | non-power-of-two | rejected-before-launch; support roadmap | `log2_exact` raises before any launch |
 | Rank | 1-D | supported+tested | rank-1 check in `validate_input` |
 | Rank | 2-D FFT | roadmap | — |
-| Batch | `(B,N)`, `B` power of two, **M0-stage flow only** (M4 spread/folded) | supported+tested at `B=1,4,16,64`; `B=256..4096` supported+pending-evidence (E2) | `_validate_batch_input`; batch stage kernels |
+| Batch | `(B,N)`, `B` power of two, **M0-stage flow only** (M4 spread/folded) | supported+tested at `B=1,4,16,64`; `B=256..4096` implemented-hardware-unverified (code path exists; no scale evidence yet, E2 roadmap) | `_validate_batch_input`; batch stage kernels |
 | Batch | non-power-of-two `B` | rejected-before-launch; E5 uses labeled padding; support roadmap | `log2_exact(b)` |
-| Batch | batched M1/M2/M3/M5 | planned-this-round (P2) or remains single-transform by explicit decision | lowering contract must reject batch for rank-1-only flows before launch |
+| Batch | batched M1/M2/M3/M5 | roadmap (section 8b); this round explicitly rejects batch for rank-1-only flows before launch (entry dispatch: non-M4 batched table entries fall back to M4/M0 with the reason) | lowering contract; `src/xpu/entry.py::_dispatch` |
 | Algorithm flows | M0..M5 (see [architecture](../architecture.md)) | supported+tested | `tests/test_fft.py`; bench correctness phase; phase-3 rows |
 | Vendor comparison | `N<=2048`, `B=1` | supported+tested | phase-3 vendor rows; interleaved again in E1 |
 | Vendor comparison | `N<=2048`, `B>1` | supported+pending-evidence (E1) | the current runner passes rank-1 `x` to `torch.fft.fft`; batched vendor rows must be re-measured at real `(B, N)` before any batched external speedup is claimed |
 | Vendor comparison | `N>2048` | rejected-by-vendor, recorded as `unsupported`; internal comparisons only | vendor `NOT IMPLEMENTED` error retained in the raw row |
 | External speedup claims | matched vendor-supported shapes only | acceptance rule (section 8) | — |
-| Runtime selector | frozen winner table + unified execution entry + M0 fallback with reason | supported+tested (static table, safety-gated build, `plan_fft`/`run_fft`; fallback probes verified in independent sessions) | `config/selector_table.json`, `src/xpu/selector.py`, `src/xpu/entry.py`, `results/p800/selected_sessions/` |
+| Runtime selector | frozen winner table + unified execution entry + M0 fallback with reason | supported+tested **and pending-nothing** — implemented in PR #1 and validated in the plan-reuse release matrix (3 sessions, incumbent-block control) | `config/selector_table.json`, `src/xpu/selector.py`, `src/xpu/entry.py`, `results/p800/release_matrix/` |
 | Structured failure outcomes | `unsupported/infeasible/compile-failed/incorrect/timeout/oom` | planned-this-round (P0) | — |
 
 DIT and DIF are two algorithm organizations of the **same forward transform**;
@@ -105,7 +112,7 @@ them.
 | Host-only unit tests | `pytest -q` (`tests/test_host.py`, `tests/test_report.py`) | ordinary CI; no vendor stack, no torch | lowering contract for every enumerated candidate, config schema, report byte-identity | M0--M5 candidate enumeration and rejection reasons, batch legality, matrices math, regenerated-report byte identity |
 | Hardware correctness | `pytest -q -m hardware` (`tests/test_fft.py`) | P800 + xpytorch | correctness admission per flow/size/axis | M0 DIT 8 sizes, M0 DIF 7; M1 6; M2 DIT 6/DIF 5; M3 DIT 6/DIF 5; M5 DIT 9/DIF 8; M4 3 sizes x `B={1,4,16,64}` x `{spread,folded}`; axis-neutrality (tile/rows/glog/maxp/cells); negative-input rejection |
 | Declared matrix script | `scripts/test_correctness.py --profile smoke\|full` | P800 | release gate over `config/test_matrix.json` | **M0 only** (DIT/DIF at the declared sizes); per-flow gates live in the hardware suite |
-| Scale evidence sessions | experiment runner built in P0 of this plan | P800 | E1--E6 rows with structured outcomes | not built yet |
+| Scale evidence sessions | `scripts/run_release_matrix.py` (minimal release matrix; full E1--E6 runner is roadmap) | P800 | release-matrix rows with structured outcomes, per-candidate attribution, plan-reuse timing, incumbent-block control | minimal release matrix (15 shapes, 3 sessions) run; full E1--E6 grids not yet |
 
 Unification items this round:
 
@@ -198,6 +205,10 @@ as capacity/correctness evidence and excluded from performance aggregates.
 
 #### Minimal release matrix (this round's exit, superset-checked by E1--E6 later)
 
+**Executed** — results, raw rows, and the automatic summary live in
+[results/p800/release_matrix/](https://github.com/TruNcat3/kunlunxin-fft/tree/master/results/p800/release_matrix)
+(3 independent process sessions, plan-reuse timing via
+`execute_fft_plan`, incumbent-block M0 control, per-candidate attribution).
 The migration instance converges on the following representative matrix; the
 full E1--E6 grids above remain the roadmap, not the release gate:
 
@@ -217,10 +228,14 @@ evidence, not an external speedup point.
 One controlled ablation (already executed at `N=4096` DIT,
 [results/p800/selected_sessions](https://github.com/TruNcat3/kunlunxin-fft/tree/master/results/p800/selected_sessions)):
 M0 -> flow-organization-only candidate (M1, same radix-2 core) -> core-change
-candidates (M2 dense-dot, M5 radix-4) with launch counts recorded, separating
-flow effects from processing-unit effects. Analytic ledgers (launches,
-twiddles, adds) stay in `*_estimate` fields with their formula; they never
-share an unlabeled column with measured times.
+candidates (M2 dense-dot, M5 radix-4) with launch counts recorded.
+**Reading:** M2 changes core **and** flow lowering together (matrix-resident),
+so its gain is a combination effect not decomposable from one ablation; M5
+keeps the global-stage flow and is the cleaner fixed-flow core comparison;
+M1 keeps the core and changes only the flow, showing the negative
+flow-organization effect. Analytic ledgers (launches, twiddles, adds) stay in
+`*_estimate` fields with their formula; they never share an unlabeled column
+with measured times.
 
 Selection vocabulary (three distinct things — never conflate them):
 
@@ -242,10 +257,11 @@ the source of which variant wins where (e.g. spread wins at
 ### P2: batched lowering and deployment selection
 
 - [ ] Today only the M0-stage flow has a batched lowering (M4 spread/folded);
-  M1/M2/M3/M5 accept rank-1 inputs only. State explicitly which of M2/M3/M5
-  gain batched lowerings this round and which stay single-transform by
-  decision. Reject unsupported combinations before launch — the lowering
-  contract already rejects batch points outside M4.
+  M1/M2/M3/M5 accept rank-1 inputs only. **This round explicitly keeps
+  batched M2/M3/M5 on the roadmap (section 8b):** no batched lowering for
+  those flows lands here; the entry dispatch rejects rank-1-only flows at
+  `B>1` before launch and falls back to M4/M0 with the reason. A later round
+  may promote one flow to a batched lowering under the same funnel.
 - [ ] Extend only the promising processing flows to representative batches;
   repeating the M4/M0 flow at more batches is not sufficient.
 - [ ] Keep flow organization and processing-unit selection as separate fields
@@ -361,32 +377,44 @@ require the full E1--E6 grids):
 
 - [x] Table building rejects incorrect candidates and mixed-profile data
   (per-row and per-run gates in `scripts/build_selector_table.py`;
-  negative tests in `tests/test_selector.py`).
+  negative tests in `tests/test_selector.py`). Protocol fields
+  (warmup/trials/dtype) and a finite `0 < threshold < 1` join the
+  consistency gate.
 - [x] The selected entry actually executes the table's description; an
   out-of-table shape or a profile mismatch actually executes M0
   (`src/xpu/entry.py`; fallback probes with `ExecutionReport.fallback=true`
-  in `results/p800/selected_sessions/`).
+  in `results/p800/selected_sessions/` and `results/p800/release_matrix/`).
 - [x] The representative matrix is correct, with no repeatable regression
-  beyond the 2% protection band (3 independent sessions; batch points that
-  select the same variant are same-variant parity checks).
+  beyond the 2% protection band **(plan-reuse selected vs same-block
+  incumbent M0; 3 independent sessions in `results/p800/release_matrix/`;
+  worst case 0.990x on the profile-mismatch fallback).**
 - [x] Raw rows, the frozen table, the actually executed configuration, and
   the automatic summary are cross-linkable (`raw_session*.jsonl` ->
   `summary.json` -> `report.md`; table rebuilds byte-identically from the
   committed confirmation JSONs).
 
-Release-matrix acceptance (minimal matrix above):
+Release-matrix acceptance (minimal matrix above; executed in
+`results/p800/release_matrix/`):
 
-- [ ] every representative point carries a correct result or a structured
-  failure record;
+- [x] every representative point carries a correct result or a structured
+  failure record (all 15 shapes correct at `max_rel_error < 1e-4`);
 - [x] at least one workload class reproduces a positive gain in independent
-  sessions (M1 small-N, M2 mid, M5 long — Round D sessions);
+  sessions (M1 small-N 1.49x, M2 mid 1.23–1.31x, M5 long 2.07x;
+  Round D sessions corroborate);
 - [x] one ablation point explains whether gains come from flow organization,
-  processing unit, or boundary changes (`N=4096`: processing-unit effect);
-- [x] out-of-table points retain the mature M0 path;
+  processing unit, or boundary changes (`N=4096`: M2's 1.45x is the
+  **combination** of the dense-dot core and the matrix-resident lowering;
+  M5's 1.16x is the cleaner fixed-flow core comparison; M1's 0.72x is the
+  negative flow-organization effect — see
+  [results.md](../results.md));
+- [x] out-of-table points retain the mature M0 path (N=32 and
+  profile-mismatch fallback parity within noise);
 - [x] no negative points are hidden, and no long-size external speedup is
   claimed without a vendor baseline;
 - [x] raw, manifest, summary, and frozen table are auto-linkable and
-  reproducible.
+  reproducible (manifest carries commit/dirty, device driver, toolchain,
+  profile hash, table sha256, protocol id, warmup/trials, seed, timing
+  scope, error threshold).
 
 Full-plan checks (keep for the roadmap rounds):
 
@@ -396,8 +424,10 @@ Full-plan checks (keep for the roadmap rounds):
 - [ ] Correct rows satisfy the declared `max_rel_error < 1e-4` contract, with
   input pattern and error definition recorded.
 - [ ] Raw independent trials regenerate all summaries without hand edits.
-- [ ] The selector preserves the M0 closure and shows no repeatable regression
-  outside the 2% guard band on validation points.
+- [x] The selector preserves the M0 closure and shows no repeatable regression
+  outside the 2% guard band on validation points (**guard scope: plan-reuse
+  selected vs same-block incumbent M0; one-shot `run_fft` plan overhead is a
+  separate convenience-API cost, not a kernel regression**).
 - [ ] At least one representative result connects a flow change to a changed
   materialized-boundary/profile term and then to a measured benefit.
 - [ ] Each workload regime has an observed configuration preference or
