@@ -64,4 +64,27 @@ spread/folded。450 条 long rows 全部通过阈值，最坏误差 `1.126129e-5
 - M5 radix-4：固定 global-stage flow 时，DIT 在 `N<=1024` 约 `1.03x`，`N>=4096` 约
   `1.69x`，说明计算核心偏好随尺寸变化。
 
+## Round E：批量聚焦（issue #3）
+
+正式 release matrix 中四个重点 shape（N=1024/2048 × B=16/64，双向）在聚焦前选中
+M4 fallback（对 M0 约 `1.0x`）。Round E 对 batch-aware M2/M5 lowering、2% 晋升
+guard、执行元数据、硬件探针与校准、结构化成本模型的有界搜索做了闭包，两轮各
+3 个独立 session × 30 次 session 内随机交错 trial（cell 内为 DIT / DIF）：
+
+| N | B | selected（batch M2，tile=128） | 稳态 incumbent | 提速 | vendor 仍领先 |
+|---:|---:|---:|---:|---:|---:|
+| 1024 | 16 | 0.710 / 0.731 | 1.761 / 1.685 | **2.48x / 2.30x** | 2.8–2.9x |
+| 1024 | 64 | 2.268 / 2.324 | 6.092 / 5.903 | **2.69x / 2.54x** | 8.7–8.9x |
+| 2048 | 16 | 1.569 / 1.583 | 3.492 / 3.406 | **2.23x / 2.15x** | 2.4x |
+| 2048 | 64 | 5.009 / 5.051 | 12.344 / 11.940 | **2.46x / 2.36x** | 7.5x |
+
+- 对 M0 host loop 同行提升 `4.7–12.1x`；对稳态 M4 incumbent `2.15–2.69x`，八个
+  点全部以 ≥2% 通过 guard，且两轮独立运行赢家描述符 8/8 一致。
+- 消融把收益拆开：batch lowering（flow）`1.98–4.61x`、radix-4 core `1.75–2.20x`、
+  local-matrix（flow+unit 联合）`1.99–2.17x`、成本模型参数筛选 `1.17–1.29x`。
+- **仍然没有全面胜出**：vendor 重探（本轮重新探测，非沿用旧结论）确认当前栈
+  `N≤2048` 可用、`N≥4096` 返回 unsupported；四个 shape 上 vendor 仍快 `2.4–8.9x`。
+- 完整证据（5 问作答、P2 Td=2 canary 负结果、成本模型留出验证、复现命令）见
+  [批量聚焦报告](batch-focus.md)。
+
 下一页：[测量协议](methodology.md)。
