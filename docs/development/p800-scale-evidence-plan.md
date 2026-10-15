@@ -76,10 +76,11 @@ updates this table in the same change.
 | Batch | non-power-of-two `B` | rejected-before-launch; E5 uses labeled padding; support roadmap | `log2_exact(b)` |
 | Batch | batched M1/M2/M3/M5 | planned-this-round (P2) or remains single-transform by explicit decision | lowering contract must reject batch for rank-1-only flows before launch |
 | Algorithm flows | M0..M5 (see [architecture](../architecture.md)) | supported+tested | `tests/test_fft.py`; bench correctness phase; phase-3 rows |
-| Vendor comparison | `N<=2048` (including batched shapes) | supported+tested | phase-3 vendor rows; interleaved again in E1 |
+| Vendor comparison | `N<=2048`, `B=1` | supported+tested | phase-3 vendor rows; interleaved again in E1 |
+| Vendor comparison | `N<=2048`, `B>1` | supported+pending-evidence (E1) | the current runner passes rank-1 `x` to `torch.fft.fft`; batched vendor rows must be re-measured at real `(B, N)` before any batched external speedup is claimed |
 | Vendor comparison | `N>2048` | rejected-by-vendor, recorded as `unsupported`; internal comparisons only | vendor `NOT IMPLEMENTED` error retained in the raw row |
 | External speedup claims | matched vendor-supported shapes only | acceptance rule (section 8) | — |
-| Runtime selector | winner table, M0 closure, fallback with reason | planned-this-round (P2) | — |
+| Runtime selector | frozen winner table + unified execution entry + M0 fallback with reason | supported+tested (static table, safety-gated build, `plan_fft`/`run_fft`; fallback probes verified in independent sessions) | `config/selector_table.json`, `src/xpu/selector.py`, `src/xpu/entry.py`, `results/p800/selected_sessions/` |
 | Structured failure outcomes | `unsupported/infeasible/compile-failed/incorrect/timeout/oom` | planned-this-round (P0) | — |
 
 DIT and DIF are two algorithm organizations of the **same forward transform**;
@@ -108,16 +109,18 @@ them.
 
 Unification items this round:
 
-- [ ] Give "the correctness suite" one unambiguous scope statement: either
-  extend `scripts/test_correctness.py` to every flow, or explicitly declare
-  `tests/test_fft.py` the per-flow gate and keep the script as the M0
-  published-matrix gate. Do not leave the two scopes implied.
+- [x] "The correctness suite" scope is declared: `tests/test_fft.py` is the
+  per-flow hardware gate (every flow/size/axis); `scripts/test_correctness.py`
+  stays the M0 published-matrix release gate and is not implied to cover
+  M1--M5.
 - [ ] Every E-group run executes its hardware correctness gate (table below)
   before admitting a shape to timing, and stores the gate result next to the
   timing rows.
-- [ ] Raw rows, tests, and reports use the schema-v2 vocabulary of
+- [x] Raw rows, tests, and reports use the schema-v2 vocabulary of
   `src/xpu/candidates.py` (`flow_realization`, `processing_unit`,
-  `boundary_residence`, `local_residence`) so the layers cannot drift apart.
+  `boundary_residence`, `local_residence`) so the layers cannot drift apart
+  (bench long CSVs, selector table schema v2, and regenerated reports all
+  carry the split fields).
 
 E-group correctness gates:
 
@@ -193,6 +196,49 @@ the following funnel:
 Capacity-only cases may use fewer timing repetitions, but they must be labeled
 as capacity/correctness evidence and excluded from performance aggregates.
 
+#### Minimal release matrix (this round's exit, superset-checked by E1--E6 later)
+
+The migration instance converges on the following representative matrix; the
+full E1--E6 grids above remain the roadmap, not the release gate:
+
+| Purpose | N | Batch | Compared implementations |
+|---|---:|---|---|
+| Vendor overlap, small/mid | 1024, 2048 | 1, 16, 64 | M0, the frozen selected plan, the measured oracle at the shape, and the real batched vendor — only where `torch.fft.fft` actually succeeds at that `(N, B)` |
+| Batch trend | 4096 | 1, 16, 64 | batched M0 (M4), frozen selected, one spread/folded ablation |
+| Long transform | 65536 | 1, 4 | M0, frozen selected, one related ablation |
+| Capacity | 1048576 | 1 | correctness + latency/coverage record; existing phase-3/confirm evidence may be reused under the same protocol; excluded from external geometric means |
+
+Constraints: `B=1` may compare M1/M2/M3/M5; `B>1` may only compare
+implementations with a real batched lowering (today: M4 spread/folded on the
+M0-stage flow). The current batch results therefore describe M0-stage
+batch organization, never batched M2/M3/M5. `N=1048576` is capacity
+evidence, not an external speedup point.
+
+One controlled ablation (already executed at `N=4096` DIT,
+[results/p800/selected_sessions](https://github.com/TruNcat3/kunlunxin-fft/tree/master/results/p800/selected_sessions)):
+M0 -> flow-organization-only candidate (M1, same radix-2 core) -> core-change
+candidates (M2 dense-dot, M5 radix-4) with launch counts recorded, separating
+flow effects from processing-unit effects. Analytic ledgers (launches,
+twiddles, adds) stay in `*_estimate` fields with their formula; they never
+share an unlabeled column with measured times.
+
+Selection vocabulary (three distinct things — never conflate them):
+
+- **measured oracle**: the fastest measured candidate at a shape during the
+  search; an upper bound, not a deployment.
+- **frozen selected plan**: the static table entry for a shape
+  (`config/selector_table.json`), built under the promotion guard from
+  correctness-gated search-stage medians.
+- **runtime selector**: the execution entry
+  (`src/xpu/entry.py::plan_fft`/`run_fft`) that queries the frozen table and
+  actually runs the selected implementation — or M0 with the fallback
+  reason. Table lookup without executed fallback is not selector performance.
+
+Batch-incumbent semantics: batch entries pick the faster M4 variant per
+shape under the same guard; the table itself — never a prose summary — is
+the source of which variant wins where (e.g. spread wins at
+`N=65536, B=16`; folded is kept elsewhere in the current table).
+
 ### P2: batched lowering and deployment selection
 
 - [ ] Today only the M0-stage flow has a batched lowering (M4 spread/folded);
@@ -217,9 +263,12 @@ as capacity/correctness evidence and excluded from performance aggregates.
   performance.
 
 Use a conservative promotion guard: a challenger must pass all correctness
-checks and improve the paired median by at least 2% before replacing the
-incumbent. A result inside the guard band is a tie and retains the incumbent;
-the threshold is an engineering guard, not a statistical-significance claim.
+checks and improve the search-stage median by at least 2% before replacing
+the incumbent. The search-stage comparison is between aggregated medians of
+one run schedule, not paired per-trial medians; after independent sessions
+exist, report session-level speedups separately. A result inside the guard
+band is a tie and retains the incumbent; the threshold is an engineering
+guard, not a statistical-significance claim.
 
 ## 6. Measurement contract
 
@@ -236,7 +285,9 @@ latency per transform and transforms/second or points/second; do not call
 
 For formal representative points:
 
-- use at least five independent sessions;
+- use three independent process sessions by default (aligned with the
+  Ascend-FFT migration release protocol); expand a volatile or
+  guard-near point to five — do not force every point to five;
 - randomize/interleave contender order within each shape;
 - run correctness before admitting each trial to timing;
 - report median, p10, p90, coefficient of variation, and all raw values; and
@@ -305,6 +356,40 @@ are handled separately after the evidence is accepted.
 
 ## 8. Acceptance and stopping criteria
 
+Migration-instance exit (the four items below close this round; they do not
+require the full E1--E6 grids):
+
+- [x] Table building rejects incorrect candidates and mixed-profile data
+  (per-row and per-run gates in `scripts/build_selector_table.py`;
+  negative tests in `tests/test_selector.py`).
+- [x] The selected entry actually executes the table's description; an
+  out-of-table shape or a profile mismatch actually executes M0
+  (`src/xpu/entry.py`; fallback probes with `ExecutionReport.fallback=true`
+  in `results/p800/selected_sessions/`).
+- [x] The representative matrix is correct, with no repeatable regression
+  beyond the 2% protection band (3 independent sessions; batch points that
+  select the same variant are same-variant parity checks).
+- [x] Raw rows, the frozen table, the actually executed configuration, and
+  the automatic summary are cross-linkable (`raw_session*.jsonl` ->
+  `summary.json` -> `report.md`; table rebuilds byte-identically from the
+  committed confirmation JSONs).
+
+Release-matrix acceptance (minimal matrix above):
+
+- [ ] every representative point carries a correct result or a structured
+  failure record;
+- [x] at least one workload class reproduces a positive gain in independent
+  sessions (M1 small-N, M2 mid, M5 long — Round D sessions);
+- [x] one ablation point explains whether gains come from flow organization,
+  processing unit, or boundary changes (`N=4096`: processing-unit effect);
+- [x] out-of-table points retain the mature M0 path;
+- [x] no negative points are hidden, and no long-size external speedup is
+  claimed without a vendor baseline;
+- [x] raw, manifest, summary, and frozen table are auto-linkable and
+  reproducible.
+
+Full-plan checks (keep for the roadmap rounds):
+
 - [ ] P0 runner, dry-run, progress, resume, and structured failure paths work.
 - [ ] E1--E6 each produce accepted data or an explicit
   `unsupported/infeasible/timeout/oom/budget-limited` record.
@@ -339,6 +424,16 @@ This round is complete when the repository can support the statement:
 It is not necessary to implement every FFT form or exhaust every physical-core
 optimization before making that migration claim. Remaining transforms, 2D
 support, and exhaustive physical-core tuning move to the roadmap.
+
+## 8b. Explicitly out of scope (roadmap, non-blocking)
+
+The following do not block the migration instance and move to later rounds:
+the full E3 equal-work grid; E5 application proxies; long-running E6 soak;
+batch beyond `B=64` (4096+); batched lowerings for M2/M3/M5; inverse FFT,
+R2C/C2R, and 2D transforms; production-grade general runtime selection
+beyond the frozen table; and exhaustive physical-core tuning. If the minimal
+release matrix exposes a concrete bottleneck, add one focused experiment —
+do not re-expand the full Cartesian product.
 
 ## 9. Reference reading order
 
