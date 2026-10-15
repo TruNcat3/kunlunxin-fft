@@ -44,7 +44,8 @@ _UNIT = {
 # M1 is DIT-only in this tree (fft_dit_fused); there is no DIF fused lowering.
 _M1_DIRECTIONS = ("dit",)
 
-_MANIFEST_KEYS = ("device", "profile_hash", "precision", "correctness_threshold")
+_MANIFEST_KEYS = ("device", "profile_hash", "precision",
+                  "correctness_threshold", "warmup", "trials", "dtype")
 
 
 def _descriptor(key: str, block: int, extra: dict) -> dict:
@@ -118,6 +119,12 @@ def _load_run(path: str, rejections) -> dict:
         raise ConfigError(
             f"run {path}: manifest missing required keys {missing}; "
             "refusing to build a table from an incomplete manifest")
+    thr = manifest["correctness_threshold"]
+    if (not isinstance(thr, (int, float)) or not math.isfinite(thr)
+            or not (0 < float(thr) < 1)):
+        raise ConfigError(
+            f"run {path}: correctness_threshold {thr!r} must be a finite "
+            "number in (0, 1); refusing to build")
     return {
         "path": path,
         "rows": data["rows"],

@@ -20,7 +20,12 @@ from .config import (  # noqa: F401
     git_commit,
     git_dirty,
 )
-from .entry import ExecutionPlan, ExecutionReport, plan_fft  # noqa: F401
+from .entry import (  # noqa: F401
+    ExecutionPlan,
+    ExecutionReport,
+    execute_fft_plan,
+    plan_fft,
+)
 from .selector import Selection, load_table, select  # noqa: F401
 
 # Torch-dependent symbols, resolved lazily on first attribute access.
@@ -69,6 +74,7 @@ __all__ = [
     "SizeMatrix",
     "Selection",
     "build_manifest",
+    "execute_fft_plan",
     "git_commit",
     "git_dirty",
     "load_table",

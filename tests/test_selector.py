@@ -152,7 +152,8 @@ def test_missing_table_raises_config_error(tmp_path):
 
 def _fake_run(tmp_path, name, *, profile_hash=None,
               err=1e-7, ms=0.5, device="kunlunxin-p800",
-              threshold=1e-4, dirty=False):
+              threshold=1e-4, dirty=False, warmup=10, trials=30,
+              dtype="complex64"):
     """Minimal confirmation-shaped run with one controllable row."""
     if profile_hash is None:
         profile_hash = DeviceProfile.load().hash()
@@ -166,6 +167,7 @@ def _fake_run(tmp_path, name, *, profile_hash=None,
     data = {"manifest": {
         "device": device, "profile_hash": profile_hash, "precision": "fp32",
         "correctness_threshold": threshold, "block": 1024, "dirty": dirty,
+        "warmup": warmup, "trials": trials, "dtype": dtype,
         "extra": {"matrix_rows": 8, "glog": 2, "maxp": 4096, "cells": 1},
     }, "rows": [row]}
     path = tmp_path / name
@@ -229,3 +231,30 @@ def test_builder_rejects_profile_mismatch_vs_current(tmp_path):
     proc, _ = _build(tmp_path, run)
     assert proc.returncode != 0
     assert "re-measure under the current profile" in (proc.stderr + proc.stdout)
+
+
+@pytest.mark.parametrize("threshold", [2.0, 0.0, -1.0, float("nan")])
+def test_builder_rejects_bad_threshold(tmp_path, threshold):
+    run = _fake_run(tmp_path, "thr.json", threshold=threshold)
+    proc, _ = _build(tmp_path, run)
+    assert proc.returncode != 0
+    assert "correctness_threshold" in (proc.stderr + proc.stdout)
+
+
+def test_builder_rejects_mixed_protocol(tmp_path):
+    """Same device/profile but different warmup is a mixed protocol."""
+    a = _fake_run(tmp_path, "p1.json", warmup=10, trials=30)
+    b = _fake_run(tmp_path, "p2.json", warmup=8, trials=30)
+    proc, _ = _build(tmp_path, a, b)
+    assert proc.returncode != 0
+    assert "mixed-profile" in (proc.stderr + proc.stdout)
+
+
+def test_builder_rejects_missing_protocol_fields(tmp_path):
+    run = _fake_run(tmp_path, "np.json")
+    data = json.loads(run.read_text())
+    del data["manifest"]["warmup"]
+    run.write_text(json.dumps(data))
+    proc, _ = _build(tmp_path, run)
+    assert proc.returncode != 0
+    assert "missing required keys" in (proc.stderr + proc.stdout)

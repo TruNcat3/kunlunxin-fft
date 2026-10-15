@@ -375,6 +375,38 @@ def test_radix4_negative_inputs_rejected():
         fft_dit_radix4(torch.complex(torch.ones(2, device="cuda"),
                                      torch.zeros(2, device="cuda")))  # N < 4
 
+def test_run_fft_rank2_col1_semantics():
+    """(1, N) rank-2 input is squeezed, runs the B=1 winner, restores shape."""
+    from src.xpu.entry import run_fft
+    from src.xpu.config import DeviceProfile
+    n = 64
+    x = torch.complex(torch.randn(1, n), torch.randn(1, n)).cuda()
+    ref = np.fft.fft(x[0].cpu().numpy())
+    y, report = run_fft(x, "dit", profile_hash=DeviceProfile.load().hash())
+    assert y.shape == (1, n)
+    assert report.batch == 1 and report.n == n
+    err = float(np.abs(y[0].cpu().numpy() - ref).max()
+                / max(np.abs(ref).max(), 1e-12))
+    assert err < 1e-4
+
+
+def test_run_fft_rejects_dtype_mismatch():
+    from src.xpu.entry import run_fft
+    x = torch.randn(64, dtype=torch.float32).cuda()
+    with pytest.raises(TypeError, match="complex64"):
+        run_fft(x, "dit", profile_hash="0" * 16, table={"entries": []})
+
+
+def test_run_fft_rejects_invalid_direction_and_precision():
+    from src.xpu.entry import run_fft
+    x = torch.complex(torch.randn(64), torch.randn(64)).cuda()
+    with pytest.raises(ValueError, match="unsupported direction"):
+        run_fft(x, "inverse", profile_hash="0" * 16, table={"entries": []})
+    with pytest.raises(ValueError, match="unsupported precision"):
+        run_fft(x, "dit", precision="fp64", profile_hash="0" * 16,
+                table={"entries": []})
+
+
 if __name__ == "__main__":
     if not device_ready():
         print("no XPU device available, skipping")

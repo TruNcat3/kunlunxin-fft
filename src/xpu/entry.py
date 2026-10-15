@@ -2,31 +2,41 @@
 
 Contract (plan section 5/P2, review exit criteria):
 
-1. validate input/profile;
+1. validate input/profile — only the currently supported semantics
+   (``direction in {dit,dif}``, ``precision=fp32``, complex64 XPU tensor)
+   are accepted; anything else raises before any table query or launch;
 2. query the frozen table (:mod:`.selector`);
 3. validate the lowering contract (runner-side validation);
-4. execute the selected M0/M1/M2/M3/M5 implementation;
-5. abstain / unavailable => execute M0 and report the fallback reason.
+4. execute the selected M0/M1/M2/M3/M5/M4 implementation;
+5. abstain / undispatchable => execute M0 and report the fallback reason.
 
-``plan_fft`` is host-only (no torch): it resolves the Selection onto a concrete
-runner function and records exactly what would run. ``run_fft`` performs the
-same resolution and then launches, returning ``(y, ExecutionReport)`` so the
-actual executed configuration is observable — never "selected metadata but
-ran fixed M0".
+Two execution modes (plan semantics, like an FFT library plan):
 
-M0 closure: the fallback path executes ``fft_dit``/``fft_dif`` (batch>1:
-the M4 stage flow at the conservative ``folded`` variant) at the table
-entry's incumbent block when known, else the library default.
+* :func:`plan_fft` resolves the table once (host-only, no torch);
+  :func:`execute_fft_plan` runs the resolved plan without re-querying —
+  the **plan-reuse** path the 2% guard is defined against.
+* :func:`run_fft` is the one-shot convenience API (plan + execute per
+  call); its per-call dispatch overhead is reported separately and is
+  never conflated with kernel performance.
+
+A rank-2 ``(1, N)`` input is squeezed to rank-1, executed as the B=1
+winner, and the output is restored to ``(1, N)``. M0 closure: abstain,
+profile mismatch, or an undispatchable combination executes ``fft_dit``
+/ ``fft_dif`` (batch>1: the M4 stage flow, conservative ``folded``
+variant) at the table entry's incumbent block when known, else the
+library default.
 """
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
 
 from .selector import Selection, load_table, select
 
 DEFAULT_BLOCK = 1024
+SUPPORTED_DIRECTIONS = ("dit", "dif")
+SUPPORTED_PRECISIONS = ("fp32",)
+_SUPPORTED_DTYPES = {"fp32": "complex64"}
 
 
 @dataclass(frozen=True)
@@ -37,7 +47,7 @@ class ExecutionPlan:
     batch: int
     direction: str
     precision: str
-    selection_source: str        # "table" | "abstain"
+    selection_source: str        # "table" | "abstain" | "baseline-control"
     reason: str
     fallback: bool               # True when M0 runs instead of a table winner
     executed: str                # runner function name actually used
@@ -54,6 +64,19 @@ class ExecutionPlan:
 @dataclass(frozen=True)
 class ExecutionReport(ExecutionPlan):
     """ExecutionPlan plus the observation that the plan was carried out."""
+
+
+def _validate_semantics(direction: str, precision: str) -> None:
+    """Reject unsupported semantics before any table query or launch."""
+    if direction not in SUPPORTED_DIRECTIONS:
+        raise ValueError(
+            f"unsupported direction {direction!r}; this round supports "
+            f"{SUPPORTED_DIRECTIONS} only (forward C2C). inverse/r2c/c2r "
+            "are roadmap and must not fall back to a different transform")
+    if precision not in SUPPORTED_PRECISIONS:
+        raise ValueError(
+            f"unsupported precision {precision!r}; this round supports "
+            f"{SUPPORTED_PRECISIONS} only")
 
 
 def _m0_name(direction: str, batch: int) -> str:
@@ -76,27 +99,32 @@ def _m0_plan(n, batch, direction, precision, reason, fallback,
 
 def _dispatch(sel: Selection) -> str | None:
     """Map a table Selection onto the runner function name, or None when no
-    lowering implements that (realization, unit, direction) combination."""
+    lowering implements that (realization, unit, direction, batch)
+    combination. Every non-M4 realization is single-transform only."""
     key = (sel.flow_realization, sel.processing_unit, sel.direction)
     if key == ("global-stage", "radix2-scalar", "dit"):
         return "fft_dit" if sel.batch == 1 else "fft_dit_batch"
     if key == ("global-stage", "radix2-scalar", "dif"):
         return "fft_dif" if sel.batch == 1 else "fft_dif_batch"
+    if sel.batch != 1:
+        # batched M1/M2/M3/M5 have no lowering this round; the M4 stage
+        # flow above is the only batched path.
+        return None
     if key == ("global-stage", "radix4-scalar", "dit"):
-        return "fft_dit_radix4" if sel.batch == 1 else None
+        return "fft_dit_radix4"
     if key == ("global-stage", "radix4-scalar", "dif"):
-        return "fft_dif_radix4" if sel.batch == 1 else None
+        return "fft_dif_radix4"
     if key == ("fused-inplace", "radix2-scalar", "dit"):
         # M1 is DIT-only in this tree; there is no DIF fused lowering.
         return "fft_dit_fused"
     if key == ("matrix-resident", "dense-dot-fft64", "dit"):
-        return "fft_dit_matrix" if sel.batch == 1 else None
+        return "fft_dit_matrix"
     if key == ("matrix-resident", "dense-dot-fft64", "dif"):
-        return "fft_dif_matrix" if sel.batch == 1 else None
+        return "fft_dif_matrix"
     if key == ("grouped-boundary", "composite-linear-map", "dit"):
-        return "fft_dit_grouped" if sel.batch == 1 else None
+        return "fft_dit_grouped"
     if key == ("grouped-boundary", "composite-linear-map", "dif"):
-        return "fft_dif_grouped" if sel.batch == 1 else None
+        return "fft_dif_grouped"
     return None
 
 
@@ -115,10 +143,12 @@ def plan_fft(direction: str, n: int, batch: int = 1, precision: str = "fp32",
              table: dict | None = None) -> ExecutionPlan:
     """Resolve the frozen table onto a concrete plan (host-only, no torch).
 
-    ``profile_hash=None`` abstains — a missing profile can never bypass the
-    table. Anything the dispatch layer cannot lower (unknown realization,
-    batched non-M4 flow, DIF fused) falls back to M0 with the reason.
+    Unsupported direction/precision raise ``ValueError`` before the table
+    query — they must never fall back onto a different transform.
+    ``profile_hash=None`` abstains to M0; an undispatchable table entry
+    (e.g. a hypothetical batched M1) falls back to M0 with the reason.
     """
+    _validate_semantics(direction, precision)
     table = table if table is not None else load_table()
     sel = select(direction, n, batch=batch, precision=precision,
                  profile_hash=profile_hash, table=table)
@@ -164,30 +194,57 @@ def _invoke(fn, x, direction, block, params):
     raise AssertionError(f"unmapped runner function {fn}")
 
 
+def execute_fft_plan(plan: ExecutionPlan, x):
+    """Execute a resolved plan without re-querying the table (plan-reuse).
+
+    ``x`` must already sit on the XPU device with the plan's semantics
+    (rank-1 for B=1, rank-2 for batched). The one-time plan/dispatch cost
+    of :func:`plan_fft` is **not** included here.
+    """
+    module = __import__("src.xpu.runner", fromlist=[plan.executed])
+    fn = getattr(module, plan.executed)
+    return _invoke(fn, x, plan.direction, plan.block or DEFAULT_BLOCK,
+                   plan.params)
+
+
 def run_fft(x, direction: str, *, batch: int | None = None,
             precision: str = "fp32", profile_hash: str | None = None,
             table: dict | None = None):
-    """Execute the planned implementation; return ``(y, ExecutionReport)``.
+    """One-shot convenience: plan + execute; return ``(y, ExecutionReport)``.
 
-    ``x`` must already sit on the XPU device. ``batch`` defaults to the
-    tensor's leading dimension for rank-2 inputs and 1 for rank-1.
+    Unsupported direction/precision/dtype raise before any query. A rank-2
+    ``(1, N)`` input is squeezed to rank-1 for the B=1 winner and the
+    output is restored to ``(1, N)``. Per-call plan/dispatch overhead is
+    included here — use :func:`plan_fft` + :func:`execute_fft_plan` for
+    steady-state (plan-reuse) timings.
     """
     import torch  # local import: entry stays host-importable for planning
 
+    _validate_semantics(direction, precision)
+    want_dtype = getattr(torch, _SUPPORTED_DTYPES[precision])
     if not isinstance(x, torch.Tensor):
         raise TypeError(f"x must be a torch.Tensor, got {type(x).__name__}")
+    if x.dtype != want_dtype:
+        raise TypeError(
+            f"x must be {want_dtype} for precision={precision}, "
+            f"got {x.dtype}")
+    squeezed = False
     if x.dim() == 1:
         n, b = x.numel(), 1
+    elif x.dim() == 2 and x.shape[0] == 1:
+        x = x[0]
+        n, b = x.numel(), 1
+        squeezed = True
     elif x.dim() == 2:
         b, n = x.shape
     else:
         raise ValueError(f"x must be rank-1 or rank-2, got dim={x.dim()}")
     if batch is not None and batch != b:
-        raise ValueError(f"batch={batch} does not match x.shape[0]={b}")
+        raise ValueError(f"batch={batch} does not match effective batch {b}")
 
     plan = plan_fft(direction, n, batch=b, precision=precision,
                     profile_hash=profile_hash, table=table)
-    module = __import__("src.xpu.runner", fromlist=[plan.executed])
-    fn = getattr(module, plan.executed)
-    y = _invoke(fn, x, direction, plan.block or DEFAULT_BLOCK, plan.params)
+    y = execute_fft_plan(plan, x)
+    if squeezed:
+        y = y.unsqueeze(0)
     return y, plan.as_report()

@@ -50,10 +50,26 @@ def test_dispatch_covers_known_lowerings(real, unit, direction, batch, expect):
     ("fused-inplace", "radix2-scalar", "dif", 1),   # no DIF fused lowering
     ("matrix-resident", "dense-dot-fft64", "dit", 4),
     ("global-stage", "radix4-scalar", "dit", 4),
+    ("fused-inplace", "radix2-scalar", "dit", 4),  # batched M1: no lowering
+    ("grouped-boundary", "composite-linear-map", "dit", 16),
 ])
 def test_dispatch_returns_none_for_unlowered(kwargs):
     real, unit, direction, batch = kwargs
     assert _dispatch(_sel(real, unit, direction, batch)) is None
+
+
+def test_plan_rejects_invalid_direction():
+    """inverse/r2c must raise, never fall back onto a different transform."""
+    with pytest.raises(ValueError, match="unsupported direction"):
+        plan_fft("inverse", 16, profile_hash="0" * 16, table={"entries": []})
+    with pytest.raises(ValueError, match="unsupported direction"):
+        plan_fft("r2c", 16, profile_hash="0" * 16, table={"entries": []})
+
+
+def test_plan_rejects_invalid_precision():
+    with pytest.raises(ValueError, match="unsupported precision"):
+        plan_fft("dit", 16, precision="fp64", profile_hash="0" * 16,
+                 table={"entries": []})
 
 
 def test_plan_executes_table_winner():
@@ -131,6 +147,26 @@ def test_plan_batch_entry_dispatches_m4():
     assert not plan.fallback
     assert plan.executed == "fft_dit_batch"
     assert plan.params.get("variant") in ("spread", "folded")
+
+
+def test_plan_falls_back_for_batched_m1_table_entry():
+    """A (hypothetical) batched M1 table entry must fall back to M4/M0."""
+    if not TABLE.exists():
+        pytest.skip("selector table not built")
+    t = load_table(str(TABLE))
+    fake = dict(t)
+    fake["entries"] = [{
+        "N": 16, "batch": 4, "direction": "dit",
+        "block": 1024, "flow_id": "local-fused-tile",
+        "flow_realization": "fused-inplace",
+        "processing_unit": "radix2-scalar", "params": {"tile": 64},
+        "incumbent_ms": 1.0, "challenger_ms": 0.5, "reason": "fake",
+    }]
+    p = DeviceProfile.load()
+    plan = plan_fft("dit", 16, batch=4, profile_hash=p.hash(), table=fake)
+    assert plan.fallback
+    assert plan.executed == "fft_dit_batch"
+    assert "no lowering" in plan.reason
 
 
 def test_entry_module_does_not_import_torch():
