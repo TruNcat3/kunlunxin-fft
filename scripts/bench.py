@@ -100,10 +100,9 @@ def numpy_ref(x: torch.Tensor) -> np.ndarray:
 
 
 def err_vs(got: torch.Tensor, ref: np.ndarray) -> float:
-    gr = got.real.cpu().numpy().astype(np.float64)
-    gi = got.imag.cpu().numpy().astype(np.float64)
-    den = float(np.abs(ref).max())
-    return float(np.maximum(np.abs(gr - ref.real), np.abs(gi - ref.imag)).max() / den)
+    """Shared contract error (src/xpu/error_metric.py); inf if non-finite."""
+    from src.xpu.error_metric import max_rel_error
+    return max_rel_error(got.detach().cpu().numpy(), ref)
 
 
 def vendor_fft(x: torch.Tensor):
