@@ -1,0 +1,46 @@
+digraph mixed_unfolding {
+  graph [bgcolor="white", rankdir=TB, pad="0.25", nodesep="0.45", ranksep="0.45"];
+  node [fontname="DejaVu Sans", fontsize=10, color="#475569"];
+  edge [fontname="DejaVu Sans", fontsize=9, color="#64748b", arrowsize=0.65];
+
+  title [shape=plain, fontsize=14, label="Mixed unfolding example: stage roles pipeline homogeneous data packets"];
+  pipe [shape=plain, label=<
+    <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="10" COLOR="#94a3b8">
+      <TR>
+        <TD BGCOLOR="#e2e8f0"><B>resident role</B></TD>
+        <TD BGCOLOR="#f1f5f9"><B>t0</B></TD><TD BGCOLOR="#f1f5f9"><B>t1</B></TD>
+        <TD BGCOLOR="#f1f5f9"><B>t2</B></TD><TD BGCOLOR="#f1f5f9"><B>t3</B></TD>
+        <TD BGCOLOR="#f1f5f9"><B>t4</B></TD><TD BGCOLOR="#f1f5f9"><B>t5</B></TD>
+      </TR>
+      <TR>
+        <TD BGCOLOR="#dbeafe"><B>G0: S0 -&gt; S1</B><BR/><FONT POINT-SIZE="9">Ts=2 local stages</FONT></TD>
+        <TD BGCOLOR="#bae6fd">d0</TD><TD BGCOLOR="#bae6fd">d1</TD><TD BGCOLOR="#bae6fd">d2</TD><TD BGCOLOR="#bae6fd">d3</TD><TD>&#160;</TD><TD>&#160;</TD>
+      </TR>
+      <TR>
+        <TD BGCOLOR="#dbeafe"><B>G1: S2 -&gt; S3</B><BR/><FONT POINT-SIZE="9">Ts=2 local stages</FONT></TD>
+        <TD>&#160;</TD><TD BGCOLOR="#bbf7d0">d0</TD><TD BGCOLOR="#bbf7d0">d1</TD><TD BGCOLOR="#bbf7d0">d2</TD><TD BGCOLOR="#bbf7d0">d3</TD><TD>&#160;</TD>
+      </TR>
+      <TR>
+        <TD BGCOLOR="#dbeafe"><B>G2: S4 -&gt; S5</B><BR/><FONT POINT-SIZE="9">Ts=2 local stages</FONT></TD>
+        <TD>&#160;</TD><TD>&#160;</TD><TD BGCOLOR="#fde68a">d0</TD><TD BGCOLOR="#fde68a">d1</TD><TD BGCOLOR="#fde68a">d2</TD><TD BGCOLOR="#fde68a">d3</TD>
+      </TR>
+    </TABLE>
+  >];
+
+  stage [shape=box, style="rounded,filled", fillcolor="#dbeafe", color="#2563eb",
+         label="Stage mapping\nUs = 3 resident roles\nTs = 2 stages per role"];
+  data [shape=box, style="rounded,filled", fillcolor="#dcfce7", color="#059669",
+        label="Data mapping\nUd workers in space\nTd packets per worker in time"];
+  boundary [shape=box, style="rounded,filled", fillcolor="#fef3c7", color="#d97706",
+            label="Role handoff\nlayout + residence decide whether\nthe boundary stays local or reaches GM"];
+  template [shape=box, style="rounded,filled", fillcolor="#f3e8ff", color="#7e22ce",
+            label="Parameterized template a =\n(Us, Ts, Ud, Td, layout, residence, processing unit)\nValues are hardware-selected, not fixed"];
+
+  title -> pipe [style=invis];
+  pipe -> stage;
+  pipe -> data;
+  { rank=same; stage; data; boundary; }
+  stage -> boundary;
+  data -> boundary;
+  boundary -> template;
+}

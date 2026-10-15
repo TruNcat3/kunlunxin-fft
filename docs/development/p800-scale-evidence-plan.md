@@ -1,4 +1,10 @@
-# P800 Scale and Evidence Completion Plan
+# P800 规模与证据计划（已完成归档）
+
+!!! warning "历史计划"
+    本计划的 release matrix 已完成。当前数据与协议分别见
+    [结果汇总](../benchmarks/results.md)和[测量协议](../benchmarks/methodology.md)。
+
+# Original P800 scale and evidence completion plan
 
 ## 1. Purpose and scope
 

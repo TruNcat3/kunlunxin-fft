@@ -2,107 +2,123 @@
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Citation](https://img.shields.io/badge/citation-CFF-orange.svg)](CITATION.cff)
-[![Hardware](https://img.shields.io/badge/SoC-Kunlunxin__P800__OAM-8A2BE2.svg)](docs/device-stack.md)
-[![Method](https://img.shields.io/badge/method-cuButterfly-2F80ED.svg)](https://github.com/TruNcat3/cuButterfly)
+[![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-2F80ED.svg)](https://truncat3.github.io/kunlunxin-fft/)
+[![Hardware](https://img.shields.io/badge/tested-Kunlunxin%20P800-8A2BE2.svg)](docs/reference/support.md)
 
-**Kunlunxin-FFT 是 cuButterfly 混合空间-时间数据流方法在昆仑芯 P800 上的迁移实例。**
-本仓库的首要目标是在一个公开、可复现的实验范围内，确定 P800 上**可执行**的设备代码路径
-（Triton -> XMLIR -> XPU 指令），记录并论证哪些路径不可执行及其原因，并交付一个经过正确性
-验证、与厂商栈对比的 radix-2 FFT 基线。
-
-本里程碑是**正确性优先的基线**，不是性能收益。实测数据与诚实解读见 [Results](docs/results.md)。
+**Kunlunxin-FFT 是一个面向昆仑芯平台的 FFT 算子库，也是
+[cuButterfly](https://github.com/TruNcat3/cuButterfly) 混合空间-时间数据流方法的迁移实例。**
+它把阶段/数据展开、局部驻留、边界组织和计算核心选择拆成可组合的设计轴，再根据硬件 profile
+选择可执行实现；当前 P800 版本提供 forward C2C、单变换与 batch 路径、M0--M5 候选、冻结
+selector 和保守 fallback。
 
 <p align="center">
   <a href="https://www.ustc.edu.cn/">
-    <img src="https://img.shields.io/badge/USTC-High%20Efficient%20Intelligent%20Computing%20Lab-8A2BE2.svg" alt="USTC HEIC Lab">
+    <img src="docs/assets/ustc-logo.png" width="520" alt="University of Science and Technology of China">
   </a>
 </p>
 
-## 与 cuButterfly 的关系
+## 当前结果
 
-本项目是 [cuButterfly](https://github.com/TruNcat3/cuButterfly) 方法在昆仑芯 P800 上的迁移实例：
-保留“阶段维度与数据维度同时进行空间/时间划分”的架构范式，但不复用 CUDA kernel；计算、布局、
-存储和同步均重新映射到 P800 的设备模型。方法来源与差异归属于
-[cuButterfly](https://github.com/TruNcat3/cuButterfly)；本项目不将这些方法论观点重新宣称独立提出。
+![P800 release overview](docs/assets/figures/release-overview.png)
 
-**计算流优化**决定阶段和数据如何分块、复用、交接、重排和流水；**计算核心优化**决定每个局部块
-内部用 radix-2 或其他已验证蝶形算法完成算术；**硬件 lowering** 再决定具体指令与数据通路。
-cuButterfly/本项目的主要研究对象是计算流；本项目当前使用的 radix-2 核只是一个可执行的物理实例，
-不是方法的固定定义。
+图中左侧是冻结 selector 相对同 block M0 的加速，右侧是与当前记录的 `torch.fft.fft`
+同语义点对比。正式 P800 release matrix 的结论是：
 
-## 设备栈的关键结论
+- 单变换代表点相对 M0 达到 `1.23x--2.07x`；`N=32` 和若干 batch 点由 fallback 保持约持平。
+- 在六个主厂商对比点中，`N=2048, B=1` 达到 `1.66x`；其余主矩阵点仍落后。发布数据还记录了 `N=16/32, B=1` 两个小尺寸补充点。
+- 全部正式发布点通过正确性检查，selected/M0 最坏相对误差为 `9.91e-7`。
+- 这些数字来自单张 P800 OAM、FP32 complex64、forward C2C、API wall time、3 个独立进程
+  session；不代表其他软件栈、硬件或未测语义。
 
-本仓库记录的最重要发现，是 P800 上哪些设备代码路径**可执行**、哪些**不可执行**及其证据：
-
-| 设备代码路径 | P800 可执行？ | 原因 |
-|---|---|---|
-| **Triton -> XMLIR -> XPU 指令** | **是** | 唯一可用路径。`triton` 3.0.0 带 `xpu` 后端，运行期编译并启动。 |
-| nvcc -> PTX | 否 | P800 不执行 PTX。 |
-| clang 手写 CUDA 设备码 -> xpubin | 否 | 可编译，但 XPU ELF loader 需要 torch 进程内运行时状态，裸 C++ 宿主无法复现（静默 no-op）。 |
-| XHPC / xpucc SDK | 否 | 参考容器内不存在。 |
-| 片上多阶段融合（gather/scatter） | 否 | Triton 3.0.0 XPU 构建拒绝 `x[idx]` gather，SSA 形式无法表达原地 shared-memory FFT。 |
-
-完整证据（含排除每条死路的实验）见 [Device Stack](docs/device-stack.md)。
-
-## 当前能力
-
-| 变换 | 精度 | 长度 | 布局 | 状态 |
-|---|---|---|---|---|
-| C2C forward (DIT) | fp32 complex | 2 的幂，`8..1048576` | planar 分离实虚部 | 稳定实验路径 |
-| C2C forward (DIF) | fp32 complex | 2 的幂，`8..65536` | planar 分离实虚部 | 稳定实验路径 |
-
-复数采用 **planar**（分离 float32 实部/虚部缓冲）布局，因为 Triton XPU 后端没有 `complex64`
-参数类型。本里程碑不含逆变换、R2C/C2R、batched API 或稳定 C ABI。设备代码是 Triton，宿主驱动
-是 Python；`include/` 与 `src/host/` 下的 C++ 是索引/twiddle 数学的**宿主侧参考实现**，由 g++
-单元测试在无设备时验证，不是设备路径。
-
-## 性能概览
-
-在单张 P800 OAM 上实测（`block=1024`，device-only）。厂商基线 `torch.fft.fft`（xdnn）在本设备
-**仅支持 N <= 2048**。完整表格与诚实解读见 [Results](docs/results.md)。
-
-| 场景 | 基线 | 解读 |
-|---|---|---|
-| N <= 2048（厂商可达） | `torch.fft.fft` | 朴素 Triton radix-2 **更慢**（0.04x–0.90x），启动与全局访存成本主导。 |
-| N >= 4096（厂商不可达） | 无 | 本库是**唯一**路径；正确运行到 1048576，rel err ~6e-7。 |
-
-本里程碑的价值主张是**覆盖范围、正确性与一条有据可查的可执行路径**，不是速度。缩小性能差距正是
-cuButterfly 混合空间-时间数据流（分块、寄存器驻留、阶段融合）的目标；具体阻塞点（无 gather/scatter）
-记录在 [Device Stack](docs/device-stack.md)。
+完整逐点数据、负点和计时边界见[实验结果](docs/benchmarks/results.md)与
+[测量协议](docs/benchmarks/methodology.md)。
 
 ## 快速开始
 
+需要厂商 xpytorch 环境（`torch + torch_xmlir + Triton XPU backend`）。脚本检查现有环境，
+不会安装驱动或自动生成新硬件模型。
+
 ```bash
-# 1. 环境（需要厂商 xpytorch 栈：torch + torch_xmlir）
+git clone https://github.com/TruNcat3/kunlunxin-fft.git
+cd kunlunxin-fft
+
+export CUDA_VISIBLE_DEVICES=6  # 改为当前可用的 P800 设备号
 bash scripts/init.sh
-
-# 2. 构建宿主侧 C++ 参考实现 + 单元测试，并预热 Triton 缓存
 bash scripts/build.sh
-
-# 3. 设备端正确性
-CUDA_VISIBLE_DEVICES=6 python3 scripts/test_correctness.py --profile smoke
-
-# 4. 基准测试
-CUDA_VISIBLE_DEVICES=6 python3 scripts/bench.py
+python3 scripts/smoke.py
+python3 scripts/test_correctness.py --profile smoke
 ```
 
-架构见 [Architecture](docs/architecture.md)，实测数据见 [Results](docs/results.md)。下一阶段的修复、
-性能建模和混合数据流实现要求见
-[Migration Convergence Plan](docs/development/migration-convergence-plan.md)。
+最小 plan-reuse 调用：
 
-## 目录结构
+```python
+import torch
+import torch_xmlir  # 激活参考环境中的 XPU runtime
+from src.xpu import DeviceProfile, execute_fft_plan, plan_fft
 
-```
-config/                 设备 profile、长度、设计空间、测试矩阵
-include/butterfly/      宿主侧 C++ 参考实现（header-only）
-src/xpu/                设备路径（Triton -> XMLIR -> XPU）
-src/host/               宿主侧参考（CPU，g++ 单元测试）
-scripts/                init / build / 测试 / 基准
-tests/                  正确性入口
-results/p800/           公开的基准数据
-docs/                   index / architecture / device-stack / results
+x = torch.randn(2048, device="cuda", dtype=torch.complex64)
+profile_hash = DeviceProfile.load().hash()
+plan = plan_fft("dit", 2048, profile_hash=profile_hash)
+y = execute_fft_plan(plan, x)
+print(plan.executed, plan.fallback, plan.reason)
 ```
 
-## 许可
+这里的 `"cuda"` 是该 xpytorch 栈暴露 P800 的设备键，不表示代码运行在 NVIDIA GPU 上。
+安装细节见[安装](docs/getting-started/installation.md)，接口语义见
+[Plan 与选型](docs/user-guide/plans.md)。
 
-[Apache-2.0](LICENSE)。引用见 [CITATION.cff](CITATION.cff)。
+## 为什么这样设计
+
+FFT 的算术量固定，但硬件时间不只由蝶形 FLOPs 决定。纯阶段并行会反复物化阶段边界，纯数据
+并行又会受局部容量和依赖链限制。cuButterfly 的核心观察是：同时在阶段维度和数据维度做空间/
+时间划分，用局部驻留与边界重排降低数据搬运，再把 radix 或矩阵小 FFT 作为可替换计算核心。
+
+Kunlunxin-FFT 保留这套方法层抽象，但所有 kernel、布局和 lowering 都针对 P800 重新实现：
+
+```text
+架构映射 A (Us, Ts, Ud, Td, layout, residence, pipeline)
+        x 计算核心 P (radix-2, radix-4, dense-dot FFT64, ...)
+        -> P800 lowering contract 过滤
+        -> profile-bound selector
+        -> 可执行 plan 或 M0 fallback
+```
+
+因此计算流优化与计算核心优化在概念上正交、在资源上耦合，并不互斥。详细推导见
+[设计动机](docs/design/motivation.md)和[架构与数据流](docs/design/architecture.md)。本观点和
+方法论来源于 cuButterfly；本仓库的独立内容是 P800 lowering、实现、选择器和实测证据。
+
+## 阅读顺序
+
+| 读者 | 建议路径 |
+|---|---|
+| 首次使用 | [安装](docs/getting-started/installation.md) -> [首次运行](docs/getting-started/quickstart.md) -> [支持范围](docs/reference/support.md) |
+| 了解方法 | [设计动机](docs/design/motivation.md) -> [架构与数据流](docs/design/architecture.md) -> [计算核心](docs/design/kernels.md) |
+| 阅读实验 | [结果汇总](docs/benchmarks/results.md) -> [测量协议](docs/benchmarks/methodology.md) -> [消融分析](docs/benchmarks/ablations.md) |
+| 复现/开发 | [数据与复现](docs/benchmarks/reproducibility.md) -> [工程结构](docs/development/repository-layout.md) -> [验证与发布](docs/development/validation-and-release.md) |
+
+在线文档：<https://truncat3.github.io/kunlunxin-fft/>。
+
+## 支持边界
+
+当前已验证接口是 1D、二次幂长度、FP32/complex64、forward C2C。DIT 与 DIF 是同一 forward
+FFT 的两种分解，不是正/逆变换。inverse、R2C/C2R、非二次幂、多维、其他精度、稳定 C ABI 和
+用户 stream 接口仍在路线图中。内部 kernel 使用 planar 实虚分离 lowering，但公开 Python 输入
+是 `torch.complex64` tensor。
+
+## 引用与许可
+
+软件采用 [Apache-2.0](LICENSE)，允许修改和再发布，并须遵守许可证中的通知要求。引用本实现和
+P800 实验时请引用 Kunlunxin-FFT；引用混合空间-时间数据流方法时请同时引用 cuButterfly。机器可读
+信息见 [CITATION.cff](CITATION.cff)，作者与机构信息见[项目与作者](docs/about.md)。
+
+```bibtex
+@software{wang2026kunlunxinfft,
+  author       = {Teng Wang},
+  title        = {Kunlunxin-FFT: A Hardware-Mapped FFT Operator Library for Kunlunxin P800},
+  year         = {2026},
+  url          = {https://github.com/TruNcat3/kunlunxin-fft},
+  organization = {High Efficient Intelligent Computing Lab,
+                  Suzhou Institute for Advanced Research,
+                  University of Science and Technology of China}
+}
+```

@@ -1,4 +1,11 @@
-# Migration Convergence Plan
+# 迁移收敛计划（已完成归档）
+
+!!! warning "历史计划"
+    计划中的“下一步”和当时能力只描述该开发轮次。当前状态见
+    [结果汇总](../benchmarks/results.md)、[支持范围](../reference/support.md)和
+    [未来计划](../roadmap.md)。
+
+# Original migration convergence plan
 
 This document is the execution contract for the next Kunlunxin-FFT iteration. It
 is intentionally written as a plan and an evidence checklist: the current

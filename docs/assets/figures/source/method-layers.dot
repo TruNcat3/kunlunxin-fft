@@ -1,0 +1,23 @@
+digraph method_layers {
+  graph [bgcolor="white", rankdir=TB, pad="0.25", nodesep="0.55", ranksep="0.55", splines=ortho];
+  node [shape=box, style="rounded,filled", fontname="DejaVu Sans", fontsize=11, margin="0.14,0.10", color="#334155", penwidth=1.2];
+  edge [fontname="DejaVu Sans", fontsize=9, color="#64748b", penwidth=1.2, arrowsize=0.75];
+
+  problem [label="FFT workload\n(N, batch, semantics)", fillcolor="#f8fafc"];
+  arch [label="Architecture mapping A\nUs, Ts, Ud, Td\nlayout, residence, pipeline", fillcolor="#dbeafe", color="#2563eb"];
+  core [label="Processing unit P\nradix-2, radix-4,\ndense-dot FFT64", fillcolor="#fef3c7", color="#d97706"];
+  lower [label="P800 lowering contract\nXPU instructions, alignment,\nshape, memory, synchronization", fillcolor="#dcfce7", color="#059669"];
+  candidates [label="Legal executable plans\nM0 ... M5 + fallback", fillcolor="#f3e8ff", color="#7e22ce"];
+  selector [label="Profile-bound selector\nfrozen measured table", fillcolor="#ffe4e6", color="#be123c"];
+  run [label="Execute selected plan\nor conservative M0", fillcolor="#f8fafc"];
+
+  { rank=same; arch; core; }
+  { rank=same; candidates; selector; run; }
+  problem -> arch;
+  problem -> core;
+  arch -> lower;
+  core -> lower;
+  lower -> candidates;
+  candidates -> selector;
+  selector -> run;
+}

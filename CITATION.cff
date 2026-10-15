@@ -1,6 +1,6 @@
 cff-version: 1.2.0
-message: "If you use this software or its experimental data, please cite it using the metadata below."
-title: "Kunlunxin-FFT: A Triton-Mapped FFT Operator Library for Kunlunxin P800"
+message: "If you use this software or its experimental data, please cite Kunlunxin-FFT; cite cuButterfly for the hybrid dataflow method."
+title: "Kunlunxin-FFT: A Hardware-Mapped FFT Operator Library for Kunlunxin P800"
 type: software
 authors:
   - given-names: "Teng"
@@ -8,17 +8,16 @@ authors:
     email: "wangt635@ustc.edu.cn"
     affiliation: "High Efficient Intelligent Computing Lab, Suzhou Institute for Advanced Research, University of Science and Technology of China, Suzhou, China"
 repository-code: "https://github.com/TruNcat3/kunlunxin-fft"
-url: "https://github.com/TruNcat3/kunlunxin-fft"
+url: "https://truncat3.github.io/kunlunxin-fft/"
 abstract: >-
-  A Triton-mapped FFT operator library and reproducible research artifact for
-  the Kunlunxin P800. It documents the executable device-code path
-  (Triton -> XMLIR -> XPU instructions), records the dead ends that rule out
-  nvcc/PTX, clang-written device code, and bare C++ ELF launching, and ships a
-  correctness-verified radix-2 DIT/DIF complex FFT with a measured baseline
-  against the vendor torch.fft.fft. The current implementation validates fp32
-  C2C forward transforms for power-of-two lengths up to 1048576 on P800 while
-  retaining an extensible design space for additional transforms and dataflow
-  optimizations.
+  An FFT operator library and reproducible research artifact for Kunlunxin
+  P800. It migrates the cuButterfly hybrid spatial-temporal dataflow method
+  to the Triton-XMLIR-XPU device path, separates architecture mapping from
+  processing-unit selection and hardware lowering, and provides M0-M5
+  implementations, a profile-bound frozen selector, conservative fallback,
+  batched execution, correctness gates, and a traceable release matrix.
+  The current verified interface covers fp32 complex forward C2C transforms
+  at power-of-two lengths up to 1048576 on the recorded P800 stack.
 keywords:
   - FFT
   - Kunlunxin
@@ -27,5 +26,5 @@ keywords:
   - XMLIR
   - XPU
   - butterfly
-  - signal-processing
+  - hybrid-dataflow
 license: Apache-2.0

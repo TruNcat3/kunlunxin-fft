@@ -1,31 +1,85 @@
 site_name: Kunlunxin-FFT
-site_description: Triton-mapped FFT operators on Kunlunxin P800
+site_description: Parameterized FFT operators and cuButterfly migration evidence on Kunlunxin P800
 site_url: https://truncat3.github.io/kunlunxin-fft/
 repo_url: https://github.com/TruNcat3/kunlunxin-fft
 repo_name: TruNcat3/kunlunxin-fft
 edit_uri: edit/master/docs/
 theme:
   name: material
-  language: en
+  language: zh
   features:
     - navigation.sections
     - navigation.top
     - navigation.footer
     - content.code.copy
+extra_css:
+  - stylesheets/extra.css
 plugins:
   - search:
-      lang: [en]
+      lang: [zh, en]
 markdown_extensions:
+  - admonition
+  - attr_list
   - tables
   - fenced_code
   - toc:
       permalink: true
 nav:
-  - Home: index.md
-  - Architecture: architecture.md
-  - Device Stack: device-stack.md
-  - Results: results.md
-  - Development:
-      - Migration convergence plan: development/migration-convergence-plan.md
-      - Incident 2026-10-14 bench hang: development/incidents/2026-10-14-p800-bench-hang.md
-      - P800 scale and evidence plan: development/p800-scale-evidence-plan.md
+  - 阅读入口: index.md
+  - 开始使用:
+      - 安装与环境: getting-started/installation.md
+      - 首次运行: getting-started/quickstart.md
+      - 故障排查: reference/troubleshooting.md
+  - 使用指南:
+      - 变换契约: user-guide/transforms.md
+      - Plan 与选型: user-guide/plans.md
+      - Python API: reference/api.md
+  - 设计分析:
+      - 为什么混合展开: design/motivation.md
+      - 架构与数据流: design/architecture.md
+      - 计算核心与 lowering: design/kernels.md
+      - 选择器: design/selector.md
+  - 实验与结果:
+      - 实验设计与结果汇总: benchmarks/results.md
+      - 测量协议: benchmarks/methodology.md
+      - 消融与交叉点: benchmarks/ablations.md
+      - 原始数据与复现: benchmarks/reproducibility.md
+      - 相关工作与基线: benchmarks/related-work.md
+  - 开发指南:
+      - 工程结构: development/repository-layout.md
+      - P800 设备路径: development/device-stack.md
+      - 性能与故障诊断: development/profiling.md
+      - 验证与发布: development/validation-and-release.md
+  - 参考:
+      - 配置文件: reference/configuration.md
+      - 支持范围: reference/support.md
+      - 术语: reference/glossary.md
+  - 未来计划: roadmap.md
+  - 项目与作者: about.md
+  - 历史归档:
+      - 迁移收敛计划: development/migration-convergence-plan.md
+      - P800 规模证据计划: development/p800-scale-evidence-plan.md
+      - 早期架构记录: archive/legacy-architecture.md
+      - 设备路径调查: archive/device-path-investigation.md
+      - Phase 2/3 实验记录: archive/phase2-phase3-results.md
+      - 2026-10-14 挂起事件: development/incidents/2026-10-14-p800-bench-hang.md
+validation:
+  nav:
+    omitted_files: info
+  links:
+    not_found: warn
+    unrecognized_links: info
+copyright: >-
+  Copyright &copy; 2026 Teng Wang · High Efficient Intelligent Computing Lab ·
+  Suzhou Institute for Advanced Research, USTC
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/TruNcat3
+      name: Teng Wang on GitHub
+    - icon: fontawesome/solid/envelope
+      link: mailto:wangt635@ustc.edu.cn
+      name: Email Teng Wang
+    - icon: fontawesome/solid/building-columns
+      link: https://sz.ustc.edu.cn/en/index.html
+      name: Suzhou Institute for Advanced Research, USTC
