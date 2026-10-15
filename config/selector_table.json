@@ -8,7 +8,9 @@
   "sources": [
     "results/p800/confirm_b1024.json",
     "results/p800/confirm_b256.json",
-    "results/p800/confirm_batch.json"
+    "results/p800/confirm_batch.json",
+    "results/p800/batch_gate/summary.json",
+    "results/p800/batch_release/summary.json"
   ],
   "rejections": [],
   "entries": [
@@ -724,6 +726,254 @@
       "processing_unit": "radix2-scalar",
       "params": {
         "variant": "folded",
+        "batch": 64
+      }
+    },
+    {
+      "N": 1024,
+      "batch": 16,
+      "direction": "dif",
+      "incumbent_ms": 1.6824219783302397,
+      "incumbent_block": 256,
+      "challenger_ms": 0.6968777452129871,
+      "block": 256,
+      "evidence": {
+        "incumbent": "incumbent_m4_folded",
+        "sessions": 3,
+        "protocol_id": "batch-release-v1:focus:plan-reuse:interleave:correctness-first:3sess:p11",
+        "focus_paths": [
+          "results/p800/batch_gate/summary.json",
+          "results/p800/batch_release/summary.json"
+        ],
+        "challenger": "m2_t128_rows8",
+        "gain_pct": 58.58,
+        "challenger_ms": 0.6968777452129871
+      },
+      "reason": "focus challenger m2_t128_rows8 beats stable incumbent incumbent_m4_folded by 58.6% (>= 2.0%) across 3 sessions",
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "variant": "spread",
+        "tile": 128,
+        "rows": 8,
+        "batch": 16
+      }
+    },
+    {
+      "N": 1024,
+      "batch": 16,
+      "direction": "dit",
+      "incumbent_ms": 1.7480262322351336,
+      "incumbent_block": 256,
+      "challenger_ms": 0.6945779896341264,
+      "block": 256,
+      "evidence": {
+        "incumbent": "m4_spread",
+        "sessions": 3,
+        "protocol_id": "batch-release-v1:focus:plan-reuse:interleave:correctness-first:3sess:p11",
+        "focus_paths": [
+          "results/p800/batch_gate/summary.json",
+          "results/p800/batch_release/summary.json"
+        ],
+        "challenger": "m2_t128_rows8",
+        "gain_pct": 60.27,
+        "challenger_ms": 0.6945779896341264
+      },
+      "reason": "focus challenger m2_t128_rows8 beats stable incumbent m4_spread by 60.3% (>= 2.0%) across 3 sessions",
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "variant": "spread",
+        "tile": 128,
+        "rows": 8,
+        "batch": 16
+      }
+    },
+    {
+      "N": 1024,
+      "batch": 64,
+      "direction": "dif",
+      "incumbent_ms": 5.881861987290904,
+      "incumbent_block": 256,
+      "challenger_ms": 2.3038142535369843,
+      "block": 256,
+      "evidence": {
+        "incumbent": "incumbent_m4_folded",
+        "sessions": 3,
+        "protocol_id": "batch-release-v1:focus:plan-reuse:interleave:correctness-first:3sess:p11",
+        "focus_paths": [
+          "results/p800/batch_gate/summary.json",
+          "results/p800/batch_release/summary.json"
+        ],
+        "challenger": "m2_t128_rows8",
+        "gain_pct": 60.83,
+        "challenger_ms": 2.3038142535369843
+      },
+      "reason": "focus challenger m2_t128_rows8 beats stable incumbent incumbent_m4_folded by 60.8% (>= 2.0%) across 3 sessions",
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "variant": "spread",
+        "tile": 128,
+        "rows": 8,
+        "batch": 64
+      }
+    },
+    {
+      "N": 1024,
+      "batch": 64,
+      "direction": "dit",
+      "incumbent_ms": 6.0521830164361745,
+      "incumbent_block": 256,
+      "challenger_ms": 2.241577982204035,
+      "block": 256,
+      "evidence": {
+        "incumbent": "incumbent_m4_folded",
+        "sessions": 3,
+        "protocol_id": "batch-release-v1:focus:plan-reuse:interleave:correctness-first:3sess:p11",
+        "focus_paths": [
+          "results/p800/batch_gate/summary.json",
+          "results/p800/batch_release/summary.json"
+        ],
+        "challenger": "m2_t128_rows8",
+        "gain_pct": 62.96,
+        "challenger_ms": 2.241577982204035
+      },
+      "reason": "focus challenger m2_t128_rows8 beats stable incumbent incumbent_m4_folded by 63.0% (>= 2.0%) across 3 sessions",
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "variant": "spread",
+        "tile": 128,
+        "rows": 8,
+        "batch": 64
+      }
+    },
+    {
+      "N": 2048,
+      "batch": 16,
+      "direction": "dif",
+      "incumbent_ms": 3.3855992660392076,
+      "incumbent_block": 256,
+      "challenger_ms": 1.5336605138145387,
+      "block": 256,
+      "evidence": {
+        "incumbent": "incumbent_m4_folded",
+        "sessions": 3,
+        "protocol_id": "batch-release-v1:focus:plan-reuse:interleave:correctness-first:3sess:p11",
+        "focus_paths": [
+          "results/p800/batch_gate/summary.json",
+          "results/p800/batch_release/summary.json"
+        ],
+        "challenger": "m2_t128_rows16",
+        "gain_pct": 54.7,
+        "challenger_ms": 1.5336605138145387
+      },
+      "reason": "focus challenger m2_t128_rows16 beats stable incumbent incumbent_m4_folded by 54.7% (>= 2.0%) across 3 sessions",
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "variant": "spread",
+        "tile": 128,
+        "rows": 16,
+        "batch": 16
+      }
+    },
+    {
+      "N": 2048,
+      "batch": 16,
+      "direction": "dit",
+      "incumbent_ms": 3.488552290946245,
+      "incumbent_block": 256,
+      "challenger_ms": 1.5605795488227159,
+      "block": 256,
+      "evidence": {
+        "incumbent": "incumbent_m4_folded",
+        "sessions": 3,
+        "protocol_id": "batch-release-v1:focus:plan-reuse:interleave:correctness-first:3sess:p11",
+        "focus_paths": [
+          "results/p800/batch_gate/summary.json",
+          "results/p800/batch_release/summary.json"
+        ],
+        "challenger": "m2_t128_rows4",
+        "gain_pct": 55.27,
+        "challenger_ms": 1.5605795488227159
+      },
+      "reason": "focus challenger m2_t128_rows4 beats stable incumbent incumbent_m4_folded by 55.3% (>= 2.0%) across 3 sessions",
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "variant": "spread",
+        "tile": 128,
+        "rows": 4,
+        "batch": 16
+      }
+    },
+    {
+      "N": 2048,
+      "batch": 64,
+      "direction": "dif",
+      "incumbent_ms": 12.08051954745315,
+      "incumbent_block": 256,
+      "challenger_ms": 5.102685478050262,
+      "block": 256,
+      "evidence": {
+        "incumbent": "incumbent_m4_folded",
+        "sessions": 3,
+        "protocol_id": "batch-release-v1:focus:plan-reuse:interleave:correctness-first:3sess:p11",
+        "focus_paths": [
+          "results/p800/batch_gate/summary.json",
+          "results/p800/batch_release/summary.json"
+        ],
+        "challenger": "m2_t128_rows16",
+        "gain_pct": 57.76,
+        "challenger_ms": 5.102685478050262
+      },
+      "reason": "focus challenger m2_t128_rows16 beats stable incumbent incumbent_m4_folded by 57.8% (>= 2.0%) across 3 sessions",
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "variant": "spread",
+        "tile": 128,
+        "rows": 16,
+        "batch": 64
+      }
+    },
+    {
+      "N": 2048,
+      "batch": 64,
+      "direction": "dit",
+      "incumbent_ms": 12.511463020928204,
+      "incumbent_block": 256,
+      "challenger_ms": 5.051324260421097,
+      "block": 256,
+      "evidence": {
+        "incumbent": "incumbent_m4_folded",
+        "sessions": 3,
+        "protocol_id": "batch-release-v1:focus:plan-reuse:interleave:correctness-first:3sess:p11",
+        "focus_paths": [
+          "results/p800/batch_gate/summary.json",
+          "results/p800/batch_release/summary.json"
+        ],
+        "challenger": "m2_t128_rows16",
+        "gain_pct": 59.63,
+        "challenger_ms": 5.051324260421097
+      },
+      "reason": "focus challenger m2_t128_rows16 beats stable incumbent incumbent_m4_folded by 59.6% (>= 2.0%) across 3 sessions",
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "variant": "spread",
+        "tile": 128,
+        "rows": 16,
         "batch": 64
       }
     }
