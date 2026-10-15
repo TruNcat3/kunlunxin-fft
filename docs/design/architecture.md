@@ -1,60 +1,136 @@
-# 架构与数据流
+# 架构与硬件映射
 
-## 三层而不是一条轴
+Kunlunxin-FFT 继承 [cuButterfly](https://github.com/TruNcat3/cuButterfly) 的阶段/数据二维空间-
+时间映射方法，并在 Kunlunxin P800 上重新实现物理 lowering。它不是 CUDA kernel 的直接移植：
+阶段组织、数据所有权、局部驻留和计算核心先形成概念候选，再由 Triton/XPU 工具链和设备 profile
+判定哪些组合能够执行。
+
+本页说明当前 P800 的可执行 envelope。方法层的 Roofline、依赖、展开和正交性分析来自
+cuButterfly；P800 的 kernel、编译器限制、选择表和测量结果属于本仓库。不要把本页的 P800 数值
+外推到其他 Kunlunxin 设备。
+
+## 从方法到执行
+
+```text
+FFT 依赖图 + N/batch/数值语义
+                 ↓
+阶段/数据空间展开与时间复用
+                 + layout / residence / pipeline
+                 ↓
+局部 processing unit + P800 lowering contract
+                 ↓
+correctness gate + profile-bound measured selector
+                 ↓
+可执行 plan：runner、边界、回退与 provenance
+```
+
+架构映射回答“数据怎样经过阶段、packet 和边界”；计算核心回答“局部块怎样计算”；lowering
+回答“该组合是否满足指针形式、布局、局部容量、同步和 launch 合同”。这三层必须分开记录，
+但资源成本最终共同决定性能。
+
+## 流编排与核心是两个集合
+
+```text
+A_i = (segmentation, Us, Ts, Ud, Td, layout, residence, pipeline)
+P_j = (radix-2, radix-4, dense-dot, composite map, ...)
+C_ij = (A_i, P_j)
+legal_P800(C_ij) = lowering(C_ij, profile)
+```
+
+只有通过 lowering 的 `C_ij` 才能进入正确性门禁和实测排序。当前字段完整性不代表所有轴都有
+生产 kernel：`Us/Ts` 仍未形成通用 lowering，`Ud/Td` 主要由 M4 batch 映射消费，跨组
+`boundary_residence` 目前只允许 GM，`pipeline` 只允许 `none`。
+
+这决定了消融口径：固定 radix-2 比较 M0/M1 是流组织实验；固定 global-stage 比较 M0/M5 是
+核心实验；M2 同时改变 dense-dot 核心和局部驻留，只能报告为联合效果。
 
 <figure class="doc-figure doc-figure--wide">
-  <a href="../../assets/figures/method-layers.svg"><img src="../../assets/figures/method-layers.svg" alt="Architecture mapping and processing-unit selection converge through a P800 lowering contract"></a>
-  <figcaption>架构映射与计算核心是两个输入维度；只有通过 P800 lowering contract 的组合才成为可执行 plan。冻结 selector 在合法候选中选择，没有可信条目时回退 M0。</figcaption>
+  <a href="../../assets/figures/method-layers.svg"><img src="../../assets/figures/method-layers.svg" alt="架构映射、计算核心和 P800 lowering contract 组成可执行 plan"></a>
+  <figcaption>架构映射与计算核心是两个输入维度；只有通过 P800 lowering contract 的组合才进入正确性和测量闭环。</figcaption>
 </figure>
 
-这张图刻意避免把“两个正交轴”画成抽象坐标系。实际过程是：
+## 框架对象不是六套独立算法
 
-1. **架构映射**组织 stage、packet、layout、边界和驻留；
-2. **计算核心选型**决定局部 radix 或矩阵 FFT；
-3. **硬件 lowering**检查 XPU 指令形态、对齐、shape、memory 和同步；
-4. 合法候选经过正确性与测量后进入冻结表。
+| 对象 | 职责 | 当前实现入口 |
+|---|---|---|
+| H / Hardware | 设备、工具链和局部资源约束 | `config/device.json`、`src/xpu/config.py` |
+| A / Mapping | `Us/Ts/Ud/Td`、分段、数据轴和边界语义 | `src/xpu/candidates.py` |
+| P / Processing unit | radix-2、radix-4、dense-dot、组合映射 | `src/xpu/kernels.py` |
+| L / Layout | 公开 complex64 与内部 planar SoA | `src/xpu/validate.py`、runner |
+| F / Flow realization | M0--M5 的 launch 和局部组织 | `src/xpu/runner.py` |
+| Q / Evidence | 正确性、计时、profile hash 和选择原因 | `scripts/build_selector_table.py` |
 
-## 四个基本展开量
+配置或 dataclass 中出现的字段不等于已有独立 kernel。当前 `Us/Ts` 和跨组 residence 仍是
+未 lowering 维度，必须以 runner 消费和正确性/性能证据为准。
 
-| 参数 | 含义 | 增大时的主要收益 | 主要代价 |
-|---|---|---|---|
-| `Us` | 阶段维度空间展开 | 更多 stage role/子图并行 | 交接、同步、驻留资源 |
-| `Ts` | 阶段维度时间复用 | 减少阶段边界和启动 | live set、依赖链、局部容量 |
-| `Ud` | 数据维度空间展开 | 更多独立 packet 并发 | worker/带宽竞争 |
-| `Td` | 数据维度时间复用 | 摊销准备并形成稳态流 | 单 worker 工作量、尾部 |
+## 当前 P800 数据通路
 
-`segmentation` 决定多少阶段属于一个执行组；`layout` 决定边界排列；`residence` 决定中间状态是否
-留在寄存器/局部存储；`pipeline` 决定 packet/role 的交叠。它们共同约束可行性，不应把某个
-`tile=64` 或“分三段”写成方法定义。
+```text
+complex64 输入
+   → planar SoA lowering
+   → M0/M1/M2/M3/M5 的局部阶段或核心
+   → 必要的 GM group boundary
+   → 自然顺序 complex64 输出
+```
 
-## N=16 的直观例子
+M2 在一个 local tile 内完成一次 load、局部 dense-dot 计算和一次 store；M3 将 tail stages
+组合成 execution groups；M1 把早期 radix-2 stages 放进一个 fused kernel，但各级仍有指针
+load/store 和 barrier；M5 保持 global-stage flow，只替换为 radix-4 核心。它们都是真实执行路径，
+但都不是完整的跨 worker persistent 子图。
 
-四级 FFT 若按 M0 执行，每级都形成一个 launch 和 GM 边界。混合映射可以把前两级作为局部 group，
-对多个 4 点 tile 时间复用；后两级再按更大配对距离执行。边界输出可同时完成必要置换，从而避免
-单独 transpose。实际是否更快取决于：局部 group 是否降低 GM 流量、barrier 是否形成新瓶颈、
-worker 数是否足够，以及所选核心是否适合该 tile。
+## M0--M5 可执行切片
 
-## P800 上的 M0--M5
-
-| ID | Flow realization | Processing unit | 主要改变 | 归因边界 |
+| ID | Flow realization | Processing unit | 当前改变 | 归因边界 |
 |---|---|---|---|---|
-| M0 | global-stage | radix2-scalar | 每阶段一个全局边界 | 稳定 incumbent/fallback |
-| M1 | fused-inplace | radix2-scalar | 静态 tile 内融合多级 | 固定核心看 flow；barrier 可限制大 N |
-| M2 | matrix-resident | dense-dot-fft64 | 一次读写的局部矩阵 FFT | 同时改变核心与驻留，不能归因于 flow 单项 |
-| M3 | grouped-boundary | composite-linear-map | 将 tail stage 组织成 execution groups | 探索边界数量与 group 大小 |
-| M4 | global-stage, spread/folded | radix2-scalar | Batch 映射为 Ud 或 Td | 比较数据空间/时间组织，不保证 batch 自动加速 |
-| M5 | global-stage | radix4-scalar | 保持 global-stage flow 更换物理核心 | 较干净的固定 flow 核心比较 |
+| M0 | `global-stage` | `radix2-scalar` | 每级一个 GM 边界 | 正确性 incumbent/fallback |
+| M1 | `fused-inplace` | `radix2-scalar` | tile 内融合早期 stages | 固定核心看 flow；大 N 受 barrier 影响 |
+| M2 | `matrix-resident` | `dense-dot-fft64` | 局部矩阵一次读写 | 核心与 residence 联合效果 |
+| M3 | `grouped-boundary` | `composite-linear-map` | tail stages 组成 group | 减少部分 group boundary |
+| M4 | `global-stage` | `radix2-scalar` | batch spread/folded | 数据轴组织，不是驻留 batch |
+| M5 | `global-stage` | `radix4-scalar` | 更换局部核心 | 固定 flow 的 core A/B |
 
-M0--M5 是当前 P800 可执行 envelope，不是 cuButterfly 理论空间的全部。特别是 M2 的收益包含
-dense-dot 核心和 matrix-resident lowering；M5 更适合回答“固定流时更换核心会怎样”。
+当前正式 release 中，M1/M2/M5 在单变换代表点相对同 block M0 达到约 `1.23x--2.07x`；batch
+路径多数仍接近 M0。这是当前 lowering 覆盖的直接结果，不应被解释成混合数据流方法本身无效。
+逐点数据见[实验结果](../benchmarks/results.md)。
 
-## 边界与执行闭包
+## P800 lowering 约束
 
-候选元数据不等于实现。每个组合必须有 runner lowering，且 direction、batch、tile/block 和设备
-profile 都满足合同。`plan_fft` 会在表命中后再次验证 runner 映射；无法执行的组合回退 M0，而非把
-未消费参数静默忽略。
+当前设备路径是 `Triton → XMLIR → XPU instructions`。已验证 pointer-form 的动态地址形式，
+但记录版本不接受 tensor-subscript SSA gather；因此 M1 使用静态索引，M2 使用 dense linear map，
+M3 使用合法的 execution group。这个限制描述的是工具链 lowering 形式，不是对所有 P800 硬件
+能力的永久判断，详见[P800 设备路径](../development/device-stack.md)。
 
-当前跨 role persistent 子图、显式 load/compute/store 重叠和自动新硬件校准仍未形成生产路径。
-这些是[未来计划](../roadmap.md)，不是当前结果的隐藏前提。
+更换设备或软件栈时，必须重新验证设备、驱动、编译器、局部容量和候选合同。静态
+`config/device.json` 的 hash 只防止旧表静默命中，并不代替硬件探测。
 
-下一页：[计算核心与 lowering](kernels.md)。
+## P800 约束如何影响映射
+
+以下是当前发布 profile 的事实，不是所有 Kunlunxin 型号的通用常量：
+
+| 约束 | 对映射的影响 |
+|---|---|
+| 12 clusters、每 cluster 64 cores | grid 和 batch 展开必须检查 worker 波次 |
+| 256 KiB shared/local capacity（profile 字段） | tile、矩阵和 group 的 live set 不能无限增大 |
+| 设备代码路径为 Triton → XMLIR → XPU instructions | 不能用 nvcc/PTX 或 bare C++ host 代替设备路径 |
+| `torch.device("cuda")` 是 xpytorch 兼容键 | 不表示 NVIDIA CUDA；context 必须由参考 runtime 建立 |
+| tensor-subscript SSA gather 在记录工具链中失败 | M1 使用 pointer/static form，M2 使用 dense map，M3 使用合法 group |
+| profile hash 与 selector 绑定 | 换驱动、工具链或设备必须重新验证和建表 |
+
+这些限制来自当前[设备路径调查](../archive/device-path-investigation.md)和
+[支持范围](../reference/support.md)。其中“某种 lowering 形式失败”不能推导为“硬件永远不能实现
+该算法”。
+
+## 当前边界
+
+| 能力 | 状态 |
+|---|---|
+| 单 transform 的局部融合/矩阵驻留 | 已实现并实测 |
+| radix-4 processing unit | 已实现并实测 |
+| batch spread/folded | 已实现，但仍是 global-stage radix-2 |
+| 跨组片上边界驻留 | 未 lowering，当前为 GM |
+| 真正 `Td` worker token 遍历 | 未实现；folded 目前是索引组织 |
+| producer/consumer persistent pipeline | 未实现 |
+| 自动硬件 probe、参数化性能模型 | 路线图中 |
+
+下一页：[计算核心与 lowering](kernels.md)；随后阅读[性能模型](performance-model.md)和
+[实验设计与结果](../benchmarks/results.md)。早期实现快照保存在[历史归档](../archive/legacy-architecture.md)。

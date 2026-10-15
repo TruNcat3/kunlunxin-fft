@@ -1,10 +1,11 @@
-# 架构文档已迁移
+# 架构文档入口
 
-当前架构说明已拆分为：
+架构专题已按 Ascend-FFT 的文档分层迁移到：
 
 - [为什么混合展开](design/motivation.md)
-- [架构与数据流](design/architecture.md)
+- [架构与硬件映射](design/architecture.md)
 - [计算核心与 lowering](design/kernels.md)
+- [性能模型](design/performance-model.md)
 - [选择器](design/selector.md)
 
-早期页面快照保存在[历史归档](archive/legacy-architecture.md)。
+本页保留为旧链接兼容入口；早期实现快照见[历史归档](archive/legacy-architecture.md)。
