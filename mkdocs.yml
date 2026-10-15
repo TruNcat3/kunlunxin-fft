@@ -28,3 +28,4 @@ nav:
   - Development:
       - Migration convergence plan: development/migration-convergence-plan.md
       - Incident 2026-10-14 bench hang: development/incidents/2026-10-14-p800-bench-hang.md
+      - P800 scale and evidence plan: development/p800-scale-evidence-plan.md
