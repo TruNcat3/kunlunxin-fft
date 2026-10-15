@@ -300,7 +300,9 @@ batch manifests record `dirty=true` only because the preceding run's output
 files were untracked in the same tree — same commit, no code change):
 [block1024](https://github.com/TruNcat3/kunlunxin-fft/blob/master/results/p800/confirm_b1024_long.csv),
 [block256](https://github.com/TruNcat3/kunlunxin-fft/blob/master/results/p800/confirm_b256_long.csv),
-[batch](https://github.com/TruNcat3/kunlunxin-fft/blob/master/results/p800/confirm_batch_long.csv).
+[batch](https://github.com/TruNcat3/kunlunxin-fft/blob/master/results/p800/confirm_batch_long.csv);
+session stdout traces + offline-reproduction steps:
+[diagnostics/2026-10-15](https://github.com/TruNcat3/kunlunxin-fft/tree/master/results/p800/diagnostics/2026-10-15).
 
 DIT speedup vs M0 (median api_ms, block-1024 run; max per-element rel err
 5.8e-7 across all flows):

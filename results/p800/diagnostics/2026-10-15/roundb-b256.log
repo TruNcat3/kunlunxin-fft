@@ -1,0 +1,98 @@
+XCCL /root/miniconda/envs/python310_torch29_cuda/lib/python3.10/site-packages/torch_xmlir/xccl//so/libbkcl.so loaded
+[35mSYMBOL_REWRITE [0m[32mtorch success[0m
+== lowering-contract verdicts ==
+  legal        flow=baseline-global-stage unit=radix2-scalar tile=1 block=256
+  legal        flow=baseline-global-stage unit=radix2-scalar tile=1 block=256
+  legal        flow=local-fused-tile unit=radix2-scalar tile=64 block=256
+  legal        flow=local-fused-tile unit=radix2-scalar tile=64 block=256
+  legal        flow=baseline-global-stage unit=radix4-scalar tile=1 block=256
+  legal        flow=baseline-global-stage unit=radix4-scalar tile=1 block=256
+  legal        flow=local-fused-tile unit=dense-dot-fft64 tile=64 block=256
+  legal        flow=local-fused-tile unit=dense-dot-fft64 tile=64 block=256
+  legal        flow=local-fused-tile unit=composite-linear-map tile=8 block=256
+  legal        flow=local-fused-tile unit=composite-linear-map tile=8 block=256
+  legal        flow=batch-spread unit=radix2-scalar tile=1 block=256
+  legal        flow=batch-spread unit=radix2-scalar tile=1 block=256
+  legal        flow=batch-spread unit=radix2-scalar tile=1 block=256
+  legal        flow=batch-spread unit=radix2-scalar tile=1 block=256
+  legal        flow=batch-spread unit=radix2-scalar tile=1 block=256
+  legal        flow=batch-spread unit=radix2-scalar tile=1 block=256
+  legal        flow=batch-spread unit=radix2-scalar tile=1 block=256
+  legal        flow=batch-spread unit=radix2-scalar tile=1 block=256
+  legal        flow=batch-folded unit=radix2-scalar tile=1 block=256
+  legal        flow=batch-folded unit=radix2-scalar tile=1 block=256
+  legal        flow=batch-folded unit=radix2-scalar tile=1 block=256
+  legal        flow=batch-folded unit=radix2-scalar tile=1 block=256
+  legal        flow=batch-folded unit=radix2-scalar tile=1 block=256
+  legal        flow=batch-folded unit=radix2-scalar tile=1 block=256
+  legal        flow=batch-folded unit=radix2-scalar tile=1 block=256
+  legal        flow=batch-folded unit=radix2-scalar tile=1 block=256
+selected_candidate: baseline-global-stage (conservative pick = lowest fused_tile; M1 must prove itself by measurement)
+manifest: commit=da251f91 dirty=True profile=a78b86793c7142a0 device=kunlunxin-p800
+
+== timings (median api_ms; interleaved 30 trials; flows=m0,m1,m2,m3,m5,vendor) ==
+       N    M0_dit    M0_dif    M1_t64  M2d_t64M3g_dit_t8    vendor   dit_err   dif_err
+case start: N=8  candidates≈3+2+2+2+0+1  trials=30
+       8    0.1814    0.1869    0.1380   0.1481   0.1501    0.0486   6.5e-08   6.5e-08
+         kernel_ms: M0_dit= 0.1658 M1_t64= 0.1226 M2d_t64= 0.1323 M3g_t8= 0.1332  launches: M0=3 M1=2 M2=2 M3=2  (kernel time = device events, 0 unsupported)
+         M5 r4: dit=0.1574 dif=0.1561 launches=2 err: 5.5e-08 5.5e-08
+case done: N=8
+case start: N=16  candidates≈3+2+2+2+0+1  trials=30
+      16    0.3783    0.3793    0.1498   0.1549   0.3362    0.0794   6.1e-08   6.9e-08
+         kernel_ms: M0_dit= 0.3510 M1_t64= 0.1271 M2d_t64= 0.1390 M3g_t8= 0.3081  launches: M0=4 M1=2 M2=2 M3=3  (kernel time = device events, 0 unsupported)
+         M5 r4: dit=0.1618 dif=0.1776 launches=2 err: 1.0e-07 1.0e-07
+case done: N=16
+case start: N=1024  candidates≈3+2+2+2+0+1  trials=30
+    1024    0.3699    0.3739    0.3889   0.2738   0.2926    0.2580   2.8e-07   3.0e-07
+         kernel_ms: M0_dit= 0.3540 M1_t64= 0.3718 M2d_t64= 0.2574 M3g_t8= 0.2760  launches: M0=10 M1=6 M2=6 M3=6  (kernel time = device events, 0 unsupported)
+         M5 r4: dit=0.2781 dif=0.2671 launches=5 err: 2.0e-07 1.8e-07
+case done: N=1024
+case start: N=2048  candidates≈3+2+2+2+0+1  trials=30
+    2048    0.4599    0.4584    0.6098   0.3083   0.4423    0.6548   3.2e-07   2.9e-07
+         kernel_ms: M0_dit= 0.4429 M1_t64= 0.5931 M2d_t64= 0.2918 M3g_t8= 0.4259  launches: M0=11 M1=7 M2=7 M3=6  (kernel time = device events, 0 unsupported)
+         M5 r4: dit=0.3630 dif=0.3550 launches=6 err: 2.2e-07 1.8e-07
+case done: N=2048
+case start: N=4096  candidates≈3+2+2+2+0+1  trials=30
+    [XDNN_UNIMPLEMENTED][/home/agent/xpytorch/workspace/8ba19c15-fc11-4377-85f3-84daf8eaab09/XMLIR/xdnn_pytorch/src/kernel_wrapper/wrapper/internal_fft_common.cpp:340]
+[ASSERT-FAIL](4==SUCCESS)[/home/agent/xpytorch/workspace/8ba19c15-fc11-4377-85f3-84daf8eaab09/XMLIR/xdnn_pytorch/src/xdnn_pytorch_wrapper/fft_fft.cpp:69]
+    4096    0.5634    0.5470    0.8442   0.3986   0.5668       n/a   3.6e-07   3.1e-07
+         kernel_ms: M0_dit= 0.5471 M1_t64= 0.8269 M2d_t64= 0.3813 M3g_t8= 0.5493  launches: M0=12 M1=8 M2=8 M3=7  (kernel time = device events, 0 unsupported)
+         M5 r4: dit=0.4102 dif=0.3824 launches=6 err: 2.5e-07 2.2e-07
+         vendor unsupported: RuntimeError: [NOT IMPLEMENTED]: error code= 4(at /home/agent/xpytorch/workspace/8ba19c15-fc11-4377-85f3-84daf
+case done: N=4096
+case start: N=65536  candidates≈3+2+2+2+0+1  trials=30
+    [XDNN_UNIMPLEMENTED][/home/agent/xpytorch/workspace/8ba19c15-fc11-4377-85f3-84daf8eaab09/XMLIR/xdnn_pytorch/src/kernel_wrapper/wrapper/internal_fft_common.cpp:340]
+[ASSERT-FAIL](4==SUCCESS)[/home/agent/xpytorch/workspace/8ba19c15-fc11-4377-85f3-84daf8eaab09/XMLIR/xdnn_pytorch/src/xdnn_pytorch_wrapper/fft_fft.cpp:69]
+   65536    8.9474    8.6119   14.1033   5.8191   5.1638       n/a   4.1e-07   4.0e-07
+         kernel_ms: M0_dit= 8.9150 M1_t64=14.0776 M2d_t64= 5.7907 M3g_t8= 5.1417  launches: M0=16 M1=12 M2=12 M3=11  (kernel time = device events, 0 unsupported)
+         M5 r4: dit=4.2629 dif=3.9418 launches=8 err: 2.2e-07 2.5e-07
+         vendor unsupported: RuntimeError: [NOT IMPLEMENTED]: error code= 4(at /home/agent/xpytorch/workspace/8ba19c15-fc11-4377-85f3-84daf
+case done: N=65536
+case start: N=1048576  candidates≈3+2+2+2+0+1  trials=30
+    [XDNN_UNIMPLEMENTED][/home/agent/xpytorch/workspace/8ba19c15-fc11-4377-85f3-84daf8eaab09/XMLIR/xdnn_pytorch/src/kernel_wrapper/wrapper/internal_fft_common.cpp:340]
+[ASSERT-FAIL](4==SUCCESS)[/home/agent/xpytorch/workspace/8ba19c15-fc11-4377-85f3-84daf8eaab09/XMLIR/xdnn_pytorch/src/xdnn_pytorch_wrapper/fft_fft.cpp:69]
+ 1048576  165.0920  161.5994  244.5663 106.3878 103.0422       n/a   5.8e-07   5.9e-07
+         kernel_ms: M0_dit=165.0812 M1_t64=244.4805 M2d_t64=106.3308 M3g_t8=103.0143  launches: M0=20 M1=16 M2=16 M3=15  (kernel time = device events, 0 unsupported)
+         M5 r4: dit=86.8195 dif=82.6645 launches=10 err: 3.3e-07 3.6e-07
+         vendor unsupported: RuntimeError: [NOT IMPLEMENTED]: error code= 4(at /home/agent/xpytorch/workspace/8ba19c15-fc11-4377-85f3-84daf
+case done: N=1048576
+
+== M1 vs M0 (api_ms speedup, >1 = M1 faster) ==
+  tile=64: N<=1024 gmean=1.47x  N>=4096 gmean=0.66x  all gmean=0.95x
+  m2_dit_t64: vs M0 N<=1024 gmean=1.59x  N>=4096 gmean=1.50x  all gmean=1.54x  vs M1 all gmean=1.62x
+  m2_dif_t64: vs M0 N<=1024 gmean=1.32x  N>=4096 gmean=1.56x  all gmean=1.45x  vs M1 all gmean=1.53x
+  m3_g_dit_t8: vs M0 N<=1024 gmean=1.20x  N>=4096 gmean=1.40x  all gmean=1.26x  vs M2 all gmean=0.82x
+  m3_g_dif_t8: vs M0 N<=1024 gmean=1.42x  N>=4096 gmean=1.42x  all gmean=1.37x  vs M2 all gmean=0.95x
+
+== M5 radix-4 vs M0 radix-2 (same flow; api_ms speedup) ==
+  m5_r4_dit: N<=1024 gmean=1.53x  N>=4096 gmean=1.76x  all gmean=1.58x  max_err=3.3e-07
+  m5_r4_dif: N<=1024 gmean=1.53x  N>=4096 gmean=1.83x  all gmean=1.61x  max_err=3.6e-07
+  arithmetic ledger (analytic, same flow):
+    N=       8: launches 3->2  twiddle_mults 12->10  real_adds 48->64
+    N=    2048: launches 11->6  twiddle_mults 11264->8704  real_adds 45056->65536
+    N= 1048576: launches 20->10  twiddle_mults 10485760->7864320  real_adds 41943040->62914560
+wrote results/p800/confirm_b256_long.csv
+wrote results/p800/confirm_b256.json
+wrote results/p800/confirm_b256.csv
+wrote results/p800/confirm_b256.md
+EXIT=0
