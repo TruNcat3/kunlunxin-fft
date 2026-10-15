@@ -596,7 +596,9 @@ def main() -> None:
 
     if args.markdown:
         write_markdown(args.markdown, rows, tiles, matrix_tiles, grouped_tiles,
-                        manifest, batchs, batch_variants)
+                        manifest,
+                        batchs=batchs if "m4" in flows else (),
+                        batch_variants=batch_variants if "m4" in flows else ())
         print(f"wrote {args.markdown}")
 
 

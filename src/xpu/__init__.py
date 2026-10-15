@@ -20,6 +20,7 @@ from .config import (  # noqa: F401
     git_commit,
     git_dirty,
 )
+from .selector import Selection, load_table, select  # noqa: F401
 
 # Torch-dependent symbols, resolved lazily on first attribute access.
 _TORCH_ATTRS = {
@@ -62,9 +63,12 @@ __all__ = [
     "DeviceProfile",
     "Manifest",
     "SizeMatrix",
+    "Selection",
     "build_manifest",
     "git_commit",
     "git_dirty",
+    "load_table",
+    "select",
     # torch-dependent
     "bit_reverse_permute",
     "bitrev_kernel",

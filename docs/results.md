@@ -285,3 +285,63 @@ at its default.
    run watchdogs must not treat that as a hang (a real hang looks identical —
    `kill -9` by PID and re-run; see
    [Device Stack](device-stack.md) dangerous-operation notes).
+
+## Round B: confirmation matrix (commit `da251f9`)
+
+Re-run of the winner question on a clean commit with the review-round
+protocol: vendor **inside the randomized interleave** at its supported sizes,
+per-trial samples stored (`*_samples`, `*_p10`, `*_p90` in the JSON),
+`trials=30`, schema-v2 raw rows. Sizes `8,16,1024,2048,4096,65536,1048576`;
+flows M0/M1/M2/M3/M5 (+ interleaved vendor at `N<=2048`); blocks 1024 and 256;
+batch probe `B=1,4,16,64` x `{spread,folded}` at `N=64,4096,65536`.
+
+Artifacts (manifest `dirty=false` for the block-1024 run; the block-256 and
+batch manifests record `dirty=true` only because the preceding run's output
+files were untracked in the same tree — same commit, no code change):
+[block1024](https://github.com/TruNcat3/kunlunxin-fft/blob/master/results/p800/confirm_b1024_long.csv),
+[block256](https://github.com/TruNcat3/kunlunxin-fft/blob/master/results/p800/confirm_b256_long.csv),
+[batch](https://github.com/TruNcat3/kunlunxin-fft/blob/master/results/p800/confirm_batch_long.csv).
+
+DIT speedup vs M0 (median api_ms, block-1024 run; max per-element rel err
+5.8e-7 across all flows):
+
+| Flow | `N<=1024` | `N>=4096` | all 7 |
+|---|---:|---:|---:|
+| M1 fused tile=64 | 1.51x | 0.75x | 1.06x |
+| M2 matrix tile=64 | 1.57x | 1.55x | 1.58x |
+| M3 grouped tile=8 | 1.35x | 1.57x | 1.45x |
+| M5 radix-4 | 1.00x | 1.64x | 1.27x |
+
+The phase-3 ordering reproduces on the confirmation sizes: M1 small-only, M2
+flat 1.5x, M3 tracks M2, M5 wins the long transforms. Nothing in the
+confirmation matrix reverses a phase-3 conclusion.
+
+## Round C: per-size selector (table-driven)
+
+`config/selector_table.json` (built by
+[`scripts/build_selector_table.py`](https://github.com/TruNcat3/kunlunxin-fft/blob/master/scripts/build_selector_table.py)
+from the Round B runs) maps
+`(profile_hash, precision=fp32, direction, N, batch)` to
+`(block, flow_realization, processing_unit, params)`. Promotion guard: a
+challenger must beat the M0 incumbent by **>=2%** paired-median improvement
+(engineering guard, not a significance claim); otherwise M0 stays. Any key
+outside the measured matrix **abstains** (`src/xpu/selector.py::select`)
+— unknown N, unmeasured batch/precision, or a profile-hash mismatch return
+`source="abstain"` and the caller must fall back to M0, never guess.
+
+B=1 winners (14 entries, `N x {dit,dif}`):
+
+| N regime | dit | dif |
+|---|---|---|
+| 8, 16 | M1 fused (block 1024) | M1 fused (block 1024) |
+| 1024, 2048, 4096 | M2 matrix (block 256) | M2 at 2048/4096; **M5 radix-4 at 1024** |
+| 65536, 1048576 | M5 radix-4 (block 256) | M5 radix-4 (block 256) |
+
+Batch entries (18): the folded M4 variant at every probed `(N,B)` — the
+spread variant only wins where it clears the 2% guard (never on this probe).
+Every table entry records its incumbent, challenger, and evidence keys, and
+`tests/test_selector.py` pins that the committed table rebuilds byte-identically
+from the committed confirmation JSONs and that every challenger clears the
+guard. The conservative `selected_candidate` (M0) remains the launch default;
+the table is the measured opt-in layered on top, per the plan's
+"never slower than the incumbent without opt-in" rule.

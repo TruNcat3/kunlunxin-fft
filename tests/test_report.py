@@ -31,7 +31,9 @@ def test_report_module_imports_no_torch_no_numpy():
 
 
 @pytest.mark.parametrize("name", ["bench_phase3", "bench_block256",
-                                  "bench_block512", "bench_block2048"])
+                                  "bench_block512", "bench_block2048",
+                                  "confirm_b1024", "confirm_b256",
+                                  "confirm_batch"])
 def test_markdown_regeneration_is_byte_identical(tmp_path, name):
     src = ROOT / "results" / "p800" / f"{name}.json"
     committed = ROOT / "results" / "p800" / f"{name}.md"
