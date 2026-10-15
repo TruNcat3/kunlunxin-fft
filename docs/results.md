@@ -405,13 +405,60 @@ directory):
 |---|---|---|---:|---:|---:|
 | M0 | global-stage | radix2-scalar | 12 | 1.0760 | 1.000x |
 | M1 (flow-only, same core) | fused-inplace | radix2-scalar | 8 | 1.4888 | **0.723x** |
-| M2 (core change) | matrix-resident | dense-dot-fft64 | 8 | 0.7438 | **1.447x** |
+| M2 (core + matrix-resident lowering) | matrix-resident | dense-dot-fft64 | 8 | 0.7438 | **1.447x** |
 | M5 (core change, same flow as M0) | global-stage | radix4-scalar | 6 | 0.9296 | **1.158x** |
 
-At `N=4096` the gain is a **processing-unit effect** (M2's dense-dot core
-1.45x, M5's radix-4 1.16x under the same global-stage flow), not a
-flow-organization effect: the flow-only M1 (same radix2 core, 8 launches)
-regresses to 0.72x, consistent with the phase-3 M1 large-N diagnosis.
-Speedups are session-level medians; the 2% guard band is an engineering
-protection, not a significance claim.
+The reading is **not** "every gain is a pure processing-unit effect."
+M2 changes two things together — the dense-dot core and the
+matrix-resident lowering (register-resident tile, one load/store pair,
+no barrier) — so its 1.45x is the **combination** of core and flow
+lowering; it is not decomposable from this ablation alone. M5 keeps the
+global-stage flow of M0 and swaps only the core to radix-4, so its
+1.16x is the cleaner **fixed-flow core comparison**. M1 keeps the
+radix-2 core and changes only the flow organization to fused-inplace;
+its 0.72x is a clear **negative flow-organization effect**, consistent
+with the phase-3 M1 large-N diagnosis (launch/cache overhead of the
+fused form exceeds its launch-count saving). Speedups are session-level
+medians; the 2% guard band is an engineering protection, not a
+significance claim.
+
+Release matrix (review round 2, 3 independent process sessions,
+plan-reuse timing, incumbent-block M0 control):
+[release_matrix/](https://github.com/TruNcat3/kunlunxin-fft/tree/master/results/p800/release_matrix).
+Each shape runs the table-selected plan once via `plan_fft` and times
+`execute_fft_plan` (plan-reuse) interleaved against the baseline control
+at the table entry's `incumbent_block`; one-shot `run_fft` plan overhead
+is measured separately at N=16/32 and is never counted as a kernel
+regression. Per-candidate raw rows record the executed runner, block,
+flow, unit, and selection source (`baseline-control` for m0 rows).
+
+| shape | selected | fallback | speedup (m0/selected, median of 3 sessions) | vendor | correct |
+|---|---|---|---:|---|---|
+| N=16 B=1 DIT | `fft_dit_fused`@1024 | no | **1.494x** | ok | yes |
+| N=32 B=1 DIT (out-of-table) | `fft_dit`@1024 | **yes** (abstain) | 0.997x (fallback parity) | ok | yes |
+| N=1024 B=1 DIT | `fft_dit_matrix`@256 | no | **1.252x** | ok | yes |
+| N=1024 B=16 DIT | `fft_dit_batch`@1024 | **yes** (batch abstain) | 0.998x | ok | yes |
+| N=1024 B=64 DIT | `fft_dit_batch`@1024 | **yes** (batch abstain) | 0.999x | ok | yes |
+| N=2048 B=1 DIT | `fft_dit_matrix`@256 | no | **1.232x** | ok | yes |
+| N=2048 B=16 DIT | `fft_dit_batch`@1024 | **yes** (batch abstain) | 1.001x | ok | yes |
+| N=2048 B=64 DIT | `fft_dit_batch`@1024 | **yes** (batch abstain) | 0.996x | ok | yes |
+| N=4096 B=1 DIT | `fft_dit_matrix`@256 | no | **1.308x** | n/a (N>2048) | yes |
+| N=4096 B=16 DIT | `fft_dit_batch`@1024 folded | no | 1.002x | n/a | yes |
+| N=4096 B=64 DIT | `fft_dit_batch`@1024 folded | no | 0.998x | n/a | yes |
+| N=65536 B=1 DIT | `fft_dit_radix4`@256 | no | **2.072x** | n/a | yes |
+| N=65536 B=4 DIT | `fft_dit_batch`@1024 | no | 1.001x | n/a | yes |
+| N=1048576 B=1 DIT | `fft_dit_radix4`@256 | no | **1.868x** | n/a | yes |
+| N=2048 B=1 DIT (profile mismatch) | `fft_dif`@256 | **yes** (abstain) | 0.990x (fallback parity) | ok | yes |
+
+The 2% plan-reuse guard (selected vs same-block incumbent M0) holds at
+every shape; the worst case is the profile-mismatch fallback at 0.990x
+(1.0%, within noise). Matched-`(B,N)` vendor calls at N=1024/2048 ran
+successfully on the identical fp32 forward C2C tensor and are recorded
+with their medians, but no speedup gate is placed on vendor. One-shot
+plan overhead (measured at N=16/32): 0.015 ms / 7.5% and 0.016 ms /
+4.5% — this is the cost of re-running `plan_fft` per call, not a
+kernel regression. Ablations inside the matrix: folded 7.26 ms beats
+spread 7.64 ms at N=4096 B=16 (~5%, consistent with the table choice);
+M2 at N=65536 B=1 reaches 1.62x, below M5's 2.07x at the same size.
+
 
