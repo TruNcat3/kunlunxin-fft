@@ -312,6 +312,7 @@ def main() -> None:
     for job, res in zip(result_jobs, results):
         results_by_shape[(job["n"], job["batch"])].append(res)
 
+    shapes_out = []
     for (n, batch), sres in results_by_shape.items():
         pooled = {}
         for r in sres:
