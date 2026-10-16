@@ -166,70 +166,100 @@ actually exposes:
 - device-side length kernels exist in `libxpuapi.so` (`fft_len256/512/1024`, `FFT32`) but are `__device_stub__` symbols — not a host-callable API; reference-only
 - no standalone Kunlunxin FFT SDK, headers, or kernel sources are present on this machine
 
+### Provenance (freshness gate)
+
+- commit: `5fa0613b12d9`, dirty: False
+- table env_hash: `6b50bd316032c0fe` / live: `6b50bd316032c0fe` (mismatch aborts with zero kernel launches)
+- profile_hash: `a78b86793c7142a0`, guard: 2.0%
+- device: driver 515.58, model 3, MPs 12
+- runtime: torch 2.9.0+cu129, triton 3.0.0, xpytorch XMLIR--bc1b1dc6f-dev+2026032411, xre 5.13.0.0
+
 ### Four-cell ablation (A0/A1 flow × P0/P1 core)
 
-Timing layers (issue #3 P1-5): **plan** = HybridPlan construction
-(caches filled lazily), **first** = the first execution call
+Timing layers (issue #3 P1-5 / review §3): **plan** =
+HybridPlan construction, **first** = the first execution call
 including JIT/compile and cache fill (correctness is judged on
-this result), **steady** = median ± stdev of the run's trials
-after warmup, explicit synchronize. Every timed cell passed the
-1e-4 correctness gate against the NumPy reference. The vendor
-*whole* transform is an external baseline, never a cell.
+this result), **steady** = p50 / MAD / p95 / max / outlier
+count of the run's trials after warmup, explicit synchronize.
+A0P0 is fetched through `selector.select` (env gate); every
+timed cell passed the 1e-4 correctness gate against the NumPy
+reference. The vendor *whole* transform is an external
+baseline, never a cell.
 
-| shape | cell | flow | local core | plan ms | first ms | steady ms ± stdev |
-|---|---|---|---|---|---|---|
-| N1024B16_dit | A0P0 | fused (m2 runner) | P0 triton local | 0.00 | 697.71 | 0.7348 ± 0.0102 |
-| N1024B16_dit | **A0P1** | fused (m2 runner) | P1 vendor (whole-tensor API) | — | — | abstain: fused local program cannot host an exter… |
-| N1024B16_dit | A1P0 | framework decomposition (materialized sub-transforms) | P0 triton local | 0.02 | 725.45 | 2.2929 ± 0.1797 |
-| N1024B16_dit | A1P1 | framework decomposition (materialized sub-transforms) | P1 vendor host-API sub-blocks (composition canary) | 0.02 | 0.97 | 0.2857 ± 0.0063 |
-| N1024B16_dit | baseline (full) | external whole-transform baseline (not a cell) | P1 vendor torch.fft | 0.00 | 0.28 | 0.2411 ± 0.0008 |
-| N1024B64_dit | A0P0 | fused (m2 runner) | P0 triton local | 0.00 | 2.58 | 2.2873 ± 0.0206 |
-| N1024B64_dit | **A0P1** | fused (m2 runner) | P1 vendor (whole-tensor API) | — | — | abstain: fused local program cannot host an exter… |
-| N1024B64_dit | A1P0 | framework decomposition (materialized sub-transforms) | P0 triton local | 0.01 | 7.17 | 6.7321 ± 0.0627 |
-| N1024B64_dit | A1P1 | framework decomposition (materialized sub-transforms) | P1 vendor host-API sub-blocks (composition canary) | 0.01 | 0.61 | 0.3751 ± 0.0037 |
-| N1024B64_dit | baseline (full) | external whole-transform baseline (not a cell) | P1 vendor torch.fft | 0.00 | 0.26 | 0.2414 ± 0.0011 |
-| N2048B16_dit | A0P0 | fused (m2 runner) | P0 triton local | 0.00 | 6.47 | 1.4905 ± 0.0117 |
-| N2048B16_dit | **A0P1** | fused (m2 runner) | P1 vendor (whole-tensor API) | — | — | abstain: fused local program cannot host an exter… |
-| N2048B16_dit | A1P0 | framework decomposition (materialized sub-transforms) | P0 triton local | 0.01 | 4.06 | 3.4166 ± 0.2213 |
-| N2048B16_dit | A1P1 | framework decomposition (materialized sub-transforms) | P1 vendor host-API sub-blocks (composition canary) | 0.01 | 0.67 | 0.2809 ± 0.0051 |
-| N2048B16_dit | baseline (full) | external whole-transform baseline (not a cell) | P1 vendor torch.fft | 0.00 | 0.72 | 0.6576 ± 0.0032 |
+| shape | cell | flow | local core | plan ms | first ms |
+ p50 | MAD | p95 | max | outliers |
+|---|---|---|---|---|---|---|---|---|---|---|
+| N1024B16_dit | A0P0 | fused (m2 runner, selector path) | P0 triton local | 0.00 | 710.61 | 0.7476 | 0.0109 | 0.7769 | 0.7787 | 0 |
+| N1024B16_dit | **A0P1** | fused (m2 runner) | P1 vendor (whole-tensor API) | — | — | — | — | — | — | abstain: fused local program cannot host an e… |
+| N1024B16_dit | A1P0 | framework decomposition (materialized sub-transforms) | P0 triton local | 0.02 | 13.78 | 2.0390 | 0.0192 | 2.7629 | 4.2990 | 2 (2.763, 4.299) |
+| N1024B16_dit | A1P1 | framework decomposition (materialized sub-transforms) | P1 vendor host-API sub-blocks (composition canary) | 0.02 | 0.96 | 0.2212 | 0.0024 | 0.2308 | 0.2367 | 5 (0.229, 0.230, 0.230, ...) |
+| N1024B16_dit | baseline (full) | external whole-transform baseline (not a cell) | P1 vendor torch.fft | 0.02 | 0.28 | 0.2420 | 0.0005 | 0.2437 | 0.2438 | 2 (0.244, 0.244) |
+| N1024B64_dit | A0P0 | fused (m2 runner, selector path) | P0 triton local | 0.00 | 2.58 | 2.3209 | 0.0189 | 2.3538 | 2.3581 | 0 |
+| N1024B64_dit | **A0P1** | fused (m2 runner) | P1 vendor (whole-tensor API) | — | — | — | — | — | — | abstain: fused local program cannot host an e… |
+| N1024B64_dit | A1P0 | framework decomposition (materialized sub-transforms) | P0 triton local | 0.01 | 6.72 | 6.1788 | 0.0253 | 6.2385 | 6.2513 | 0 |
+| N1024B64_dit | A1P1 | framework decomposition (materialized sub-transforms) | P1 vendor host-API sub-blocks (composition canary) | 0.01 | 0.54 | 0.2983 | 0.0011 | 0.3077 | 0.3102 | 4 (0.302, 0.303, 0.308, ...) |
+| N1024B64_dit | baseline (full) | external whole-transform baseline (not a cell) | P1 vendor torch.fft | 0.01 | 0.25 | 0.2422 | 0.0004 | 0.2442 | 0.2449 | 3 (0.243, 0.244, 0.245) |
+| N2048B16_dit | A0P0 | fused (m2 runner, selector path) | P0 triton local | 0.00 | 6.27 | 1.4731 | 0.0074 | 1.4945 | 1.5159 | 1 (1.516) |
+| N2048B16_dit | **A0P1** | fused (m2 runner) | P1 vendor (whole-tensor API) | — | — | — | — | — | — | abstain: fused local program cannot host an e… |
+| N2048B16_dit | A1P0 | framework decomposition (materialized sub-transforms) | P0 triton local | 0.01 | 4.10 | 3.2999 | 0.0236 | 3.3763 | 3.3807 | 2 (3.376, 3.381) |
+| N2048B16_dit | A1P1 | framework decomposition (materialized sub-transforms) | P1 vendor host-API sub-blocks (composition canary) | 0.01 | 0.50 | 0.2051 | 0.0020 | 0.2200 | 0.2241 | 5 (0.212, 0.215, 0.219, ...) |
+| N2048B16_dit | baseline (full) | external whole-transform baseline (not a cell) | P1 vendor torch.fft | 0.01 | 0.71 | 0.6600 | 0.0025 | 0.6718 | 0.6719 | 4 (0.668, 0.669, 0.672, ...) |
 
-A0P1 abstains by construction (fused core boundary). The vendor whole transform is an external baseline, not a cell. Timing layers: plan_ms (HybridPlan construction, caches filled lazily), first_ms (first execution incl. JIT/compile + cache fill; correctness judged on this result), warmup (untimed), steady_ms (median of trials, explicit synchronize, stdev recorded). A1 cells pay the framework's gathers, twiddles, and transposes — the IO the review asked us to attribute separately. Ledger: per-call sub-transform shapes, core-call counts (vendor launches opaque), analytical GM bytes for framework boundaries. Factor scan: bounded T×R pairs, no N/B expansion.
+A0P1 abstains by construction (fused core boundary). The vendor whole transform is an external baseline, not a cell. Timing layers: plan_ms (HybridPlan construction, caches filled lazily), first_ms (first execution incl. JIT/compile + cache fill; correctness judged on this result), warmup (untimed), steady = p50/MAD/p95/max/outlier count over trials (explicit synchronize; outliers > p50+3*MAD). A1P1 is an experimental canary (materialized external-subtransform), never promoted on this artifact. Ledger records per-call sub-transform shapes, core-call counts (vendor launches opaque), analytical GM bytes for the fused pipeline, and a phase profile with hidden-copy audit. Factor scan: bounded T×R pairs, no N/B expansion. Freshness: dirty tree or env mismatch aborts with zero kernel launches; A0P0 is fetched via selector.select with the shared env gate.
 
 ### Call and materialization ledger (A1 plans)
 
 Analytical accounting per call (complex64, 8 B/element).
 Vendor launches inside the xdnn stack are opaque; they are
-counted as one host API call per row batch.
+counted as one host API call per row batch. The pipeline
+fuses transpose+twiddle into one GM pass and reuses the
+grid buffer as the stage-2 input view (no flat2 copy).
 
 | shape | plan | core calls (s1×len / s2×len) | launches est | GM bytes (framework) |
 |---|---|---|---|---|
-| N1024B16_dit | A1P0 (triton) | 1024 × 16 / 256 × 64 | 3328 | 532480 |
-| N1024B16_dit | A1P1 (vendor) | 1024 × 16 / 256 × 64 | 1280 | 532480 |
-| N1024B64_dit | A1P0 (triton) | 4096 × 16 / 1024 × 64 | 13312 | 2105344 |
-| N1024B64_dit | A1P1 (vendor) | 4096 × 16 / 1024 × 64 | 5120 | 2105344 |
-| N2048B16_dit | A1P0 (triton) | 1024 × 32 / 512 × 64 | 4608 | 1064960 |
-| N2048B16_dit | A1P1 (vendor) | 1024 × 32 / 512 × 64 | 1536 | 1064960 |
+| N1024B16_dit | A1P0 (triton) | 1024 × 16 / 256 × 64 | 3328 | 401408 |
+| N1024B16_dit | A1P1 (vendor) | 1024 × 16 / 256 × 64 | 1280 | 401408 |
+| N1024B64_dit | A1P0 (triton) | 4096 × 16 / 1024 × 64 | 13312 | 1581056 |
+| N1024B64_dit | A1P1 (vendor) | 4096 × 16 / 1024 × 64 | 5120 | 1581056 |
+| N2048B16_dit | A1P0 (triton) | 1024 × 32 / 512 × 64 | 4608 | 802816 |
+| N2048B16_dit | A1P1 (vendor) | 1024 × 32 / 512 × 64 | 1536 | 802816 |
 
-Twiddle and row tables are plan-cached; staging buffers are
-pre-allocated per plan; the output tensor is fresh per call
-(callers never alias plan buffers).
+Twiddle and row tables are plan-cached; staging buffers
+are pre-allocated per plan; the output tensor is fresh per
+call (callers never alias plan buffers).
+
+### Phase profile of the A1 pipeline (A1P1, diagnostic)
+
+Explicit synchronize between phases (slower than the
+steady path; not mixed into steady stats).
+Hidden-copy audit: a non-contiguous core input would
+force an opaque copy inside the vendor/local API.
+
+| shape | gather | stage1 core | twiddle+T | stage2 core | scatter | hidden copies |
+|---|---|---|---|---|---|---|
+| N1024B16_dit | 0.096 | 0.062 | 0.111 | 0.034 | 0.065 | none |
+| N1024B64_dit | 0.096 | 0.165 | 0.103 | 0.058 | 0.066 | none |
+| N2048B16_dit | 0.116 | 0.035 | 0.106 | 0.038 | 0.065 | none |
+
+stage2 input is a contiguous reshape view of the grid
+buffer (no flat2 copy); stage1/stage2 outputs are
+contiguous (recorded per run in the JSON).
 
 ### Bounded T×R factor scan (A1 flow)
 
 1024: 16×64 / 32×32 / 64×16; 2048: 32×64 / 64×32.
 Same correctness gate and steady protocol; no N/B expansion.
 
-| shape | T×R | A1P0 steady ms | A1P1 steady ms | A1P0/A0P0-like |
+| shape | T×R | A1P0 p50 ms | A1P1 p50 ms | A1P0/A0P0 |
 |---|---|---|---|---|
-| N1024B16_dit | 16×64 | 2.1842 | 0.2884 | 2.97× |
-| N1024B16_dit | 32×32 | 3.3101 | 0.2797 | 4.50× |
-| N1024B16_dit | 64×16 | 2.0999 | 0.2934 | 2.86× |
-| N1024B64_dit | 16×64 | 6.9082 | 0.3747 | 3.02× |
-| N1024B64_dit | 32×32 | 10.8528 | 0.2818 | 4.74× |
-| N1024B64_dit | 64×16 | 6.8384 | 0.3841 | 2.99× |
-| N2048B16_dit | 32×64 | 3.4379 | 0.2828 | 2.31× |
-| N2048B16_dit | 64×32 | 3.3946 | 0.2836 | 2.28× |
+| N1024B16_dit | 16×64 | 2.1439 | 0.2204 | 2.87× |
+| N1024B16_dit | 32×32 | 3.2571 | 0.2068 | 4.36× |
+| N1024B16_dit | 64×16 | 1.9883 | 0.2202 | 2.66× |
+| N1024B64_dit | 16×64 | 6.8185 | 0.3014 | 2.94× |
+| N1024B64_dit | 32×32 | 10.7047 | 0.2053 | 4.61× |
+| N1024B64_dit | 64×16 | 6.7083 | 0.3099 | 2.89× |
+| N2048B16_dit | 32×64 | 3.6287 | 0.2726 | 2.46× |
+| N2048B16_dit | 64×32 | 3.3615 | 0.2178 | 2.28× |
 
 
 ### Reading (three runnable cells, conditional comparison)
@@ -242,7 +272,7 @@ tensors and calls `torch.fft.fft` on each — it demonstrates
 core *composability*, not a device-resident core embedded in a
 single kernel.
 
-- **A1P0 vs A0P0 (2.3–3.1× slower)** — the decomposition flow
+- **A1P0 vs A0P0 (2.2–2.7× slower)** — the decomposition flow
   with our triton local core pays framework-owned IO
   (gathers, transposes, twiddle materialization) *and* uses a
   different tile/rows setting plus a different local-stage
@@ -250,56 +280,106 @@ single kernel.
   attributed to IO alone.
 
 - **A1P1 vs the vendor whole transform** — at most focus
-  points the whole transform stays faster; at N2048B16_dit A1P1 measured 0.2809 vs 0.6576 ms (**2.34× faster**). This is a single-round canary on one card: a potential
+  points the whole transform stays faster; at N1024B16_dit and N2048B16_dit A1P1 measured 0.2212 vs 0.2420 ms (**1.09× faster**); 0.2051 vs 0.6600 ms (**3.22× faster**). This is a single-round canary on one card: a potential
   worth a bounded re-measure, not a frozen claim — nothing
   here is promoted (guard/freshness rules apply to any
   future candidate).
 
-## P2 hybrid canary (3-session interleaved re-test)
+## P2 hybrid canary (multi-process re-test)
 
-Issue #3 P2 acceptance asked for a bounded re-measure of the
-A1P1 composition cell: 3 independent sessions, 30 interleaved
-trials each (random cell order per trial), explicit
-synchronize, HybridPlan caches cold per session, 1e-4
-correctness gate on the first call before warmup.
+each session is an independent spawned process (fresh Python allocator, JIT cache, and runtime state); the parent gates freshness once, every worker re-gates before any launch
 
-3 independent in-process sessions, 30 interleaved steady trials each (random cell order per trial, seeded), explicit synchronize around every timed call. HybridPlans are re-constructed per session so twiddle/staging/row caches are cold at session start; first call per cell pays JIT and is correctness-gated before warmup. Pooled median across all sessions' samples is the headline number; per-session medians are retained to expose drift. Guard evaluation uses the 2% threshold against A0P0 (in-table incumbent) and vendor_full. A1P1 is an experimental canary: even a guard pass does not promote it into the selector table this round (cost model has no A1 family).
+3 independent process sessions, 30 interleaved steady trials each (random cell order per trial, seeded), explicit synchronize around every timed call. HybridPlans are re-constructed per session so twiddle/staging/row caches are cold at session start; first call per cell pays JIT and is correctness-gated before warmup. Statistics: pooled and per-session p50 / MAD / p95 / max / outlier count (outliers > p50+3*MAD); every outlier value is listed. A confirmation session is added automatically when the A1P1-vs-vendor guard passes in the protocol sessions. Guard evaluation uses the 2% threshold against A0P0 (in-table incumbent) and vendor_full, on protocol-session pooled medians. A1P1 is an experimental canary: even a guard pass does not promote it into the selector table (cost model has no A1 family).
 
-| shape | cell | pooled median ms ± stdev (all sessions) |
-|---|---|---|
-| N1024B16_dit | A0P0 | 0.7186 ± 0.0342 |
-| N1024B16_dit | A1P0 | 2.4837 ± 0.2283 |
-| N1024B16_dit | A1P1 | 0.3262 ± 0.0215 |
-| N1024B16_dit | vendor_full | 0.2466 ± 0.0056 |
-| N1024B64_dit | A0P0 | 2.2121 ± 0.0957 |
-| N1024B64_dit | A1P0 | 6.3430 ± 0.0481 |
-| N1024B64_dit | A1P1 | 0.4109 ± 0.0140 |
-| N1024B64_dit | vendor_full | 0.2506 ± 0.0073 |
-| N2048B16_dit | A0P0 | 1.5452 ± 0.0660 |
-| N2048B16_dit | A1P0 | 3.2859 ± 0.0530 |
-| N2048B16_dit | A1P1 | 0.3261 ± 0.2653 |
-| N2048B16_dit | vendor_full | 0.6578 ± 0.0083 |
+### Provenance (freshness gate)
 
-### Guard evaluation (2% threshold)
+- commit: `94390586b07d` (all sessions same commit: True)
+- dirty: False
+- table env_hash: `6b50bd316032c0fe` / live: `6b50bd316032c0fe` (mismatch aborts with zero kernel launches, in parent and in every worker)
+- profile_hash: `a78b86793c7142a0`
+- protocol sessions: 3 + confirmation added: True
+- trials/session: 30, warmup: 5, seed_base: 20261016
 
-| shape | A1P1 vs A0P0 | A1P1 vs vendor_full |
-|---|---|---|
-| N1024B16 | +54.6% (pass) | -32.3% (fail) |
-| N1024B64 | +81.4% (pass) | -64.0% (fail) |
-| N2048B16 | +78.9% (pass) | +50.4% (pass) |
+### N1024B16_dit
 
-A1P1 beats the in-table A0P0 path by 54–81% at every shape
-(the vendor sub-block core is much faster than our triton
-local stage in the A1 flow). Against the vendor *whole*
-transform, A1P1 is slower at 1024 shapes but **50.4% faster at
-N2048B16** (0.3261 vs 0.6578 ms, ~2.02×) — the two-stage
-decomposition with vendor sub-block cores beats the vendor's
-single whole-transform call at this shape. This is an
-experimental canary: even a guard pass does not promote A1P1
-into the selector table this round (the cost model has no A1
-family; promotion would require a full model + focus round).
-The finding is a data point for future work, not a frozen
-claim.
+| cell | p50 ms | MAD | p95 ms | max ms | outliers |
+|---|---|---|---|---|---|
+| A0P0 | 0.7954 | 0.0126 | 0.8238 | 0.8907 | 2 (0.8390, 0.8907) |
+| A1P0 | 2.0986 | 0.0152 | 2.1373 | 2.1520 | 1 (2.1520) |
+| A1P1 | 0.2570 | 0.0167 | 0.2778 | 0.2828 | 0 |
+| vendor_full | 0.2482 | 0.0027 | 0.2524 | 0.2536 | 0 |
+
+Per-session p50 (ms) — a pooled median is never shown
+alone:
+
+| cell | s0 | s1 | s2 |
+|---|---|---|---|
+| A0P0 | 0.7794 | 0.7987 | 0.8053 |
+| A1P0 | 2.0828 | 2.1006 | 2.1060 |
+| A1P1 | 0.2340 | 0.2609 | 0.2675 |
+| vendor_full | 0.2465 | 0.2492 | 0.2481 |
+
+Guard (protocol-session pooled p50, 2% threshold): A1P1 vs A0P0 **+67.7% (pass)**; A1P1 vs vendor_full **-3.6% (fail)**.
+
+### N1024B64_dit
+
+| cell | p50 ms | MAD | p95 ms | max ms | outliers |
+|---|---|---|---|---|---|
+| A0P0 | 2.2546 | 0.0416 | 2.3774 | 2.3990 | 4 (2.3812, 2.3926, 2.3938, 2.3990) |
+| A1P0 | 6.5675 | 0.0404 | 6.6728 | 6.8768 | 2 (6.7077, 6.8768) |
+| A1P1 | 0.3363 | 0.0081 | 0.3542 | 0.3579 | 0 |
+| vendor_full | 0.2522 | 0.0060 | 0.2624 | 0.2726 | 3 (0.2713, 0.2716, 0.2726) |
+
+Per-session p50 (ms) — a pooled median is never shown
+alone:
+
+| cell | s0 | s1 | s2 |
+|---|---|---|---|
+| A0P0 | 2.3457 | 2.2392 | 2.2282 |
+| A1P0 | 6.5591 | 6.5674 | 6.5778 |
+| A1P1 | 0.3453 | 0.3322 | 0.3337 |
+| vendor_full | 0.2522 | 0.2517 | 0.2532 |
+
+Guard (protocol-session pooled p50, 2% threshold): A1P1 vs A0P0 **+85.1% (pass)**; A1P1 vs vendor_full **-33.3% (fail)**.
+
+### N2048B16_dit
+
+| cell | p50 ms | MAD | p95 ms | max ms | outliers |
+|---|---|---|---|---|---|
+| A0P0 | 1.5064 | 0.0118 | 1.5418 | 1.6051 | 7 (1.5418, 1.5421, 1.5537, 1.5664, ...) |
+| A1P0 | 3.1494 | 0.0241 | 3.2148 | 3.2382 | 4 (3.2249, 3.2310, 3.2313, 3.2382) |
+| A1P1 | 0.2345 | 0.0144 | 0.2663 | 0.2747 | 0 |
+| vendor_full | 0.6591 | 0.0036 | 0.6673 | 0.6762 | 4 (0.6706, 0.6712, 0.6717, 0.6762) |
+
+Per-session p50 (ms) — a pooled median is never shown
+alone:
+
+| cell | s0 | s1 | s2 | s3 |
+|---|---|---|---|---|
+| A0P0 | 1.5064 | 1.4994 | 1.5020 | 1.5169 |
+| A1P0 | 3.1499 | 3.1565 | 3.1345 | 3.1531 |
+| A1P1 | 0.2518 | 0.2226 | 0.2228 | 0.2512 |
+| vendor_full | 0.6578 | 0.6586 | 0.6592 | 0.6605 |
+
+Guard (protocol-session pooled p50, 2% threshold): A1P1 vs A0P0 **+84.7% (pass)**; A1P1 vs vendor_full **+65.1% (pass)**.
+
+### Diagnostic reading (review §3 rules)
+
+- first high, steady normal → JIT/compile or first cache fill;
+- steady tracks analytical GM bytes → materialization / transpose / boundary writeback;
+- core time dominates → sub-transform length, thread layout, or external-core call granularity;
+- p95 / max spike → sync, allocator, thermal, or runtime scheduling (re-measure in independent processes before interpreting);
+- env hash mismatch → do not interpret performance; recalibrate first.
+
+A1P1 beats the in-table A0P0 path by a wide margin at every
+shape (the vendor sub-block core is much faster than our
+triton local stage in the A1 flow). Against the vendor
+*whole* transform the picture is shape-dependent — see the
+guard tables above. This is an experimental canary: even a
+guard pass does not promote A1P1 into the selector table
+(the cost model has no A1 family; promotion would require a
+full model + focus round). The finding is a data point for
+future work, not a frozen claim.
 
 ## What the evidence does not prove
 

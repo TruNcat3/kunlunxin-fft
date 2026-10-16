@@ -135,6 +135,8 @@ def test_summarize_samples_stats():
 
 @pytest.mark.hardware
 def test_profile_hybrid_matches_run_hybrid():
+    import numpy as np
+    import torch
     from src.xpu.adapter_hybrid import profile_hybrid, run_hybrid
     from src.xpu.error_metric import max_rel_error
     rng = np.random.default_rng(7)
@@ -161,6 +163,8 @@ def test_profile_hybrid_matches_run_hybrid():
 def test_run_hybrid_no_flat2_buffer():
     # The fused pipeline must not allocate a flat2 staging buffer:
     # stage2 reads a reshape view of the grid buffer directly.
+    import numpy as np
+    import torch
     from src.xpu.adapter_hybrid import run_hybrid
     rng = np.random.default_rng(11)
     n, batch = 1024, 16
