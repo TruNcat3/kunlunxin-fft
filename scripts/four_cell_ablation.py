@@ -1,21 +1,33 @@
 #!/usr/bin/env python3
-"""Four-cell ablation: flow (A0 fused / A1 framework decomposition) x
-local core (P0 triton / P1 vendor) — issue #3 review §4-§5.
+"""Four-cell ablation + T×R factor scan — issue #3 P1-5 / P2.
 
-Cells:
+Cells (flow A0 fused / A1 framework decomposition × core P0 local /
+P1 vendor host API):
 
 - A0P0 — production fused lowering (m2, triton local core), measured.
 - A0P1 — abstain by construction (a fused local program cannot host an
   external whole-tensor core).
 - A1P0 — framework decomposition + triton local stage.
 - A1P1 — framework decomposition + vendor ``torch.fft.fft`` on the same
-  sub-block tensors (the only legal host-callable external core here).
+  sub-block tensors (materialized external-subtransform / host-API
+  subtransform composition; experimental canary).
 
-The vendor *whole* transform (``torch.fft.fft`` on the full signal) is
-measured separately as the external baseline — never as a cell. Setup
-(first call incl. compile) and execution (median, explicit synchronize)
-are timed separately, and every cell passes a correctness gate against
-the NumPy reference before it is timed.
+Timing layers (issue #3 P1-5, split explicitly):
+
+- plan_ms   — plan construction (HybridPlan caches + buffers; ~pure
+              Python, but recorded so the protocol is honest).
+- first_ms  — the *first* execution call, including JIT/compile and
+              plan cache fill; correctness is judged on this result.
+- warmup    — `--warmup` untimed calls after the correctness gate.
+- steady_ms — median of `--trials` timed calls (explicit synchronize),
+              with sample stdev.
+
+The vendor *whole* transform is an external baseline, never a cell.
+
+The T×R factor scan (P2) re-times A1P0/A1P1 for the bounded factor
+pairs the review asked for (no expansion of N/B): 1024 → 16×64 /
+32×32 / 64×16, 2048 → 32×64 / 64×32. Every pair passes the same
+correctness gate first.
 
 Usage::
 
@@ -40,6 +52,7 @@ if str(ROOT / "scripts") not in sys.path:
 
 from src.xpu.adapter_hybrid import (  # noqa: E402
     plan_hybrid,
+    plan_ledger,
     run_hybrid,
     time_cell,
 )
@@ -47,6 +60,13 @@ from src.xpu.error_metric import max_rel_error  # noqa: E402
 from src.xpu.config import git_dirty  # noqa: E402
 
 ERR_MAX = 1e-4  # same correctness threshold the focus protocol uses
+
+# Bounded T×R scan from the review (T = stage-1 length, R = tile).
+# 1024: 16x64 / 32x32 / 64x16; 2048: 32x64 / 64x32.
+FACTOR_SCAN = {
+    1024: [(16, 64), (32, 32), (64, 16)],
+    2048: [(32, 64), (64, 32)],
+}
 
 
 def _parse_shapes(spec: str) -> list[tuple[int, int]]:
@@ -57,20 +77,50 @@ def _parse_shapes(spec: str) -> list[tuple[int, int]]:
     return out
 
 
+def _timed_cell(fn, x, ref_np, warmup: int, trials: int) -> dict:
+    """Correctness on the FIRST call, then warmup, then steady stats."""
+    first_t0 = __import__("time").perf_counter()
+    y = fn(x)
+    import torch
+    torch.cuda.synchronize(x.device)
+    first_ms = (__import__("time").perf_counter() - first_t0) * 1e3
+    err = max_rel_error(y.detach().cpu().numpy(), ref_np)
+    if err >= ERR_MAX:
+        return {
+            "abstain": f"correctness gate failed (max_rel_err={err:.2e} "
+                       f">= {ERR_MAX:.0e})",
+            "max_rel_err": err,
+            "first_ms": round(first_ms, 4),
+        }
+    # time_cell repeats first call; we already paid it, so pass a
+    # zero-length "first" by using its own first slot as warmup-free
+    # and keeping our measured first_ms (honest: includes JIT).
+    _, steady_ms, steady_stdev = time_cell(fn, x, warmup, trials)
+    return {
+        "first_ms": round(first_ms, 4),
+        "steady_ms": round(steady_ms, 4),
+        "steady_stdev_ms": round(steady_stdev, 4),
+        "max_rel_err": err,
+    }
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--shapes", default="1024x16,1024x64,2048x16")
     ap.add_argument("--tile", type=int, default=64,
-                    help="decomposition tile R (framework axis; default "
-                    "from the published space)")
+                    help="decomposition tile R for the main cells "
+                    "(default from the published space)")
     ap.add_argument("--warmup", type=int, default=5)
     ap.add_argument("--trials", type=int, default=30)
     ap.add_argument("--seed", type=int, default=1234)
+    ap.add_argument("--no-factor-scan", action="store_true",
+                    help="skip the bounded T×R factor scan")
     ap.add_argument("--out", type=Path,
                     default=ROOT / "results" / "p000" / "four_cell.json")
     args = ap.parse_args()
 
     import torch
+    import time as _time
     import run_release_matrix as relm
     from src.xpu import runner
     from src.xpu.selector import load_table
@@ -82,16 +132,11 @@ def main() -> None:
     torch.cuda.set_device(0)
     table = load_table()
     shapes_out = []
-    cells_global: dict[str, dict] = {}
 
     for n, batch in _parse_shapes(args.shapes):
         x = relm._make_input(n, batch, args.seed)
         ref_np = relm._ref_np(n, batch, args.seed)
-        # The shared NaN-safe CPU metric (complex ops on device are not
-        # all implemented by xdnn; the protocol always diffs on host).
-        ref = torch.from_numpy(ref_np).to(device=x.device, dtype=x.dtype)
 
-        # A0P0: the production entry for this shape from the frozen table.
         entry = relm._entry_for(table, n, batch, "dit")
 
         def a0p0(xx):
@@ -101,8 +146,10 @@ def main() -> None:
                 rows=entry.get("params", {}).get("rows", 8),
                 variant=entry.get("params", {}).get("variant", "spread"))
 
+        t0 = _time.perf_counter()
         plan_triton = plan_hybrid(n, batch, tile=args.tile, core="triton")
         plan_vendor = plan_hybrid(n, batch, tile=args.tile, core="vendor")
+        plan_ms = (_time.perf_counter() - t0) * 1e3
 
         def a1p0(xx, _p=plan_triton):
             return run_hybrid(xx, _p)
@@ -113,73 +160,104 @@ def main() -> None:
         def vendor_full(xx):
             return torch.fft.fft(xx, dim=-1)
 
-        measured = {}
         cells_shape = {}
         for name, fn, flow, core in (
-            ("A0P0", a0p0, "fused (m2 runner)", "P0 triton local"),
-            ("A1P0", a1p0, "framework decomposition", "P0 triton local"),
-            ("A1P1", a1p1, "framework decomposition",
-             "P1 vendor torch.fft on sub-blocks"),
-            ("vendor_full", vendor_full, "external baseline (not a cell)",
-             "P1 vendor whole transform"),
+            ("A0P0", a0p0, "fused (m2 runner)",
+             "P0 triton local"),
+            ("A1P0", a1p0, "framework decomposition (materialized "
+             "sub-transforms)",
+             "P0 triton local"),
+            ("A1P1", a1p1, "framework decomposition (materialized "
+             "sub-transforms)",
+             "P1 vendor host-API sub-blocks (composition canary)"),
+            ("vendor_full", vendor_full,
+             "external whole-transform baseline (not a cell)",
+             "P1 vendor torch.fft"),
         ):
-            y = fn(x)
-            err = max_rel_error(y.detach().cpu().numpy(), ref_np)
-            if err >= ERR_MAX:
-                cells_shape[name] = {
-                    "flow": flow, "core": core,
-                    "abstain": f"correctness gate failed (max_rel_err="
-                               f"{err:.2e} >= {ERR_MAX:.0e})",
-                }
-                continue
-            setup_ms, exec_ms = time_cell(fn, x, args.warmup, args.trials)
-            cells_shape[name] = {
-                "flow": flow, "core": core,
-                "setup_ms": round(setup_ms, 4),
-                "exec_ms": round(exec_ms, 4),
-                "max_rel_err": err,
-            }
-            measured[name] = exec_ms
+            cell = _timed_cell(fn, x, ref_np, args.warmup, args.trials)
+            cell["flow"] = flow
+            cell["core"] = core
+            if name != "vendor_full" and name != "A0P0":
+                cell["plan_ms"] = round(plan_ms, 4)
+            elif name == "A0P0":
+                cell["plan_ms"] = 0.0  # table entry lookup only
+            cells_shape[name] = cell
 
         # A0P1 is structural, not a runtime cell.
         cells_shape["A0P1"] = {
             "flow": "fused (m2 runner)",
             "core": "P1 vendor (whole-tensor API)",
+            "plan_ms": 0.0,
             "abstain": "fused local program cannot host an external "
                        "whole-tensor core; the core boundary is the "
                        "whole kernel",
         }
+
+        # Ledger for the A1 plans (P2 call/boundary accounting).
+        ledger = {
+            "A1P0": plan_ledger(plan_triton),
+            "A1P1": plan_ledger(plan_vendor),
+        }
+
+        # Bounded T×R factor scan (P2): same correctness gate, same
+        # steady protocol, no expansion of N/B space.
+        factor_rows = []
+        if not args.no_factor_scan:
+            for t1, r in FACTOR_SCAN.get(n, []):
+                row = {"T": t1, "R": r}
+                for core_name, core in (("A1P0", "triton"),
+                                        ("A1P1", "vendor")):
+                    p = plan_hybrid(n, batch, tile=r, core=core)
+
+                    def fn_f(xx, _p=p):
+                        return run_hybrid(xx, _p)
+
+                    cell = _timed_cell(fn_f, x, ref_np, args.warmup,
+                                       args.trials)
+                    row[core_name] = cell
+                factor_rows.append(row)
+
         shapes_out.append({
             "N": n, "batch": batch, "direction": "dit",
             "tile": args.tile,
             "cells": cells_shape,
-            "a0p0_speedup_of_a1": {
-                k: round(measured["A0P0"] / v, 3)
-                for k, v in measured.items()
-                if k != "A0P0" and k != "vendor_full" and k in measured
-            } if "A0P0" in measured else {},
+            "ledger": ledger,
+            "factor_scan": factor_rows,
         })
         print(f"[N{n}B{batch}_dit] " + " ".join(
-            f"{k}={v.get('exec_ms', v.get('abstain', '?'))}"
+            f"{k}={v.get('steady_ms', v.get('abstain', v.get('first_ms', '?')))}"
             for k, v in cells_shape.items()), flush=True)
+        if factor_rows:
+            for row in factor_rows:
+                a0 = row["A1P0"].get("steady_ms")
+                a1 = row["A1P1"].get("steady_ms")
+                print(f"  T{row['T']}xR{row['R']}: A1P0={a0} A1P1={a1}",
+                      flush=True)
 
     result = {
         "kind": "issue-3-four-cell-ablation",
+        "schema": 2,
         "commit": relm._git("rev-parse", "HEAD"),
         "dirty": git_dirty(),
         "warmup": args.warmup,
         "trials": args.trials,
         "seed": args.seed,
         "err_max": ERR_MAX,
+        "factor_scan_enabled": not args.no_factor_scan,
         "shapes": shapes_out,
         "note": (
             "A0P1 abstains by construction (fused core boundary). The "
             "vendor whole transform is an external baseline, not a cell. "
-            "Setup = first call incl. compile; exec = median wall ms, "
-            "explicit synchronize. A1 cells pay the framework's gathers, "
-            "twiddle materialization, transposes, and digit-reversal "
-            "transpose — the IO the review asked us to attribute "
-            "separately."
+            "Timing layers: plan_ms (HybridPlan construction, caches "
+            "filled lazily), first_ms (first execution incl. JIT/compile "
+            "+ cache fill; correctness judged on this result), warmup "
+            "(untimed), steady_ms (median of trials, explicit "
+            "synchronize, stdev recorded). A1 cells pay the framework's "
+            "gathers, twiddles, and transposes — the IO the review "
+            "asked us to attribute separately. Ledger: per-call "
+            "sub-transform shapes, core-call counts (vendor launches "
+            "opaque), analytical GM bytes for framework boundaries. "
+            "Factor scan: bounded T×R pairs, no N/B expansion."
         ),
     }
     args.out.parent.mkdir(parents=True, exist_ok=True)

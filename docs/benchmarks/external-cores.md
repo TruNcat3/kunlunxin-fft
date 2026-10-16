@@ -15,8 +15,12 @@ Classification:
   decomposition around it.
 - **reference-only** — source or device-side symbols that exist but are
   not a host-callable API on this stack (or are CPU/reference code).
-- **unavailable / license-blocked** — does not run on this hardware, or
-  its license forbids the use we would need.
+- **unavailable** — does not run on this hardware (wrong device/API
+  backend), regardless of license.
+- **license-blocked** — technically usable elsewhere, but its license
+  forbids the use we would need *here* (e.g. copyleft linking into this
+  repository). Hardware unavailability and license blocking are recorded
+  separately; an item can be both.
 
 ## 1. What this machine exposes (probed)
 
@@ -48,14 +52,17 @@ python -m pip show xmlir xtorch_ops      # no License field
 | oneMKL (Intel) | oneAPI oneMKL | 2025.x | Intel proprietary (free redistributable binaries, license restricts use to Intel hardware) | **unavailable** — Intel-hardware-only |
 | cuFFT | NVIDIA | 12.x | NVIDIA proprietary | **unavailable** — CUDA devices only |
 | hipFFT / rocFFT | ROCm | 6.x | MIT / MIT (`rocFFT`) | **unavailable** — AMD GPUs only; no P800 target |
-| vkFFT | https://github.com/DTolm/VkFFT | 2.x | **GPL-3.0** | **license-blocked**; Vulkan compute, no P800 Vulkan driver on this machine |
-| heFFTe | https://github.com/icl-utk-edu/heffte | 2.4 | GPL-2.0 (FFTW wrapper lineage) | **license-blocked**; distributed CPU/GPU FFT, no XPU |
+| vkFFT | https://github.com/DTolm/VkFFT | 2.x | **MIT** (license is fine for this repo) | **unavailable** — Vulkan compute; no P800 Vulkan backend/driver on this machine |
+| heFFTe | https://github.com/icl-utk-edu/heffte | 2.4 | **BSD-3-Clause** | **unavailable** — distributed CPU/CUDA/HIP backends; no XPU/P800 target |
 | XLA reference FFT (`xla::reference::FFT`) | https://github.com/openxla/xla | 2025 | Apache-2.0 | **reference-only** — CPU reference implementation for correctness cross-checks |
 | FlashFFT / Merril & FlashFFTTranspose | paper code | 2018 | mixed academic | **reference-only** — NVIDIA-specific algorithms; no P800 backend; no maintained host API |
 
-No public repository ships a Kunlunxin/P800 FFT kernel implementation
-under any license; the vendor's own FFT stack is distributed only inside
-the closed torch_xmlir wheels (table 1).
+Within the recorded search scope (the probe commands in table 1 plus a
+review of the public repositories listed in table 2, as of 2026-10-16)
+we found **no** public Kunlunxin/P800 FFT kernel implementation under
+any license; this is a bounded statement about that search, not a claim
+that none can exist. The vendor's own FFT stack is distributed only
+inside the closed torch_xmlir wheels (table 1).
 
 ## 3. Canary measurements for each reachable candidate
 
@@ -66,7 +73,8 @@ The review asked for one minimal canary per candidate:
 | `torch.fft.fft` (vendor full transform) | `scripts/run_batch_release.py` `vendor` rows on all focus shapes | works for (N≤2048, B≤64) focus shapes; N≥4096 rejected by the runtime (`NOT IMPLEMENTED` in aten capture) — recorded in every summary manifest `vendor_probe` |
 | `libxpuapi.so` length stubs | `nm -D` symbol inspection | symbols exist but no host-callable entry/headers → cannot canary at runtime; classified reference-only |
 | PocketFFT | not built (CPU-only, would not exercise the device) | classification-only, no runtime canary |
-| FFTW / vkFFT / heFFTe | not linked (license) | classification-only |
+| FFTW | not linked (GPL-2.0-or-later copyleft) | classification-only |
+| vkFFT / heFFTe | not built (no P800 Vulkan/XPU backend; licenses are MIT/BSD-3 and fine) | classification-only |
 | cuFFT / hipFFT / oneMKL | not present / not executable on P800 | classification-only |
 
 ## 4. Consequence for the adapter experiment (four-cell)

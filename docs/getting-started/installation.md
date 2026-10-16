@@ -50,7 +50,11 @@ pytest -q
 ## Profile 边界
 
 `config/device.json` 是提交到仓库的静态 P800 描述。`DeviceProfile.load().hash()` 只能证明调用者
-使用了同一份配置，不能验证当前实际驱动、设备或频率与发布环境一致。换设备或软件栈时应先回退 M0、
-重新 profile 并生成独立 selector table。自动探测和安装期校准仍是[未来计划](../roadmap.md)。
+使用了同一份配置，不能验证当前实际驱动、设备或频率与发布环境一致。因此硬件 probe 与环境绑定
+**已落地**：在设备主机上运行 `scripts/hw_probe.py` 会采集实时指纹（driver/torch/triton/XRE/设备
+属性）并写入 env 绑定的 `config/calibration.json`；selector 表在建表时从测量 manifest 绑定同一
+指纹。运行时 `select()` 与校准加载都会核对实时指纹，缺失、未知或失配一律 fail closed 到 M0
+（未绑定 env 的旧表只允许显式离线检查，不参与运行时选择）。安装期**全自动**探测与校准仍是
+[未来计划](../roadmap.md)；当前流程是手动运行 `hw_probe.py`。
 
 下一页：[首次运行](quickstart.md)。

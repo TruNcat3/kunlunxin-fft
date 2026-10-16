@@ -65,10 +65,12 @@ to chase on this stack.
 
 The four-cell ablation (below) shows the *shape* of the gap:
 the vendor's small-block kernels are strong enough that a
-framework decomposition calling them (A1P1) reaches within
-~0.07 ms of the whole transform — our fused path (A0P0) is
-further out. Closing it means better local-stage kernels or a
-guard-passing hybrid entry, neither of which this round claims.
+framework composition calling them on materialized sub-blocks
+(A1P1) comes close at 1024 and flips the comparison at one
+holdout point — see the four-cell section for the measured
+per-shape numbers. Closing the focus-row gap means better
+local-stage kernels or a guard-passing hybrid entry, neither of
+which this round claims.
 
 ## Winner stability across independent rounds
 
@@ -118,11 +120,13 @@ space matters and the frozen space is the right axis set.
 
 ## Model validation (constants declared, never fitted)
 
-- records scored: 144 (sources: results/p800/batch_focus_a/summary.json, results/p800/batch_holdout/summary.json)
-- promotion-decision agreement at the 2.0% guard: **100%** over 130 (challenger, incumbent) pairs — the same line the selector uses
-- top-K hit (measured subset, optimistic): 88% over 8 shapes
-- **full-space holdout recall: 83%** over 6 shapes; mean selection regret 0.21% (space 9 points)
-- per-family MDAPE %: `baseline_m0_rank1_loop` 19.2, `incumbent_m4_folded` 88.8, `m2_batch` 87.1, `m2_packet` 77.6, `m4_spread` 90.6, `m5_batch` 89.5
+- records scored: 210 (132 focus / 78 holdout; sources: results/p800/batch_focus_a/summary.json, results/p800/batch_focus_b/summary.json, results/p800/batch_holdout/summary.json)
+- promotion-decision agreement at the 2.0% guard, per focus round:
+- guard agreement `[summary.json]`: **100%** over 58 (challenger, incumbent) pairs — the same line the selector uses; one number per focus round, never pooled with holdout
+- guard agreement `[summary.json]`: **100%** over 58 (challenger, incumbent) pairs — the same line the selector uses; one number per focus round, never pooled with holdout
+- top-K hit (full-space holdout records only): 100% over 6 shapes
+- **full-space holdout recall: 100%** over 6 shapes; mean selection regret 0.0816% (space 9 points; holdout records only, m2 points deduplicated by structural parameters)
+- per-family MDAPE % over all scored records: `baseline_m0_rank1_loop` 19.3, `incumbent_m4_folded` 88.9, `m2_batch` 87.1, `m2_packet` 77.6, `m4_spread` 90.6, `m5_batch` 89.5
 
 The model is not claiming oracle top-1 picks or absolute-time
 fidelity — per-family MDAPE above is structurally high (the
@@ -130,9 +134,9 @@ model is launch + bandwidth + peak-flops only; real stage
 kernels exceed that envelope, and the constants are declared a
 priori, never refitted against these runs). What it does claim,
 and what these holdouts measured, is (a) guard-decision
-fidelity at 2% — safe frozen-table promotion decisions, and (b) bounded-search regret within a
-fraction of a percent of the measured full-space best, so
-exploration stays cheap.
+fidelity at 2% per focus round — safe frozen-table promotion decisions, and (b) bounded-search
+regret within a fraction of a percent of the measured
+full-space best, so exploration stays cheap.
 
 ## P2 packet canary (negative result, kept)
 
@@ -153,8 +157,10 @@ table.
 
 Full inventory and classifications live in
 `docs/benchmarks/external-cores.md` (local-core |
-full-transform-only | reference-only | unavailable). Summary of
-what the machine actually exposes:
+full-transform-only | materialized-external-subtransform |
+reference-only | unavailable) with machine-readable entries in
+`config/external_cores.json`. Summary of what the machine
+actually exposes:
 
 - vendor full transform: `torch.fft.*` → xdnn_pytorch `fft_fft` family (whole-tensor API; measured `vendor` rows above; N≤2048 shapes supported, ≥4096 rejected by the runtime)
 - device-side length kernels exist in `libxpuapi.so` (`fft_len256/512/1024`, `FFT32`) but are `__device_stub__` symbols — not a host-callable API; reference-only
@@ -162,44 +168,138 @@ what the machine actually exposes:
 
 ### Four-cell ablation (A0/A1 flow × P0/P1 core)
 
-Cells measured with setup (first call incl. compile) and
-execution (median of the run's trials, explicit synchronize)
-reported separately; every timed cell passed the 1e-4
-correctness gate against the NumPy reference first. The vendor
+Timing layers (issue #3 P1-5): **plan** = HybridPlan construction
+(caches filled lazily), **first** = the first execution call
+including JIT/compile and cache fill (correctness is judged on
+this result), **steady** = median ± stdev of the run's trials
+after warmup, explicit synchronize. Every timed cell passed the
+1e-4 correctness gate against the NumPy reference. The vendor
 *whole* transform is an external baseline, never a cell.
 
-| shape | cell | flow | local core | setup ms | exec ms |
-|---|---|---|---|---|---|
-| N1024B16_dit | A0P0 | fused (m2 runner) | P0 triton local | 0.91 | 0.7533 |
-| N1024B16_dit | **A0P1** | fused (m2 runner) | P1 vendor (whole-tensor API) | — | abstain: fused local program cannot host an exter… |
-| N1024B16_dit | A1P0 | framework decomposition | P0 triton local | 2.68 | 2.5489 |
-| N1024B16_dit | A1P1 | framework decomposition | P1 vendor torch.fft on sub-blocks | 0.36 | 0.3092 |
-| N1024B16_dit | baseline (full) | external baseline (not a cell) | P1 vendor whole transform | 0.25 | 0.2407 |
-| N1024B64_dit | A0P0 | fused (m2 runner) | P0 triton local | 2.29 | 2.2706 |
-| N1024B64_dit | **A0P1** | fused (m2 runner) | P1 vendor (whole-tensor API) | — | abstain: fused local program cannot host an exter… |
-| N1024B64_dit | A1P0 | framework decomposition | P0 triton local | 6.27 | 6.2166 |
-| N1024B64_dit | A1P1 | framework decomposition | P1 vendor torch.fft on sub-blocks | 0.38 | 0.3120 |
-| N1024B64_dit | baseline (full) | external baseline (not a cell) | P1 vendor whole transform | 0.26 | 0.2408 |
-| N2048B16_dit | A0P0 | fused (m2 runner) | P0 triton local | 1.54 | 1.4750 |
-| N2048B16_dit | **A0P1** | fused (m2 runner) | P1 vendor (whole-tensor API) | — | abstain: fused local program cannot host an exter… |
-| N2048B16_dit | A1P0 | framework decomposition | P0 triton local | 3.86 | 3.8700 |
-| N2048B16_dit | A1P1 | framework decomposition | P1 vendor torch.fft on sub-blocks | 0.37 | 0.3006 |
-| N2048B16_dit | baseline (full) | external baseline (not a cell) | P1 vendor whole transform | 0.66 | 0.6581 |
+| shape | cell | flow | local core | plan ms | first ms | steady ms ± stdev |
+|---|---|---|---|---|---|---|
+| N1024B16_dit | A0P0 | fused (m2 runner) | P0 triton local | 0.00 | 697.71 | 0.7348 ± 0.0102 |
+| N1024B16_dit | **A0P1** | fused (m2 runner) | P1 vendor (whole-tensor API) | — | — | abstain: fused local program cannot host an exter… |
+| N1024B16_dit | A1P0 | framework decomposition (materialized sub-transforms) | P0 triton local | 0.02 | 725.45 | 2.2929 ± 0.1797 |
+| N1024B16_dit | A1P1 | framework decomposition (materialized sub-transforms) | P1 vendor host-API sub-blocks (composition canary) | 0.02 | 0.97 | 0.2857 ± 0.0063 |
+| N1024B16_dit | baseline (full) | external whole-transform baseline (not a cell) | P1 vendor torch.fft | 0.00 | 0.28 | 0.2411 ± 0.0008 |
+| N1024B64_dit | A0P0 | fused (m2 runner) | P0 triton local | 0.00 | 2.58 | 2.2873 ± 0.0206 |
+| N1024B64_dit | **A0P1** | fused (m2 runner) | P1 vendor (whole-tensor API) | — | — | abstain: fused local program cannot host an exter… |
+| N1024B64_dit | A1P0 | framework decomposition (materialized sub-transforms) | P0 triton local | 0.01 | 7.17 | 6.7321 ± 0.0627 |
+| N1024B64_dit | A1P1 | framework decomposition (materialized sub-transforms) | P1 vendor host-API sub-blocks (composition canary) | 0.01 | 0.61 | 0.3751 ± 0.0037 |
+| N1024B64_dit | baseline (full) | external whole-transform baseline (not a cell) | P1 vendor torch.fft | 0.00 | 0.26 | 0.2414 ± 0.0011 |
+| N2048B16_dit | A0P0 | fused (m2 runner) | P0 triton local | 0.00 | 6.47 | 1.4905 ± 0.0117 |
+| N2048B16_dit | **A0P1** | fused (m2 runner) | P1 vendor (whole-tensor API) | — | — | abstain: fused local program cannot host an exter… |
+| N2048B16_dit | A1P0 | framework decomposition (materialized sub-transforms) | P0 triton local | 0.01 | 4.06 | 3.4166 ± 0.2213 |
+| N2048B16_dit | A1P1 | framework decomposition (materialized sub-transforms) | P1 vendor host-API sub-blocks (composition canary) | 0.01 | 0.67 | 0.2809 ± 0.0051 |
+| N2048B16_dit | baseline (full) | external whole-transform baseline (not a cell) | P1 vendor torch.fft | 0.00 | 0.72 | 0.6576 ± 0.0032 |
 
-A0P1 abstains by construction (fused core boundary). The vendor whole transform is an external baseline, not a cell. Setup = first call incl. compile; exec = median wall ms, explicit synchronize. A1 cells pay the framework's gathers, twiddle materialization, transposes, and digit-reversal transpose — the IO the review asked us to attribute separately.
+A0P1 abstains by construction (fused core boundary). The vendor whole transform is an external baseline, not a cell. Timing layers: plan_ms (HybridPlan construction, caches filled lazily), first_ms (first execution incl. JIT/compile + cache fill; correctness judged on this result), warmup (untimed), steady_ms (median of trials, explicit synchronize, stdev recorded). A1 cells pay the framework's gathers, twiddles, and transposes — the IO the review asked us to attribute separately. Ledger: per-call sub-transform shapes, core-call counts (vendor launches opaque), analytical GM bytes for framework boundaries. Factor scan: bounded T×R pairs, no N/B expansion.
 
-Reading (measured, single card): the decomposition flow with our
-triton local core (A1P0) pays **2.6–3.4×** over the fused path
-(A0P0) — framework gathers, transposes, and twiddle
-materialization dominate exactly as the review suspected. With
-the vendor's per-block core (A1P1) the same decomposition is
-**faster than A0P0 at B=16**: the vendor kernels are better at
-small lengths than our fused stage, and the framework IO there
-costs ~0.08 ms over the whole transform. That is a real hybrid
-win on this stack — and also why the frozen table does *not*
-chase it silently: A1P1 changes the core provenance and would
-have to pass the same guard/freshness path as any candidate
-(this canary is reported, not promoted).
+### Call and materialization ledger (A1 plans)
+
+Analytical accounting per call (complex64, 8 B/element).
+Vendor launches inside the xdnn stack are opaque; they are
+counted as one host API call per row batch.
+
+| shape | plan | core calls (s1×len / s2×len) | launches est | GM bytes (framework) |
+|---|---|---|---|---|
+| N1024B16_dit | A1P0 (triton) | 1024 × 16 / 256 × 64 | 3328 | 532480 |
+| N1024B16_dit | A1P1 (vendor) | 1024 × 16 / 256 × 64 | 1280 | 532480 |
+| N1024B64_dit | A1P0 (triton) | 4096 × 16 / 1024 × 64 | 13312 | 2105344 |
+| N1024B64_dit | A1P1 (vendor) | 4096 × 16 / 1024 × 64 | 5120 | 2105344 |
+| N2048B16_dit | A1P0 (triton) | 1024 × 32 / 512 × 64 | 4608 | 1064960 |
+| N2048B16_dit | A1P1 (vendor) | 1024 × 32 / 512 × 64 | 1536 | 1064960 |
+
+Twiddle and row tables are plan-cached; staging buffers are
+pre-allocated per plan; the output tensor is fresh per call
+(callers never alias plan buffers).
+
+### Bounded T×R factor scan (A1 flow)
+
+1024: 16×64 / 32×32 / 64×16; 2048: 32×64 / 64×32.
+Same correctness gate and steady protocol; no N/B expansion.
+
+| shape | T×R | A1P0 steady ms | A1P1 steady ms | A1P0/A0P0-like |
+|---|---|---|---|---|
+| N1024B16_dit | 16×64 | 2.1842 | 0.2884 | 2.97× |
+| N1024B16_dit | 32×32 | 3.3101 | 0.2797 | 4.50× |
+| N1024B16_dit | 64×16 | 2.0999 | 0.2934 | 2.86× |
+| N1024B64_dit | 16×64 | 6.9082 | 0.3747 | 3.02× |
+| N1024B64_dit | 32×32 | 10.8528 | 0.2818 | 4.74× |
+| N1024B64_dit | 64×16 | 6.8384 | 0.3841 | 2.99× |
+| N2048B16_dit | 32×64 | 3.4379 | 0.2828 | 2.31× |
+| N2048B16_dit | 64×32 | 3.3946 | 0.2836 | 2.28× |
+
+
+### Reading (three runnable cells, conditional comparison)
+
+A0P1 abstains by construction, so this is a comparison of the
+**three runnable cells**, not a complete four-cell design. The
+P1 core is a **materialized external-subtransform** (host-API
+subtransform composition): the framework gathers sub-block
+tensors and calls `torch.fft.fft` on each — it demonstrates
+core *composability*, not a device-resident core embedded in a
+single kernel.
+
+- **A1P0 vs A0P0 (2.3–3.1× slower)** — the decomposition flow
+  with our triton local core pays framework-owned IO
+  (gathers, transposes, twiddle materialization) *and* uses a
+  different tile/rows setting plus a different local-stage
+  implementation than the fused path; the ratio cannot be
+  attributed to IO alone.
+
+- **A1P1 vs the vendor whole transform** — at most focus
+  points the whole transform stays faster; at N2048B16_dit A1P1 measured 0.2809 vs 0.6576 ms (**2.34× faster**). This is a single-round canary on one card: a potential
+  worth a bounded re-measure, not a frozen claim — nothing
+  here is promoted (guard/freshness rules apply to any
+  future candidate).
+
+## P2 hybrid canary (3-session interleaved re-test)
+
+Issue #3 P2 acceptance asked for a bounded re-measure of the
+A1P1 composition cell: 3 independent sessions, 30 interleaved
+trials each (random cell order per trial), explicit
+synchronize, HybridPlan caches cold per session, 1e-4
+correctness gate on the first call before warmup.
+
+3 independent in-process sessions, 30 interleaved steady trials each (random cell order per trial, seeded), explicit synchronize around every timed call. HybridPlans are re-constructed per session so twiddle/staging/row caches are cold at session start; first call per cell pays JIT and is correctness-gated before warmup. Pooled median across all sessions' samples is the headline number; per-session medians are retained to expose drift. Guard evaluation uses the 2% threshold against A0P0 (in-table incumbent) and vendor_full. A1P1 is an experimental canary: even a guard pass does not promote it into the selector table this round (cost model has no A1 family).
+
+| shape | cell | pooled median ms ± stdev (all sessions) |
+|---|---|---|
+| N1024B16_dit | A0P0 | 0.7186 ± 0.0342 |
+| N1024B16_dit | A1P0 | 2.4837 ± 0.2283 |
+| N1024B16_dit | A1P1 | 0.3262 ± 0.0215 |
+| N1024B16_dit | vendor_full | 0.2466 ± 0.0056 |
+| N1024B64_dit | A0P0 | 2.2121 ± 0.0957 |
+| N1024B64_dit | A1P0 | 6.3430 ± 0.0481 |
+| N1024B64_dit | A1P1 | 0.4109 ± 0.0140 |
+| N1024B64_dit | vendor_full | 0.2506 ± 0.0073 |
+| N2048B16_dit | A0P0 | 1.5452 ± 0.0660 |
+| N2048B16_dit | A1P0 | 3.2859 ± 0.0530 |
+| N2048B16_dit | A1P1 | 0.3261 ± 0.2653 |
+| N2048B16_dit | vendor_full | 0.6578 ± 0.0083 |
+
+### Guard evaluation (2% threshold)
+
+| shape | A1P1 vs A0P0 | A1P1 vs vendor_full |
+|---|---|---|
+| N1024B16 | +54.6% (pass) | -32.3% (fail) |
+| N1024B64 | +81.4% (pass) | -64.0% (fail) |
+| N2048B16 | +78.9% (pass) | +50.4% (pass) |
+
+A1P1 beats the in-table A0P0 path by 54–81% at every shape
+(the vendor sub-block core is much faster than our triton
+local stage in the A1 flow). Against the vendor *whole*
+transform, A1P1 is slower at 1024 shapes but **50.4% faster at
+N2048B16** (0.3261 vs 0.6578 ms, ~2.02×) — the two-stage
+decomposition with vendor sub-block cores beats the vendor's
+single whole-transform call at this shape. This is an
+experimental canary: even a guard pass does not promote A1P1
+into the selector table this round (the cost model has no A1
+family; promotion would require a full model + focus round).
+The finding is a data point for future work, not a frozen
+claim.
 
 ## What the evidence does not prove
 
@@ -237,18 +337,15 @@ python scripts/build_selector_table.py \
          results/p800/batch_focus_b/summary.json \
   --out config/selector_table.json
 
-# 4. model validation + this report
-python scripts/validate_cost_model.py \
-  results/p800/batch_focus_a/summary.json \
-  results/p800/batch_holdout/summary.json \
-  --out results/p800/model_validation.json
-python scripts/gen_focus_report.py \
-  --focus results/p800/batch_focus_a results/p800/batch_focus_b \
-  --holdout results/p800/batch_holdout \
-  --validation results/p800/model_validation.json \
-  --out docs/benchmarks/batch-focus.md
+# 4. four-cell ablation + P2 canary
+CUDA_VISIBLE_DEVICES=<healthy card> timeout -s KILL 1800   python scripts/four_cell_ablation.py     --shapes 1024x16,1024x64,2048x16     --out results/p800/four_cell.json
+CUDA_VISIBLE_DEVICES=<healthy card> timeout -s KILL 1800   python scripts/run_hybrid_canary.py     --shapes 1024x16,1024x64,2048x16     --sessions 3 --trials 30     --out results/p800/hybrid_canary.json
 
-# 5. tests
+# 5. model validation + this report
+python scripts/validate_cost_model.py   results/p800/batch_focus_a/summary.json   results/p800/batch_holdout/summary.json   --out results/p800/model_validation.json
+python scripts/gen_focus_report.py   --focus results/p800/batch_focus_a results/p800/batch_focus_b   --holdout results/p800/batch_holdout   --validation results/p800/model_validation.json   --four-cell results/p800/four_cell.json   --hybrid-canary results/p800/hybrid_canary.json   --out docs/benchmarks/batch-focus.md
+
+# 6. tests
 python -m pytest tests/ -m "not hardware" -q   # host
 CUDA_VISIBLE_DEVICES=<healthy card> python -m pytest tests/ -m hardware -q
 ```

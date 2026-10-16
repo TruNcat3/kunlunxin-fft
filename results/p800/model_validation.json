@@ -4,36 +4,50 @@
   "metrics": {
     "constants_declared": true,
     "fitted": false,
-    "guard_agreement": 1.0,
-    "guard_pairs": 130,
+    "guard_by_source": {
+      "results/p800/batch_focus_a/summary.json": {
+        "agreement": 1.0,
+        "pairs": 58,
+        "protocol_id": "batch-release-v1:focus:plan-reuse:interleave:correctness-first:3sess:p11"
+      },
+      "results/p800/batch_focus_b/summary.json": {
+        "agreement": 1.0,
+        "pairs": 58,
+        "protocol_id": "batch-release-v1:focus:plan-reuse:interleave:correctness-first:3sess:p11"
+      }
+    },
     "guard_pct": 2.0,
     "mdape_pct": {
-      "baseline_m0_rank1_loop": 19.201153979695487,
-      "incumbent_m4_folded": 88.80499619515335,
-      "m2_batch": 87.08342956930392,
-      "m2_packet": 77.62471927208593,
+      "baseline_m0_rank1_loop": 19.29030732191665,
+      "incumbent_m4_folded": 88.9195807870464,
+      "m2_batch": 87.1152942231268,
+      "m2_packet": 77.60904818842229,
       "m4_spread": 90.55743822883919,
-      "m5_batch": 89.47020716838301
+      "m5_batch": 89.50810403152717
     },
-    "n_records": 144,
+    "mdape_scope": "all scored records (focus+holdout)",
+    "n_focus_records": 132,
+    "n_holdout_records": 78,
+    "n_records": 210,
     "topk_full_space": {
-      "mean_regret_pct": 0.2068085111835977,
-      "recall": 0.8333333333333334,
+      "mean_regret_pct": 0.08160644968619622,
+      "recall": 1.0,
       "regrets_pct": [
-        0.15978418488200935,
-        0.437923881552288,
-        0.1191471791733838,
-        0.17213427842330725,
+        0.22245875270530743,
         0.0,
-        0.3518615430705979
+        0.046976058413076484,
+        0.07511758155244362,
+        0.0,
+        0.14508630544634982
       ],
       "shapes": 6,
       "space_size": 9
     },
-    "topk_hit": 0.875,
-    "topk_shapes": 8
+    "topk_hit": 1.0,
+    "topk_scope": "full-space holdout records only",
+    "topk_shapes": 6
   },
-  "n_records": 144,
+  "n_records": 210,
   "sources": [
     {
       "commit": "70bd4718b38b38930bbd9b6bb247beb7112e48a3",
@@ -41,6 +55,16 @@
       "env_hash": "6b50bd316032c0fe",
       "full_space": false,
       "path": "results/p800/batch_focus_a/summary.json",
+      "protocol_id": "batch-release-v1:focus:plan-reuse:interleave:correctness-first:3sess:p11",
+      "records": 82,
+      "shapes": 8
+    },
+    {
+      "commit": "70bd4718b38b38930bbd9b6bb247beb7112e48a3",
+      "dirty": false,
+      "env_hash": "6b50bd316032c0fe",
+      "full_space": false,
+      "path": "results/p800/batch_focus_b/summary.json",
       "protocol_id": "batch-release-v1:focus:plan-reuse:interleave:correctness-first:3sess:p11",
       "records": 82,
       "shapes": 8

@@ -1,8 +1,9 @@
 # 性能模型与选择证据
 
 本页回答“为什么某个候选在某个 P800 shape 上更快”，而不是把冻结 selector 重新描述成模型。
-当前版本的部署选择仍是 profile-bound 的实测精确表；结构化模型、安装期校准和留出验证是下一步
-工作。性能模型的分析框架来自 [cuButterfly](https://github.com/TruNcat3/cuButterfly)，并参考
+部署选择仍是 profile-bound 的实测精确表；结构化成本模型、probe 校准与留出验证**已实现**
+（`src/xpu/cost_model.py`、`scripts/hw_probe.py`、`scripts/validate_cost_model.py`），模型只做
+screening，永不覆盖表。性能模型的分析框架来自 [cuButterfly](https://github.com/TruNcat3/cuButterfly)，并参考
 [Ascend-FFT 的模型组织](https://github.com/TruNcat3/ascend-fft/blob/master/docs/design/performance-model.md)。
 
 ## 当前选择闭环
@@ -60,16 +61,21 @@ T ≈ T_dispatch
 因此正式结果中的 `1.23x--2.07x` 是候选路径相对 M0 的实测收益，不是单独由某一个抽象轴贡献的
 定量证明。完整消融见[消融与交叉点](../benchmarks/ablations.md)。
 
-## 后续模型闭环
+## 模型闭环（已实现）
 
-后续实现应按少量典型变量校准，而不是为每个 shape 单独拟合：
+按少量典型变量校准，而不是为每个 shape 单独拟合（Issue #3 轮次已落地）：
 
-1. 从真实 lowering 生成 execution groups、GM 边界、核心操作量和同步计数；
-2. 用少量 `(N, batch, block)` 校准固定开销、边界流量、核心和波次系数；
-3. 用模型筛选 top-K，再以 correctness-first 的实测决定 winner；
-4. 使用未参与校准的长度和 batch 报告排序命中率、选择 regret 和搜索成本；
-5. 保留 M0 及已验证 incumbent，profile 变化时拒绝静默复用旧表。
+1. `cost_model.axes()` 从真实 lowering 生成 execution groups、GM 边界、核心操作量和同步计数；
+2. 固定开销、边界流量、核心系数声明在 `config/cost_model.json`（来源 `config/calibration.json`
+   的 probe 锚点），**从不**对验证 run 回拟合；
+3. `bounded_search` 用模型筛选 top-K，再以 correctness-first 的实测决定 winner；
+4. 留出验证已跑：focus 轮的 2% guard 晋升决策一致率、full-space holdout 的 top-3 命中与选择
+   regret 见 [batch-focus 报告](../benchmarks/batch-focus.md)与
+   `results/p800/model_validation.json`（focus 与 holdout 统计隔离、holdout-only 口径）；
+5. M0 闭包与环境绑定同时生效：profile/环境指纹缺失或失配时拒绝静默复用旧表。
 
-对应工程任务记录在[未来计划](../roadmap.md)和 [Issue #3](https://github.com/TruNcat3/kunlunxin-fft/issues/3)。
+模型不声称绝对时间精度（MDAPE 结构性偏高：只有 launch + 带宽 + 峰值 flops 三段账本，无硬件
+计数器）；它的声明范围是 guard 决策一致性与 bounded-search 的低 regret。后续任务见
+[未来计划](../roadmap.md)与 [Issue #3](https://github.com/TruNcat3/kunlunxin-fft/issues/3)。
 
 下一页：[实数变换边界](real-transforms.md)。

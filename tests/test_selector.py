@@ -103,7 +103,8 @@ def test_select_returns_measured_winner():
         pytest.skip("selector table not built")
     t = load_table(str(TABLE))
     p = DeviceProfile.load()
-    s = select("dit", 2048, profile_hash=p.hash(), table=t)
+    s = select("dit", 2048, profile_hash=p.hash(), table=t,
+               env_hash=t["env_hash"])
     assert s.source == "table"
     assert s.block in (256, 1024)
     assert s.flow_id and s.flow_realization and s.processing_unit
@@ -183,6 +184,7 @@ def _fake_run(tmp_path, name, *, profile_hash=None,
            "m5_r4_dif_ms": ms / 2, "m5_r4_dif_err": err}
     data = {"manifest": {
         "device": device, "profile_hash": profile_hash,
+        "env_hash": "e" * 16,
         "precision": precision,
         "correctness_threshold": threshold, "block": 1024, "dirty": dirty,
         "warmup": warmup, "trials": trials, "dtype": dtype,
@@ -360,14 +362,31 @@ def test_env_bound_table_selects_on_matching_environment():
     assert s.selected
 
 
-def test_table_without_env_hash_skips_gate():
-    # Pre-binding / synthetic tables keep the old pure semantics.
+def test_unbound_table_always_abstains():
+    # Production schema REQUIRES env_hash; a pre-freshness table may be
+    # inspected offline via load_table but never drives runtime selection
+    # (issue #3 review: fail closed, no skip-the-gate path).
     from src.xpu.selector import select, load_table
     t = dict(load_table())
     t.pop("env_hash", None)
     s = select("dit", 1024, batch=16, profile_hash=t["profile_hash"],
                table=t, env_hash=None)
-    assert s.selected
+    assert not s.selected
+    assert "no env_hash" in s.reason
+    # even an explicit "matching" fingerprint cannot select an unbound table
+    s2 = select("dit", 1024, batch=16, profile_hash=t["profile_hash"],
+                table=t, env_hash="e" * 16)
+    assert not s2.selected
+
+
+def test_empty_env_hash_always_abstains():
+    from src.xpu.selector import select, load_table
+    t = dict(load_table())
+    t["env_hash"] = ""
+    s = select("dit", 1024, batch=16, profile_hash=t["profile_hash"],
+               table=t, env_hash="e" * 16)
+    assert not s.selected
+    assert "no env_hash" in s.reason
 
 
 def test_load_table_refuses_entries_outside_design_space():

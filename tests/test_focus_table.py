@@ -53,6 +53,7 @@ def _shape(n=1024, batch=16, direction="dit", m2_ms=1.0, m4_ms=2.0,
     for c in cands.values():
         c.setdefault("sessions", 3)
         c.setdefault("n_trials", 90)
+        c.setdefault("complete", True)
     return {"label": f"N{n}B{batch}_{direction}", "N": n, "batch": batch,
             "direction": direction, "incumbent_block": block,
             "candidates": cands}

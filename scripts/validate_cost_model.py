@@ -1,30 +1,33 @@
 #!/usr/bin/env python3
 """Evaluate the *constant-declared* cost model against measured runs.
 
-Reads one or more run_batch_release ``summary.json`` artifacts (e.g. the
-focus rounds and/or the full-space holdout round), turns the measured
-rows into model records via
+Reads one or more run_batch_release ``summary.json`` artifacts (the focus
+rounds and/or the full-space holdout round), turns the measured rows into
+model records via
 :meth:`src.xpu.cost_model.records_from_summary` (the same
-completeness/finiteness/correctness gates the selector applies), and runs
-:meth:`src.xpu.cost_model.validate`:
+completeness/finiteness/correctness gates the selector builder applies),
+and runs :meth:`src.xpu.cost_model.validate`:
 
-* per-family MDAPE,
+* per-family MDAPE over all scored records (descriptive scope),
 * promotion-decision agreement at the formal ``GUARD_PCT`` (not
-  sign-of-gain),
-* legacy top-K hit (measured subset, optimistic),
-* ``topk_full_space`` recall / selection regret over the published nine
-  (tile, rows) points -- only for shapes measured with ``--full-space``.
+  sign-of-gain), **per focus round** (never pooled with holdout),
+* legacy top-K hit and ``topk_full_space`` recall / selection regret over
+  the published nine (tile, rows) points — computed **only from
+  ``full_space=true`` holdout records**, m2 points deduplicated by
+  structural parameters.
 
 The result is written to ``results/p800/model_validation.json`` and
-embedded in the regenerated batch-focus report.  Nothing here tunes the
+embedded in the regenerated batch-focus report. Nothing here tunes the
 model: constants are declared in ``config/cost_model.json`` beforehand;
 this script only measures.
 
 Usage::
 
     python scripts/validate_cost_model.py \\
-        results/p000_batch_release/summary.json \\
-        [--out results/p000/model_validation.json]
+        results/p800/batch_focus_a/summary.json \\
+        results/p800/batch_focus_b/summary.json \\
+        results/p800/batch_holdout/summary.json \\
+        [--out results/p800/model_validation.json]
 """
 
 from __future__ import annotations
@@ -56,7 +59,8 @@ def _load_summary(path: Path) -> dict:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("summaries", nargs="+", type=Path,
-                    help="summary.json files (focus / holdout rounds)")
+                    help="summary.json files (focus / holdout rounds; "
+                         "classified per file by manifest.full_space)")
     ap.add_argument("--out", type=Path,
                     default=ROOT / "results" / "p000" / "model_validation.json",
                     help="where to write the metrics JSON")
@@ -67,7 +71,7 @@ def main() -> None:
     for path in args.summaries:
         summary = _load_summary(path)
         man = summary.get("manifest") or {}
-        recs = records_from_summary(summary)
+        recs = records_from_summary(summary, source_id=str(path))
         sources.append({
             "path": str(path),
             "protocol_id": man.get("protocol_id"),
@@ -101,10 +105,13 @@ def main() -> None:
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
 
-    print(f"records: {metrics['n_records']} from {len(sources)} summary file(s)")
-    print(f"guard={GUARD_PCT:.1f}% promotion-decision agreement: "
-          f"{metrics['guard_agreement']} over {metrics['guard_pairs']} pairs")
-    print(f"top-K hit (measured subset): {metrics['topk_hit']} "
+    print(f"records: {metrics['n_records']} from {len(sources)} summary file(s) "
+          f"({metrics['n_focus_records']} focus / "
+          f"{metrics['n_holdout_records']} holdout)")
+    for sid, g in sorted((metrics.get("guard_by_source") or {}).items()):
+        print(f"guard={GUARD_PCT:.1f}% promotion-decision agreement "
+              f"[{sid}]: {g['agreement']} over {g['pairs']} pairs")
+    print(f"top-K hit (holdout only): {metrics['topk_hit']} "
           f"over {metrics['topk_shapes']} shapes")
     print(f"full-space holdout: recall={full.get('recall')} "
           f"shapes={full.get('shapes')} "

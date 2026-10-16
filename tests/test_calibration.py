@@ -25,7 +25,9 @@ def test_repo_calibration_loads_when_present():
     p = ROOT / "config" / "calibration.json"
     if not p.exists():
         pytest.skip("hw_probe has not run on this machine")
-    profile = load()
+    # explicit offline inspection: the self-hash check must not depend
+    # on this host being the P800 the profile was probed on (review P0).
+    profile = load(verify_env=False)
     assert profile["profile_hash"] == compute_hash(profile)
 
 
@@ -99,5 +101,8 @@ def test_repo_calibration_verifies_live_environment():
     p = ROOT / "config" / "calibration.json"
     if not p.exists():
         pytest.skip("hw_probe has not run on this machine")
+    from src.xpu.envcheck import collect
+    if collect() is None:
+        pytest.skip("live environment not probeable on this host")
     profile = load(verify_env=True)  # must match THIS host
     assert profile.get("env_hash")

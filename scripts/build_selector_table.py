@@ -40,8 +40,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.xpu.config import ConfigError, DeviceProfile  # noqa: E402
-from src.xpu.envcheck import collect as collect_env  # noqa: E402
 from src.xpu.envcheck import env_hash as fingerprint_env  # noqa: E402
+from src.xpu.evidence import focus_candidate_verdict  # noqa: E402
 from src.xpu.selector import GUARD_PCT  # noqa: E402
 from src.xpu.selector import entry_contract_violations  # noqa: E402
 
@@ -233,58 +233,17 @@ def _load_focus(path: str, rejections) -> dict:
 def _focus_ms(shape, name, run, threshold, path, rejections):
     """Gated (median_ms) for one candidate with COMPLETE evidence, else None.
 
-    Promotion integrity (issue #3 review fix): a candidate may only be
-    considered when *every* declared session contributed a finite positive
-    median and the raw trial log holds the full session x trials count,
-    its error is finite and below threshold, and no session recorded a
-    failure (``extras_failed``). Anything missing, non-finite, wrong-value
-    or failed rejects the candidate with a reason -- never a silent skip.
+    Delegates to the shared completeness verdict (src/xpu/evidence.py):
+    the builder's promotion gates and the cost-model's validation records
+    apply exactly one rule set, so a record the validator scores is a
+    record the builder could have promoted (issue #3 review fix).
     """
-    label = shape.get("label")
-    cand = (shape.get("candidates") or {}).get(name)
-    if cand is None:
-        rejections.append(
-            f"{path} {label} key={name}: absent from the session set "
-            "(incomplete evidence; cannot promote)")
-        return None
-    failed = {f.get("candidate")
-              for f in (shape.get("extras_failed") or [])}
-    if name in failed:
-        rejections.append(
-            f"{path} {label} key={name}: recorded failure in a session "
-            "(extras_failed); cannot promote")
-        return None
-    ms = cand.get("median_ms")
-    if not _finite_positive(ms):
-        rejections.append(
-            f"{path} {label} key={name}: "
-            f"median not finite positive ({ms!r})")
-        return None
-    err = cand.get("err_max", cand.get("err"))
-    if not isinstance(err, (int, float)) or not math.isfinite(err):
-        rejections.append(
-            f"{path} {label} key={name}: missing/non-finite "
-            f"error ({err!r})")
-        return None
-    if err >= threshold:
-        rejections.append(
-            f"{path} {label} key={name}: max_rel_error "
-            f"{err:.3e} >= {threshold:g}")
-        return None
-    got_s = cand.get("sessions")
-    if got_s != run["expected_sessions"]:
-        rejections.append(
-            f"{path} {label} key={name}: session evidence "
-            f"{got_s!r}/{run['expected_sessions']} incomplete; "
-            "cannot promote")
-        return None
-    want_trials = run["expected_sessions"] * run["trials"]
-    n_trials = cand.get("n_trials")
-    if n_trials != want_trials:
-        rejections.append(
-            f"{path} {label} key={name}: trial evidence "
-            f"{n_trials!r}/{want_trials} incomplete; cannot promote")
-        return None
+    ms, why = focus_candidate_verdict(
+        shape, name, threshold=threshold,
+        expected_sessions=run["expected_sessions"], trials=run["trials"],
+        label=f"{path} {shape.get('label')}")
+    if ms is None:
+        rejections.append(why)
     return ms
 
 
@@ -550,17 +509,13 @@ def main() -> None:
                     help="focus runs below this session count are refused")
     ap.add_argument("--out", default="config/selector_table.json")
     ap.add_argument("--guard", type=float, default=GUARD_PCT)
+    ap.add_argument("--verify-live-env", action="store_true",
+                    help="device-host check: probe the live environment "
+                         "and require it to equal the measurement env_hash")
     args = ap.parse_args()
 
     profile = DeviceProfile.load()
     profile_hash = profile.hash()
-    env = collect_env()
-    current_env = fingerprint_env(env)
-    if current_env is None:
-        raise ConfigError(
-            "live environment fingerprint unavailable (device/runtime/"
-            "compiler not probeable on this host); refusing to build an "
-            "unbound selector table -- run on the device host")
     rejections = []
 
     def _rel(path):
@@ -591,13 +546,58 @@ def main() -> None:
                 f"focus profile_hash {ref['profile_hash']} != current "
                 f"DeviceProfile hash {profile_hash}; re-measure under the "
                 "current profile before building")
-        for run in focus_runs:
-            run_env = run["manifest"].get("env_hash")
-            if run_env and run_env != current_env:
-                raise ConfigError(
-                    f"focus run {run['path']} env_hash {run_env} != live "
-                    f"environment {current_env} (device/runtime/compiler "
-                    "changed); re-measure before building")
+
+    # Environment binding (issue #3 P0): taken from the MEASUREMENT
+    # manifests, not from this build host -- the same clean artifact must
+    # rebuild deterministically in plain CI. The focus campaign is the
+    # binding source: every focus run must carry one identical non-empty
+    # env_hash. Confirm runs may predate env binding and are covered by
+    # the focus campaign; when they do carry env_hash it must agree.
+    env_hashes = []  # (path, env_hash)
+    for run in focus_runs:
+        h = (run["manifest"].get("env_hash") or "").strip()
+        if not h:
+            raise ConfigError(
+                f"focus run {run['path']} manifest has no env_hash; the "
+                "focus campaign is the binding source for the table "
+                "(re-measure with the env-bound harness), refusing to build")
+        env_hashes.append((run["path"], h))
+    for run in all_runs:
+        h = (run["manifest"].get("env_hash") or "").strip()
+        if h:
+            env_hashes.append((run["path"], h))
+    if not env_hashes:
+        raise ConfigError(
+            "no input manifest carries an env_hash; refusing to build an "
+            "unbound table (pass focus runs from the env-bound campaign)")
+    distinct = sorted({h for _, h in env_hashes})
+    if len(distinct) > 1:
+        raise ConfigError(
+            "input manifests disagree on env_hash "
+            f"({', '.join(distinct[:4])}); refusing to build -- the inputs "
+            "must come from one measurement environment")
+    table_env_hash = distinct[0]
+    table_env = None
+    for run in list(all_runs) + list(focus_runs):
+        man = run["manifest"]
+        if man.get("env_hash") != table_env_hash:
+            continue
+        d = man.get("env")
+        if isinstance(d, dict) and fingerprint_env(d) == table_env_hash:
+            table_env = d
+            break
+        if isinstance(d, dict):
+            raise ConfigError(
+                f"run {run['path']}: manifest env dict hashes to "
+                f"{fingerprint_env(d)}, not its declared env_hash "
+                f"{table_env_hash}; refusing to build")
+    if args.verify_live_env:
+        from src.xpu.envcheck import collect as collect_env
+        live = fingerprint_env(collect_env())
+        if live != table_env_hash:
+            raise ConfigError(
+                f"--verify-live-env: live environment {live} != measurement "
+                f"environment {table_env_hash}; re-measure before building")
 
     rows_by_path = {r["path"]: r["rows"] for r in runs}
     run_by_path = {r["path"]: r for r in runs}
@@ -653,8 +653,8 @@ def main() -> None:
         "schema_version": 2,
         "device": profile.device,
         "profile_hash": profile_hash,
-        "env_hash": current_env,
-        "env": env,
+        "env_hash": table_env_hash,
+        "env": table_env,
         "precision": "fp32",
         "guard_pct": args.guard,
         "selection_semantics": (

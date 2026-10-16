@@ -145,55 +145,71 @@ def bounded_search(family: str, n: int, batch: int, k: int = 3,
     return [p for _, p in scored[:max(0, int(k))]]
 
 
-def records_from_summary(summary: dict) -> list[dict]:
+def records_from_summary(summary: dict,
+                         source_id: str | None = None) -> list[dict]:
     """Measured decision rows from a run_batch_release summary.json dict.
 
-    Skips non-finite rows, candidates that failed the correctness
-    threshold, and candidates whose session/trial evidence is incomplete
-    (``complete: false`` when the artifact records it) -- the same rows
-    the selector would refuse to promote.
+    Rows pass exactly the builder's completeness verdict (shared
+    :func:`src.xpu.evidence.focus_candidate_verdict`): absent candidates,
+    recorded session failures, missing/False ``complete``, non-finite or
+    wrong-value timing/errors, failing correctness, and short session/
+    trial evidence are all excluded. Each record carries its
+    ``source_id``/``protocol_id`` and the round's ``full_space`` flag so
+    :func:`validate` can keep focus and holdout statistics isolated
+    (issue #3 review fix).
     """
-    thr = float((summary.get("manifest") or {}).get("error_threshold")
-                or 1e-4)
+    from .evidence import focus_candidate_verdict
+
+    man = summary.get("manifest") or {}
+    thr = float(man.get("error_threshold") or 1e-4)
+    expected = int(man.get("sessions") or 0)
+    trials = int(man.get("trials") or 0)
+    full_space = bool(man.get("full_space"))
+    protocol = man.get("protocol_id")
     out = []
     for sh in summary.get("shapes") or []:
-        for name, c in (sh.get("candidates") or {}).items():
-            import math
-            ms = c.get("median_ms")
-            if not isinstance(ms, (int, float)) or not math.isfinite(ms) \
-                    or ms <= 0:
+        for name in sorted(sh.get("candidates") or {}):
+            ms, _why = focus_candidate_verdict(
+                sh, name, threshold=thr, expected_sessions=expected,
+                trials=trials, label=str(sh.get("label") or ""))
+            if ms is None:
                 continue
-            err = c.get("err_max", c.get("err"))
-            if not isinstance(err, (int, float)) or not math.isfinite(err) \
-                    or err >= thr:
-                continue
-            if c.get("complete") is False:
-                continue
-            out.append({"name": name, "N": sh["N"], "batch": sh["batch"],
-                        "direction": sh.get("direction"),
-                        "measured_ms": ms, "params": c.get("params")})
+            c = sh["candidates"][name]
+            out.append({
+                "name": name, "N": sh["N"], "batch": sh["batch"],
+                "direction": sh.get("direction"),
+                "measured_ms": ms, "params": c.get("params"),
+                "source_id": source_id, "protocol_id": protocol,
+                "full_space": full_space,
+            })
     return out
 
 
 def validate(records, incumbent="incumbent_m4_folded",
-             guard_pct: float | None = None) -> dict:
-    """Holdout metrics vs measured rows (never used to tune constants).
+             guard_pct: float | None = None,
+             calib: dict | None = None) -> dict:
+    """Model-vs-measurement metrics with focus/holdout statistics isolated.
 
     ``records``: iterable of dicts with keys family-or-name, N, batch,
-    measured_ms; optional params and name. Reports:
+    measured_ms; optional params, name, source_id, protocol_id and
+    full_space (attach via :func:`records_from_summary`). Each metric is
+    computed from a single, role-appropriate slice so a mixed input set
+    can never blur them (issue #3 review fix):
 
-    * ``mdape`` — median absolute % error per family (model vs measured);
-    * ``guard_agreement`` — fraction of (challenger, incumbent) pairs where
-      model and measurement agree on whether the challenger **clears the
-      formal promotion guard** (``GUARD_PCT``, default 2% -- the same line
-      the selector uses; sign-of-gain agreement is deliberately NOT the
-      metric); the stable incumbent participates explicitly;
-    * ``topk_hit`` / ``topk_shapes`` -- legacy measured-subset metric (K =
-      3), optimistic when only the model's own top-K was measured;
-    * ``topk_full_space`` -- for shapes where **all nine** published m2
-      (tile, rows) points were measured (the holdout protocol): ``recall``
-      (model top-3 contains the measured best) and mean selection
-      ``regret_pct`` over the full space.
+    * ``mdape_pct`` — median absolute % error per family over ALL scored
+      records (descriptive; scope is "all scored records");
+    * ``guard_by_source`` — promotion-decision agreement (clearing the
+      formal ``GUARD_PCT`` line — NOT sign-of-gain) vs the stable
+      incumbent, computed **per focus round** (records with
+      ``full_space`` false); rounds are never pooled into one number;
+    * ``topk_hit`` / ``topk_shapes`` / ``topk_full_space`` — selection
+      metrics computed **only from full-space holdout records**, with m2
+      points deduplicated by structural parameters so a duplicate alias
+      or another round's identical (tile, rows) cannot occupy a second
+      slot.
+
+    ``calib`` injects an explicitly-loaded calibration profile (default:
+    the live-verified one); metrics never tune model constants.
     """
     import statistics
 
@@ -208,13 +224,22 @@ def validate(records, incumbent="incumbent_m4_folded",
             continue
         try:
             pred = predict(fam, int(r["N"]), int(r["batch"]),
-                           r.get("params") or {})
+                           r.get("params") or {}, calib=calib)
         except (ValueError, KeyError, FileNotFoundError):
             continue
         rows.append({"name": name, "family": fam, "N": r["N"],
                      "batch": r["batch"], "direction": r.get("direction"),
                      "measured_ms": ms, "pred_ms": pred,
-                     "params": r.get("params")})
+                     "params": r.get("params"),
+                     "source_id": r.get("source_id") or "ad-hoc",
+                     "protocol_id": r.get("protocol_id"),
+                     "full_space": bool(r.get("full_space"))})
+    # canonical order: every metric below is independent of the order in
+    # which sources/records were provided (review: input-order negative).
+    rows.sort(key=lambda r: (
+        str(r["source_id"]), str(r.get("protocol_id")), int(r["N"]),
+        int(r["batch"]), str(r.get("direction")), str(r["name"]),
+        str(sorted((r.get("params") or {}).items()))))
 
     mdape = {}
     for fam in sorted({r["family"] for r in rows}):
@@ -223,55 +248,75 @@ def validate(records, incumbent="incumbent_m4_folded",
                 for r in fr]
         mdape[fam] = statistics.median(errs) if errs else None
 
-    # guard agreement vs the stable incumbent, per (N, batch)
-    agree, pairs = 0, 0
+    focus_rows = [r for r in rows if not r["full_space"]]
+    holdout_rows = [r for r in rows if r["full_space"]]
+
+    # promotion-decision agreement, one number per focus round
+    guard_by_source = {}
+    for sid in sorted({r["source_id"] for r in focus_rows}):
+        srows = [r for r in focus_rows if r["source_id"] == sid]
+        by_shape = {}
+        for r in srows:
+            by_shape.setdefault(
+                (r["N"], r["batch"], r["direction"]), []).append(r)
+        agree, pairs = 0, 0
+        for shape_rows in by_shape.values():
+            inc = [r for r in shape_rows if r["name"] == incumbent]
+            if not inc:
+                continue
+            inc_r = inc[0]
+            for r in shape_rows:
+                if r["name"] in (incumbent, "vendor", "selected"):
+                    continue
+                # promotion decision, NOT sign-of-gain: both sides must
+                # clear the same formal guard line the selector uses
+                meas_promote = (
+                    (inc_r["measured_ms"] - r["measured_ms"])
+                    / inc_r["measured_ms"] * 100.0) >= guard
+                pred_promote = (
+                    (inc_r["pred_ms"] - r["pred_ms"])
+                    / inc_r["pred_ms"] * 100.0) >= guard
+                pairs += 1
+                if meas_promote == pred_promote:
+                    agree += 1
+        guard_by_source[sid] = {
+            "pairs": pairs,
+            "agreement": (agree / pairs) if pairs else None,
+            "protocol_id": next(
+                (r["protocol_id"] for r in srows if r.get("protocol_id")),
+                None),
+        }
+
+    # selection metrics: holdout rows only, m2 deduped by structure
     by_shape = {}
-    for r in rows:
+    for r in holdout_rows:
         by_shape.setdefault(
             (r["N"], r["batch"], r["direction"]), []).append(r)
-    for shape_rows in by_shape.values():
-        inc = [r for r in shape_rows if r["name"] == incumbent]
-        if not inc:
-            continue
-        inc_r = inc[0]
-        for r in shape_rows:
-            if r["name"] in (incumbent, "vendor", "selected"):
-                continue
-            # promotion decision, NOT sign-of-gain: both sides must
-            # clear the same formal guard line the selector uses
-            meas_promote = (
-                (inc_r["measured_ms"] - r["measured_ms"])
-                / inc_r["measured_ms"] * 100.0) >= guard
-            pred_promote = (
-                (inc_r["pred_ms"] - r["pred_ms"])
-                / inc_r["pred_ms"] * 100.0) >= guard
-            pairs += 1
-            if meas_promote == pred_promote:
-                agree += 1
-
-    # top-K metrics per shape. `topk_hit` stays the measured-subset
-    # metric (optimistic when only the model's own top-K was measured);
-    # `topk_full_space` is computed ONLY where all nine published m2
-    # points were measured (issue #3 review fix: full-space recall/regret).
     topk_hits, topk_shapes = 0, 0
     full_recall, full_total, regrets = 0, 0, []
     full_space = {(int(s["tile"]), int(s["rows"])) for s in m2_space()}
-    for shape_rows in by_shape.values():
-        m2 = [r for r in shape_rows if r["family"] == "m2_batch"]
-        if len(m2) < 2:
+    for shape in sorted(by_shape):
+        shape_rows = by_shape[shape]
+        n, b, d = shape
+        kept_m2, seen = [], set()
+        for r in shape_rows:
+            if r["family"] != "m2_batch":
+                continue
+            prm = r.get("params") or {}
+            key = (int(prm.get("tile", 64)), int(prm.get("rows", 8)))
+            if key in seen:
+                continue        # structural dedupe (alias/other round)
+            seen.add(key)
+            kept_m2.append(r)
+        if len(kept_m2) < 2:
             continue
         topk_shapes += 1
-        measured_best = min(m2, key=lambda r: r["measured_ms"])
-        ranked = sorted(m2, key=lambda r: r["pred_ms"])
+        measured_best = min(kept_m2, key=lambda r: r["measured_ms"])
+        ranked = sorted(kept_m2, key=lambda r: r["pred_ms"])
         names_ranked = [r["name"] for r in ranked[:3]]
         if measured_best["name"] in names_ranked:
             topk_hits += 1
-        measured_space = set()
-        for r in m2:
-            prm = r.get("params") or {}
-            measured_space.add((int(prm.get("tile", 64)),
-                                int(prm.get("rows", 8))))
-        if measured_space >= full_space:
+        if seen >= full_space:
             full_total += 1
             pick = ranked[0]
             if measured_best["name"] in names_ranked:
@@ -282,12 +327,15 @@ def validate(records, incumbent="incumbent_m4_folded",
 
     return {
         "n_records": len(rows),
+        "n_focus_records": len(focus_rows),
+        "n_holdout_records": len(holdout_rows),
         "mdape_pct": mdape,
+        "mdape_scope": "all scored records (focus+holdout)",
         "guard_pct": guard,
-        "guard_agreement": (agree / pairs) if pairs else None,
-        "guard_pairs": pairs,
+        "guard_by_source": guard_by_source,
         "topk_hit": (topk_hits / topk_shapes) if topk_shapes else None,
         "topk_shapes": topk_shapes,
+        "topk_scope": "full-space holdout records only",
         "topk_full_space": {
             "recall": (full_recall / full_total) if full_total else None,
             "shapes": full_total,

@@ -81,17 +81,29 @@ M4 fallback（对 M0 约 `1.0x`）。评审要求以干净提交重跑重点矩�
 - **赢家稳定性（评审要求的诚实口径）**：两轮精确同名赢家一致 **2/8**，但
   tile=128 家族一致 **8/8**、统计上 5/8 落在 2σ 内——rows 参数是 <1% 近平局，
   家族结论可复现；表内只晋升过 2% guard 的赢家，incumbent 保留为 fallback。
-- 2% 正式 guard 下晋升决策一致率 **100%**（130 对 challenger/incumbent）；
-  全空间 holdout（9 点枚举 3 shape）模型 top-3 命中实测最优 **6/6**，
-  top-1 选择 regret **0.00–0.22%**（均值 0.21%）。
+- 2% 正式 guard 下晋升决策一致率 **100%**（按 focus 轮分别统计，各 58 对
+  challenger/incumbent，focus 与 holdout 不混池）；全空间 holdout（9 点枚举
+  6 个 shape-direction）模型 top-3 命中实测最优 **6/6**、full-space recall
+  **6/6**，top-1 选择 regret **0.00–0.22%**（holdout-only 均值 **0.0816%**，
+  m2 点按结构参数去重）。
 - 消融把收益拆开（旧轮数据，flow/unit 轴结论不变）：batch lowering
   `1.98–4.61x`、radix-4 core `1.75–2.20x`、local-matrix `1.99–2.17x`。
 - **P2 Td canary 维持负结果**：`m2_packet_td{1,2}` 相对 `m2_batch` 为
   `1.09x` 更慢（分母 = 当前本地核），不晋升。
-- **外部核四格消融（§4-§5）**：A0P1 按构造 abstain（融合程序边界即整核）；
-  分解流 × triton 本地核（A1P0）比融合路径慢 **2.6–3.4x**（框架 IO 主导，证实
-  评审假设）；分解流 × vendor 分块核（A1P1）在 B=16 反超 A0P0（0.30–0.32 vs
-  0.75/1.48），但仍不敌 vendor 整变换基线；该 canary 只报告、不晋升。
+- **外部核四格消融（§4-§5，三个可运行格的条件对照，卡6 重测）**：A0P1
+  按构造 abstain（融合程序边界即整核）；P1 核是 **materialized
+  external-subtransform**（host-API 子变换组合：框架持有分解、在物化子块上
+  调用 `torch.fft.fft`），证明可组合性而非片上驻留单核。分解流 × triton
+  本地核（A1P0）比融合路径慢 **2.3–3.1x**——该比值同时包含框架 IO、不同的
+  tile/rows 与不同的本地核实现，不能全部归因为 IO。分解流 × vendor 子块核
+  （A1P1）在 1024 shape 仍慢于 vendor 整变换，但在 **N2048B16 快 2.34x**
+  （0.2809 vs 0.6576 ms，同时约为 A0P0 的 1/5.3）；有界 T×R 扫描与
+  plan 缓存（twiddle/staging buffer）已落地，只报告、不晋升、不外推。
+- **P2 复测（3 session × 30 trial 交错，卡6）确认 N2048B16 翻转**：A1P1
+  池化中位 0.3261 vs vendor 全变换 0.6578 ms（**2.02×，guard +50.4% 通过**）；
+  1024 shape 仍慢于 vendor。跨 session 一致（0.329/0.325/0.321）。
+  该结论是 experimental canary——cost model 无 A1 family，本轮不晋升
+  selector；是后续工作的数据点，不是冻结声明。
 - vendor 重探确认当前栈 `N≤2048` 可用、`N≥4096` unsupported；四个 shape 上
   vendor 仍快 `2.3–8.9x`。
 - 完整证据（provenance、5 问作答、holdout 明细、外部核 inventory、复现命令）

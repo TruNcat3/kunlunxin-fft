@@ -7,9 +7,9 @@ Kunlunxin-FFT 当前定位是 cuButterfly 方法的 P800 迁移实例和可复�
 
 | 阶段 | 交付内容 | 退出条件 |
 |---|---|---|
-| P0 工程闭环 | 安装期硬件 probe、profile 版本化、bench manifest 协议字段自动生成 | 新环境可生成独立 profile；旧表不会静默复用 |
+| P0 工程闭环 | 安装期硬件 probe、profile 版本化、bench manifest 协议字段自动生成。**已落地**：`hw_probe` + env 指纹绑定 + 运行时 fail-closed；**剩余**：manifest 协议字段自动生成 | 新环境可生成独立 profile；旧表不会静默复用 |
 | P1 Batch 性能 | 将高效局部核心/驻留映射接入 M4，减少逐 stage GM 边界 | 已声明 B/N 网格相对 M0 有净收益，负点完整报告 |
-| P1 选择模型 | 参数化成本模型 + 小规模校准 + 留出验证 | 排序误差、选择损失和搜索成本均可复核 |
+| P1 选择模型 | 参数化成本模型 + 小规模校准 + 留出验证。**已落地**：声明常数模型 + bounded search + focus/holdout 隔离验证（`model_validation.json`） | 排序误差、选择损失和搜索成本均可复核 |
 | P2 算子语义 | inverse、R2C/C2R、normalization | 每种语义有独立正确性与同语义基线 |
 | P2 尺寸/布局 | 非二次幂、stride、2D/多维 | 明确算法与 padding 语义，端到端计时包含重排 |
 | P3 平台扩展 | 其他 Kunlunxin 设备与软件栈 | 每台硬件独立 probe、lowering、校准和发布矩阵 |
@@ -30,6 +30,15 @@ packet 模板，并报告：
 
 radix-8、向量化复数乘或其他局部 FFT 核心可以加入 processing-unit 轴，但必须提供 capability 与
 lowering contract。核心优化和流优化不互斥；联合最优可以用于部署，研究归因仍需固定一轴做 A/B。
+
+外部核组合（host-API subtransform composition：框架持有分解、在 materialized 子块上调用
+vendor 整变换 API，四格消融 A1P1）当前是 **experimental canary**。**P2 已实现**：
+HybridPlan 缓存 twiddle/staging buffer（无 per-call arange/outer/cos）、调用/物化账本
+（`plan_ledger`，sub-transform 形状/核调用数/分析 GM 字节）、T×R 有界因子扫描
+（1024: 16×64/32×32/64×16；2048: 32×64/64×32，无 N/B 扩张）、`config/external_cores.json`
+capability registry、3 session × 30 trial 交错复测脚本 `scripts/run_hybrid_canary.py`。
+它不是片上驻留单核，也不嵌入单 kernel。只有在完整证据、环境匹配与 2% guard 通过后才可能
+进入 selector。
 
 ## 发布原则
 

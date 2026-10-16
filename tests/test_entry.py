@@ -81,7 +81,8 @@ def test_plan_executes_table_winner():
         pytest.skip("selector table not built")
     t = load_table(str(TABLE))
     p = DeviceProfile.load()
-    plan = plan_fft("dit", 2048, profile_hash=p.hash(), table=t)
+    plan = plan_fft("dit", 2048, profile_hash=p.hash(), table=t,
+                    env_hash=t["env_hash"])
     assert not plan.fallback
     assert plan.selection_source == "table"
     assert plan.executed in ("fft_dit_matrix", "fft_dit_grouped",
@@ -136,7 +137,8 @@ def test_plan_falls_back_for_dif_fused_table_entry():
         "incumbent_ms": 1.0, "challenger_ms": 0.5, "reason": "fake",
     }]
     p = DeviceProfile.load()
-    plan = plan_fft("dif", 16, profile_hash=p.hash(), table=fake)
+    plan = plan_fft("dif", 16, profile_hash=p.hash(), table=fake,
+                    env_hash=fake["env_hash"])
     assert plan.fallback
     assert plan.executed == "fft_dif"
     assert "no lowering" in plan.reason
@@ -147,7 +149,8 @@ def test_plan_batch_entry_dispatches_m4():
         pytest.skip("selector table not built")
     t = load_table(str(TABLE))
     p = DeviceProfile.load()
-    plan = plan_fft("dit", 4096, batch=16, profile_hash=p.hash(), table=t)
+    plan = plan_fft("dit", 4096, batch=16, profile_hash=p.hash(), table=t,
+                    env_hash=t["env_hash"])
     assert not plan.fallback
     assert plan.executed == "fft_dit_batch"
     assert plan.params.get("variant") in ("spread", "folded")
@@ -167,7 +170,8 @@ def test_plan_falls_back_for_batched_m1_table_entry():
         "incumbent_ms": 1.0, "challenger_ms": 0.5, "reason": "fake",
     }]
     p = DeviceProfile.load()
-    plan = plan_fft("dit", 16, batch=4, profile_hash=p.hash(), table=fake)
+    plan = plan_fft("dit", 16, batch=4, profile_hash=p.hash(), table=fake,
+                    env_hash=fake["env_hash"])
     assert plan.fallback
     assert plan.executed == "fft_dit_batch"
     assert "no lowering" in plan.reason

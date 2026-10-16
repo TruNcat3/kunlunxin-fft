@@ -267,10 +267,12 @@ def vendor_gap_section(pairs) -> list[str]:
         "",
         "The four-cell ablation (below) shows the *shape* of the gap:",
         "the vendor's small-block kernels are strong enough that a",
-        "framework decomposition calling them (A1P1) reaches within",
-        "~0.07 ms of the whole transform — our fused path (A0P0) is",
-        "further out. Closing it means better local-stage kernels or a",
-        "guard-passing hybrid entry, neither of which this round claims.",
+        "framework composition calling them on materialized sub-blocks",
+        "(A1P1) comes close at 1024 and flips the comparison at one",
+        "holdout point — see the four-cell section for the measured",
+        "per-shape numbers. Closing the focus-row gap means better",
+        "local-stage kernels or a guard-passing hybrid entry, neither of",
+        "which this round claims.",
         "",
     ]
     return lines
@@ -375,21 +377,33 @@ def validation_section(validation: dict | None) -> list[str]:
                 "`scripts/validate_cost_model.py`._", ""]
     m = validation["metrics"]
     full = m.get("topk_full_space") or {}
+    guard_rows = []
+    for sid, g in sorted((m.get("guard_by_source") or {}).items()):
+        name = str(sid).rsplit("/", 1)[-1] or str(sid)
+        ag = g.get("agreement")
+        ag_s = f"{ag:.0%}" if ag is not None else "n/a"
+        guard_rows.append(
+            f"- guard agreement `[{name}]`: **{ag_s}** over {g['pairs']} "
+            "(challenger, incumbent) pairs — the same line the selector "
+            "uses; one number per focus round, never pooled with holdout")
     lines = [
         "## Model validation (constants declared, never fitted)",
         "",
         f"- records scored: {m['n_records']} "
-        f"(sources: {', '.join(s['path'] for s in validation['sources'])})",
-        f"- promotion-decision agreement at the {validation['guard_pct']:.1f}%"
-        f" guard: **{m['guard_agreement']:.0%}** over {m['guard_pairs']} "
-        "(challenger, incumbent) pairs — the same line the selector uses",
-        f"- top-K hit (measured subset, optimistic): "
+        f"({m.get('n_focus_records', 0)} focus / "
+        f"{m.get('n_holdout_records', 0)} holdout; sources: "
+        f"{', '.join(s['path'] for s in validation['sources'])})",
+        f"- promotion-decision agreement at the "
+        f"{validation['guard_pct']:.1f}% guard, per focus round:",
+        *guard_rows,
+        f"- top-K hit (full-space holdout records only): "
         f"{m['topk_hit']:.0%} over {m['topk_shapes']} shapes",
         f"- **full-space holdout recall: "
         f"{full.get('recall', 0):.0%}** over {full.get('shapes', 0)} shapes; "
-        f"mean selection regret {full.get('mean_regret_pct', 0):.2f}% "
-        f"(space {full.get('space_size')} points)",
-        "- per-family MDAPE %: "
+        f"mean selection regret {full.get('mean_regret_pct', 0):.4f}% "
+        f"(space {full.get('space_size')} points; holdout records only, "
+        "m2 points deduplicated by structural parameters)",
+        "- per-family MDAPE % over all scored records: "
         + ", ".join(f"`{k}` {v:.1f}" for k, v in
                     sorted(m["mdape_pct"].items()) if v is not None),
         "",
@@ -399,10 +413,10 @@ def validation_section(validation: dict | None) -> list[str]:
         "kernels exceed that envelope, and the constants are declared a",
         "priori, never refitted against these runs). What it does claim,",
         "and what these holdouts measured, is (a) guard-decision",
-        f"fidelity at {validation['guard_pct']:.0f}% — safe frozen-table "
-        "promotion decisions, and (b) bounded-search regret within a",
-        "fraction of a percent of the measured full-space best, so",
-        "exploration stays cheap.",
+        f"fidelity at {validation['guard_pct']:.0f}% per focus round — "
+        "safe frozen-table promotion decisions, and (b) bounded-search",
+        "regret within a fraction of a percent of the measured",
+        "full-space best, so exploration stays cheap.",
         "",
     ]
     return lines
@@ -441,21 +455,93 @@ def canary_section(pairs) -> list[str]:
     return lines
 
 
+def hybrid_canary_section(canary: dict | None) -> list[str]:
+    """P2 re-test section: 3-session interleaved canary for A1P1."""
+    if canary is None:
+        return [
+            "## P2 hybrid canary (3-session re-test)",
+            "",
+            "_Canary results pending `results/p800/hybrid_canary.json`._",
+            "",
+        ]
+    lines = [
+        "## P2 hybrid canary (3-session interleaved re-test)",
+        "",
+        "Issue #3 P2 acceptance asked for a bounded re-measure of the",
+        "A1P1 composition cell: 3 independent sessions, 30 interleaved",
+        "trials each (random cell order per trial), explicit",
+        "synchronize, HybridPlan caches cold per session, 1e-4",
+        "correctness gate on the first call before warmup.",
+        "",
+        canary.get("protocol", ""),
+        "",
+        "| shape | cell | pooled median ms ± stdev (all sessions) |",
+        "|---|---|---|",
+    ]
+    for sh in canary.get("shapes", []):
+        key = f"N{sh['N']}B{sh['batch']}_{sh.get('direction', 'dit')}"
+        pooled = sh.get("pooled", {})
+        for name in ("A0P0", "A1P0", "A1P1", "vendor_full"):
+            v = pooled.get(name)
+            if not v:
+                continue
+            lines.append(
+                f"| {key} | {name} | "
+                f"{v['pooled_median_ms']:.4f} ± "
+                f"{v['pooled_stdev_ms']:.4f} |")
+    lines += [
+        "",
+        "### Guard evaluation (2% threshold)",
+        "",
+        "| shape | A1P1 vs A0P0 | A1P1 vs vendor_full |",
+        "|---|---|---|",
+    ]
+    for sh in canary.get("shapes", []):
+        key = f"N{sh['N']}B{sh['batch']}"
+        g = sh.get("guard", {})
+        a0 = g.get("A1P1_vs_A0P0_pct")
+        av = g.get("A1P1_vs_vendor_full_pct")
+        a0_mark = ("pass" if g.get("A1P1_beats_A0P0_by_2pct") else "fail")
+        av_mark = ("pass" if g.get("A1P1_beats_vendor_by_2pct") else "fail")
+        a0_str = f"{a0:+.1f}% ({a0_mark})" if a0 is not None else "—"
+        av_str = f"{av:+.1f}% ({av_mark})" if av is not None else "—"
+        lines.append(f"| {key} | {a0_str} | {av_str} |")
+    lines += [
+        "",
+        "A1P1 beats the in-table A0P0 path by 54–81% at every shape",
+        "(the vendor sub-block core is much faster than our triton",
+        "local stage in the A1 flow). Against the vendor *whole*",
+        "transform, A1P1 is slower at 1024 shapes but **50.4% faster at",
+        "N2048B16** (0.3261 vs 0.6578 ms, ~2.02×) — the two-stage",
+        "decomposition with vendor sub-block cores beats the vendor's",
+        "single whole-transform call at this shape. This is an",
+        "experimental canary: even a guard pass does not promote A1P1",
+        "into the selector table this round (the cost model has no A1",
+        "family; promotion would require a full model + focus round).",
+        "The finding is a data point for future work, not a frozen",
+        "claim.",
+        "",
+    ]
+    return lines
+
+
 def inventory_section(four_cell: dict | None) -> list[str]:
     lines = [
         "## External processing-unit inventory and adapter cells",
         "",
         "Full inventory and classifications live in",
         "`docs/benchmarks/external-cores.md` (local-core |",
-        "full-transform-only | reference-only | unavailable). Summary of",
-        "what the machine actually exposes:",
+        "full-transform-only | materialized-external-subtransform |",
+        "reference-only | unavailable) with machine-readable entries in",
+        "`config/external_cores.json`. Summary of what the machine",
+        "actually exposes:",
         "",
-        "- vendor full transform: `torch.fft.*` → xdnn_pytorch `fft_fft` "
-        "family (whole-tensor API; measured `vendor` rows above; N≤2048 "
-        "shapes supported, ≥4096 rejected by the runtime)",
+        "- vendor full transform: `torch.fft.*` \u2192 xdnn_pytorch `fft_fft` "
+        "family (whole-tensor API; measured `vendor` rows above; N\u22642048 "
+        "shapes supported, \u22654096 rejected by the runtime)",
         "- device-side length kernels exist in `libxpuapi.so` "
         "(`fft_len256/512/1024`, `FFT32`) but are `__device_stub__` "
-        "symbols — not a host-callable API; reference-only",
+        "symbols \u2014 not a host-callable API; reference-only",
         "- no standalone Kunlunxin FFT SDK, headers, or kernel sources "
         "are present on this machine",
         "",
@@ -468,16 +554,19 @@ def inventory_section(four_cell: dict | None) -> list[str]:
         ]
         return lines
     lines += [
-        "### Four-cell ablation (A0/A1 flow × P0/P1 core)",
+        "### Four-cell ablation (A0/A1 flow \u00d7 P0/P1 core)",
         "",
-        "Cells measured with setup (first call incl. compile) and",
-        "execution (median of the run's trials, explicit synchronize)",
-        "reported separately; every timed cell passed the 1e-4",
-        "correctness gate against the NumPy reference first. The vendor",
+        "Timing layers (issue #3 P1-5): **plan** = HybridPlan construction",
+        "(caches filled lazily), **first** = the first execution call",
+        "including JIT/compile and cache fill (correctness is judged on",
+        "this result), **steady** = median \u00b1 stdev of the run's trials",
+        "after warmup, explicit synchronize. Every timed cell passed the",
+        "1e-4 correctness gate against the NumPy reference. The vendor",
         "*whole* transform is an external baseline, never a cell.",
         "",
-        "| shape | cell | flow | local core | setup ms | exec ms |",
-        "|---|---|---|---|---|---|",
+        "| shape | cell | flow | local core | plan ms | first ms "
+        "| steady ms \u00b1 stdev |",
+        "|---|---|---|---|---|---|---|",
     ]
     for sh in four_cell["shapes"]:
         key = f"N{sh['N']}B{sh['batch']}_{sh['direction']}"
@@ -488,34 +577,157 @@ def inventory_section(four_cell: dict | None) -> list[str]:
                 continue
             label = name if name != "vendor_full" else "baseline (full)"
             if c.get("abstain"):
+                note = c["abstain"]
+                note = note[:40] + "\u2026" if len(note) > 40 else note
                 lines.append(
                     f"| {key} | **{label}** | {c['flow']} | {c['core']} | "
-                    f"— | abstain: {c['abstain'][:40]}… |"
-                    if len(c["abstain"]) > 40 else
-                    f"| {key} | **{label}** | {c['flow']} | {c['core']} | "
-                    f"— | abstain: {c['abstain']} |")
+                    f"\u2014 | \u2014 | abstain: {note} |")
             else:
+                plan = c.get("plan_ms", 0.0)
+                first = c.get("first_ms")
+                steady = c.get("steady_ms")
+                stdev = c.get("steady_stdev_ms", 0.0)
                 lines.append(
                     f"| {key} | {label} | {c['flow']} | {c['core']} | "
-                    f"{c['setup_ms']:.2f} | {c['exec_ms']:.4f} |")
+                    f"{plan:.2f} | {first:.2f} | {steady:.4f} \u00b1 {stdev:.4f} |")
     lines += [
         "",
         four_cell.get("note", ""),
         "",
-        "Reading (measured, single card): the decomposition flow with our",
-        "triton local core (A1P0) pays **2.6–3.4×** over the fused path",
-        "(A0P0) — framework gathers, transposes, and twiddle",
-        "materialization dominate exactly as the review suspected. With",
-        "the vendor's per-block core (A1P1) the same decomposition is",
-        "**faster than A0P0 at B=16**: the vendor kernels are better at",
-        "small lengths than our fused stage, and the framework IO there",
-        "costs ~0.08 ms over the whole transform. That is a real hybrid",
-        "win on this stack — and also why the frozen table does *not*",
-        "chase it silently: A1P1 changes the core provenance and would",
-        "have to pass the same guard/freshness path as any candidate",
-        "(this canary is reported, not promoted).",
+    ]
+    # Ledger (P2 call/boundary accounting): one compact table per shape.
+    ledgers = [(f"N{sh['N']}B{sh['batch']}_{sh['direction']}",
+                sh.get("ledger") or {}) for sh in four_cell["shapes"]]
+    ledgers = [(k, led) for k, led in ledgers if led]
+    if ledgers:
+        lines += [
+            "### Call and materialization ledger (A1 plans)",
+            "",
+            "Analytical accounting per call (complex64, 8 B/element).",
+            "Vendor launches inside the xdnn stack are opaque; they are",
+            "counted as one host API call per row batch.",
+            "",
+            "| shape | plan | core calls (s1\u00d7len / s2\u00d7len) "
+            "| launches est | GM bytes (framework) |",
+            "|---|---|---|---|---|",
+        ]
+        for key, led in ledgers:
+            for plan_name in ("A1P0", "A1P1"):
+                ld = led.get(plan_name)
+                if not ld:
+                    continue
+                cc = ld["core_calls"]
+                lines.append(
+                    f"| {key} | {plan_name} ({ld['core']}) | "
+                    f"{cc['stage1']} \u00d7 {cc['stage1_len']} / "
+                    f"{cc['stage2']} \u00d7 {cc['stage2_len']} | "
+                    f"{ld['core_launches_est']} | "
+                    f"{ld['gm_bytes_framework_est']} |")
+        lines += [
+            "",
+            "Twiddle and row tables are plan-cached; staging buffers are",
+            "pre-allocated per plan; the output tensor is fresh per call",
+            "(callers never alias plan buffers).",
+            "",
+        ]
+    # Bounded T\u00d7R factor scan (P2).
+    scans = [(f"N{sh['N']}B{sh['batch']}_{sh['direction']}",
+              sh.get("factor_scan") or []) for sh in four_cell["shapes"]]
+    scans = [(k, rows) for k, rows in scans if rows]
+    if scans:
+        lines += [
+            "### Bounded T\u00d7R factor scan (A1 flow)",
+            "",
+            "1024: 16\u00d764 / 32\u00d732 / 64\u00d716; 2048: 32\u00d764 / 64\u00d732.",
+            "Same correctness gate and steady protocol; no N/B expansion.",
+            "",
+            "| shape | T\u00d7R | A1P0 steady ms | A1P1 steady ms | A1P0/A0P0-like |",
+            "|---|---|---|---|---|",
+        ]
+        # A0P0 reference per shape from the main cells.
+        a0p0_ref = {}
+        for sh in four_cell["shapes"]:
+            key = f"N{sh['N']}B{sh['batch']}_{sh['direction']}"
+            c = sh["cells"].get("A0P0") or {}
+            if c.get("steady_ms"):
+                a0p0_ref[key] = c["steady_ms"]
+        for key, rows in scans:
+            for row in rows:
+                a0 = row["A1P0"].get("steady_ms")
+                a1 = row["A1P1"].get("steady_ms")
+                a0r = a0p0_ref.get(key)
+                ratio = f"{a0 / a0r:.2f}\u00d7" if (a0 and a0r) else "\u2014"
+                lines.append(
+                    f"| {key} | {row['T']}\u00d7{row['R']} | "
+                    f"{a0 if a0 else 'abstain'} | "
+                    f"{a1 if a1 else 'abstain'} | {ratio} |")
+        lines += [
+            "",
+            "",
+        ]
+    lines += [
+        "### Reading (three runnable cells, conditional comparison)",
+        "",
+        "A0P1 abstains by construction, so this is a comparison of the",
+        "**three runnable cells**, not a complete four-cell design. The",
+        "P1 core is a **materialized external-subtransform** (host-API",
+        "subtransform composition): the framework gathers sub-block",
+        "tensors and calls `torch.fft.fft` on each \u2014 it demonstrates",
+        "core *composability*, not a device-resident core embedded in a",
+        "single kernel.",
         "",
     ]
+    a1p0_ratios = []
+    a1p1_rows = []
+    for sh in four_cell["shapes"]:
+        cells = sh["cells"]
+
+        def _steady(name):
+            c = cells.get(name) or {}
+            return None if c.get("abstain") else c.get("steady_ms")
+
+        key = f"N{sh['N']}B{sh['batch']}_{sh['direction']}"
+        a0, a1 = _steady("A0P0"), _steady("A1P0")
+        av, ap1 = _steady("vendor_full"), _steady("A1P1")
+        if a0 and a1:
+            a1p0_ratios.append(a1 / a0)
+        if av and ap1:
+            a1p1_rows.append((key, av / ap1, ap1, av))
+    if a1p0_ratios:
+        lines += [
+            f"- **A1P0 vs A0P0 ({min(a1p0_ratios):.1f}\u2013"
+            f"{max(a1p0_ratios):.1f}\u00d7 slower)** \u2014 the decomposition flow",
+            "  with our triton local core pays framework-owned IO",
+            "  (gathers, transposes, twiddle materialization) *and* uses a",
+            "  different tile/rows setting plus a different local-stage",
+            "  implementation than the fused path; the ratio cannot be",
+            "  attributed to IO alone.",
+            "",
+        ]
+    flips = [r for r in a1p1_rows if r[1] > 1.0]
+    if flips:
+        desc = "; ".join(
+            f"{v1:.4f} vs {vv:.4f} ms (**{ratio:.2f}\u00d7 faster**)"
+            for _, ratio, v1, vv in flips)
+        lines += [
+            "- **A1P1 vs the vendor whole transform** \u2014 at most focus",
+            "  points the whole transform stays faster; at "
+            + " and ".join(k for k, *_ in flips)
+            + " A1P1 measured "
+            + desc
+            + ". This is a single-round canary on one card: a potential",
+            "  worth a bounded re-measure, not a frozen claim \u2014 nothing",
+            "  here is promoted (guard/freshness rules apply to any",
+            "  future candidate).",
+            "",
+        ]
+    else:
+        lines += [
+            "- **A1P1 vs the vendor whole transform** \u2014 the whole",
+            "  transform is faster at every measured point this round",
+            "  (single-round canary, reported not promoted).",
+            "",
+        ]
     return lines
 
 
@@ -544,18 +756,31 @@ python scripts/build_selector_table.py \\
          results/p800/batch_focus_b/summary.json \\
   --out config/selector_table.json
 
-# 4. model validation + this report
-python scripts/validate_cost_model.py \\
-  results/p800/batch_focus_a/summary.json \\
-  results/p800/batch_holdout/summary.json \\
+# 4. four-cell ablation + P2 canary
+CUDA_VISIBLE_DEVICES=<healthy card> timeout -s KILL 1800 \
+  python scripts/four_cell_ablation.py \
+    --shapes 1024x16,1024x64,2048x16 \
+    --out results/p800/four_cell.json
+CUDA_VISIBLE_DEVICES=<healthy card> timeout -s KILL 1800 \
+  python scripts/run_hybrid_canary.py \
+    --shapes 1024x16,1024x64,2048x16 \
+    --sessions 3 --trials 30 \
+    --out results/p800/hybrid_canary.json
+
+# 5. model validation + this report
+python scripts/validate_cost_model.py \
+  results/p800/batch_focus_a/summary.json \
+  results/p800/batch_holdout/summary.json \
   --out results/p800/model_validation.json
-python scripts/gen_focus_report.py \\
-  --focus results/p800/batch_focus_a results/p800/batch_focus_b \\
-  --holdout results/p800/batch_holdout \\
-  --validation results/p800/model_validation.json \\
+python scripts/gen_focus_report.py \
+  --focus results/p800/batch_focus_a results/p800/batch_focus_b \
+  --holdout results/p800/batch_holdout \
+  --validation results/p800/model_validation.json \
+  --four-cell results/p800/four_cell.json \
+  --hybrid-canary results/p800/hybrid_canary.json \
   --out docs/benchmarks/batch-focus.md
 
-# 5. tests
+# 6. tests
 python -m pytest tests/ -m "not hardware" -q   # host
 CUDA_VISIBLE_DEVICES=<healthy card> python -m pytest tests/ -m hardware -q
 ```
@@ -572,6 +797,8 @@ def main() -> None:
                             / "model_validation.json")
     ap.add_argument("--four-cell", type=Path,
                     default=ROOT / "results" / "p000" / "four_cell.json")
+    ap.add_argument("--hybrid-canary", type=Path,
+                    default=ROOT / "results" / "p000" / "hybrid_canary.json")
     ap.add_argument("--out", type=Path,
                     default=ROOT / "docs" / "benchmarks" / "batch-focus.md")
     args = ap.parse_args()
@@ -585,6 +812,8 @@ def main() -> None:
                   if args.validation.exists() else None)
     four_cell = (_load(args.four_cell)
                  if args.four_cell.exists() else None)
+    hybrid_canary = (_load(args.hybrid_canary)
+                     if args.hybrid_canary.exists() else None)
 
     headline, exact = headline_section(pairs)
     out = ["# Batch focus report — issue #3 (P800)", ""]
@@ -597,6 +826,7 @@ def main() -> None:
     out += validation_section(validation)
     out += canary_section(pairs)
     out += inventory_section(four_cell)
+    out += hybrid_canary_section(hybrid_canary)
     out += [
         "## What the evidence does not prove",
         "",

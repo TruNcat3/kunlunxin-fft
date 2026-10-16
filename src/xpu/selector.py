@@ -13,11 +13,13 @@ table built from measured confirmation sessions, never a model. Contract:
 * **Profile gate**: ``profile_hash`` is required. ``None`` abstains — a
   missing profile can never bypass the table, so a caller that has not
   resolved the current device profile falls back to M0 instead of guessing.
-* **Environment gate**: a table carrying ``env_hash`` (built by
-  ``build_selector_table``) only selects when the caller's environment
-  fingerprint matches — ``env_hash="auto"`` recomputes it live, ``None``
-  cannot verify and abstains (unknown or stale environment fails closed to
-  M0; tables without the field are pre-binding artifacts and unaffected).
+* **Environment gate**: production tables carry a non-empty ``env_hash``
+  (bound at build time from the measurement manifests) and only select
+  when the caller's environment fingerprint matches — ``env_hash="auto"``
+  recomputes it live, ``None`` cannot verify and abstains (unknown or
+  stale environment fails closed to M0; a table *without* ``env_hash`` is
+  a pre-freshness artifact and never selects at runtime — offline
+  inspection via ``load_table`` only).
 * **Design-space contract**: every loaded entry's params must be drawn from
   ``config/butterfly_space.json`` (one shared candidate description) and
   satisfy the lowering contract (tile divides N, powers of two, legal
@@ -49,16 +51,61 @@ TABLE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
 GUARD_PCT = 2.0
 
 
+def _candidate_from_entry(entry: dict):
+    """Shared schema-v2 ``Candidate`` for one frozen table entry.
+
+    Entry attribution is the same candidate description the runner and the
+    design-space enumerator use; params map onto the candidate knobs (tile
+    -> fused_tile, variant -> batch_variant with the matching Ud/Td
+    expansion). Optional entry-level ``layout``/``boundary_residence``/
+    ``pipeline`` keys are honored so contract tests can probe them.
+    """
+    from .candidates import UNIT_RADIX, Candidate
+
+    params = dict(entry.get("params") or {})
+    unit = entry.get("processing_unit")
+    flow = entry.get("flow_id")
+    variant = params.get("variant") or "none"
+    batch = int(params.get("batch") or entry.get("batch") or 1)
+    tile = params.get("tile")
+    rows = params.get("rows")
+    return Candidate(
+        flow_id=flow,
+        processing_unit=unit,
+        radix=int(params.get("radix") or UNIT_RADIX.get(unit, 2)),
+        block=int(entry.get("block") or 0),
+        fused_tile=int(tile) if (
+            flow == "local-fused-tile" and isinstance(tile, int)) else 1,
+        batch=batch,
+        batch_variant=variant if variant in ("spread", "folded") else "none",
+        rows=int(rows) if isinstance(rows, int) else 1,
+        glog=int(params.get("glog") or 0),
+        maxp=int(params.get("maxp") or 0),
+        cells=int(params.get("cells") or 1),
+        flow_realization=entry.get("flow_realization") or "",
+        boundary_residence=entry.get("boundary_residence")
+        or params.get("boundary_residence") or "gm",
+        pipeline=entry.get("pipeline") or params.get("pipeline") or "none",
+        layout=entry.get("layout") or "planar-soa",
+        ud=batch if variant == "spread" else 1,
+        td=batch if variant == "folded" else 1,
+    )
+
+
 def entry_contract_violations(entry: dict) -> list[str]:
     """Lowering-contract + design-space violations of one table entry.
 
-    The candidate description is single-sourced from
-    ``config/butterfly_space.json`` (``DesignSpace``): a frozen entry whose
-    params fall outside the published space, or that violates a runner
-    lowering constraint (tile must divide N; powers of two), is illegal —
-    whether it was measured or not.
+    Two gates, both single-sourced: published-space membership from
+    ``config/butterfly_space.json`` (``DesignSpace``), then the runner's
+    own lowering contract — the entry is mapped to a
+    :class:`src.xpu.candidates.Candidate` and checked with
+    ``candidates.check_lowering`` (issue #3 review: no second
+    approximation of the rules). tile-must-divide-N is entry knowledge
+    (Candidate carries no N) and stays here. Violations are illegal
+    whether the entry was measured or not.
     """
-    from .config import ConfigError, DesignSpace
+    from .candidates import check_lowering
+    from .config import ConfigError, DesignSpace, DeviceProfile
 
     try:
         sp = DesignSpace.load()
@@ -71,11 +118,15 @@ def entry_contract_violations(entry: dict) -> list[str]:
     real = entry.get("flow_realization")
     block = entry.get("block")
     if not isinstance(block, int) or block <= 0 or (block & (block - 1)):
+        # type/positivity guard stays here (check_lowering needs an int);
+        # the power-of-two legality itself is check_lowering's rule.
         bad.append(f"block {block!r} not a positive power of two")
+        return bad
+
+    tile, rows = params.get("tile"), params.get("rows")
     if unit == "radix4-scalar" and 4 not in sp.radix:
         bad.append("radix-4 not in the published radix space")
     if unit == "dense-dot-fft64":
-        tile, rows = params.get("tile"), params.get("rows")
         if tile not in sp.matrix_tiles:
             bad.append(f"tile {tile!r} not in matrix tiles {sp.matrix_tiles}")
         if rows not in sp.matrix_rows:
@@ -88,8 +139,6 @@ def entry_contract_violations(entry: dict) -> list[str]:
         if isinstance(tile, int) and isinstance(n, int) and tile > 0 \
                 and tile <= n and n % tile:
             bad.append(f"tile {tile} does not divide N={n}")
-        if real != "matrix-resident":
-            bad.append(f"realization {real!r} illegal for dense-dot-fft64")
     if unit == "radix2-scalar" and "tile" in params \
             and real == "fused-inplace":
         if params["tile"] not in sp.fused_tile_candidates:
@@ -103,8 +152,6 @@ def entry_contract_violations(entry: dict) -> list[str]:
                              ("cells", sp.grouped_cells)):
             if params.get(key) not in allowed:
                 bad.append(f"{key}={params.get(key)!r} not in {allowed}")
-        if real != "grouped-boundary":
-            bad.append(f"realization {real!r} illegal for grouped boundary")
     if "variant" in params and params["variant"] not in sp.batch_variants:
         bad.append(
             f"variant {params['variant']!r} not in {sp.batch_variants}")
@@ -112,6 +159,12 @@ def entry_contract_violations(entry: dict) -> list[str]:
         bad.append(f"batch {params['batch']!r} not in {sp.batch_candidates}")
     if "radix" in params and params["radix"] not in sp.radix:
         bad.append(f"radix {params['radix']!r} not in {sp.radix}")
+    if bad:
+        return bad
+
+    verdict = check_lowering(_candidate_from_entry(entry),
+                             DeviceProfile.load())
+    bad.extend(verdict.reasons)
     return bad
 
 
@@ -180,10 +233,12 @@ def select(direction: str, n: int, batch: int = 1, precision: str = "fp32",
            env_hash: str | None = "auto") -> Selection:
     """Return the measured winner for a shape, or abstain outside the matrix.
 
-    ``env_hash`` verifies the table against the live environment when the
-    table carries one: ``"auto"`` recomputes it (fail closed when the
-    environment is unknown), an explicit string is trusted as given, ``None``
-    cannot verify and abstains. Tables without ``env_hash`` skip the gate.
+    ``env_hash`` verifies the table against the live environment: ``"auto"``
+    recomputes it (fail closed when the environment is unknown), an explicit
+    string is trusted as given, ``None`` cannot verify and abstains. A
+    production-schema table MUST carry a non-empty ``env_hash``; unbound
+    (pre-freshness) tables never select at runtime — inspect their entries
+    offline via ``load_table`` only.
     """
     table = table if table is not None else load_table()
     if direction not in ("dit", "dif"):
@@ -200,23 +255,29 @@ def select(direction: str, n: int, batch: int = 1, precision: str = "fp32",
         return _abstain(n, direction, batch, precision,
                         f"profile hash {profile_hash} != table "
                         f"{table['profile_hash']}; re-measure before selecting")
-    if table.get("env_hash"):
-        cur = env_hash
-        if cur == "auto":
-            from .envcheck import current_env_hash
-            cur = current_env_hash()
-        if cur is None:
-            return _abstain(
-                n, direction, batch, precision,
-                "environment fingerprint unknown (device/runtime/compiler "
-                "not probeable); this table cannot be verified here and "
-                "must fail closed to M0")
-        if cur != table["env_hash"]:
-            return _abstain(
-                n, direction, batch, precision,
-                f"environment hash {cur} != table {table['env_hash']} "
-                "(device/runtime/compiler changed since the table was "
-                "built); re-run the probe and re-measure before selecting")
+    bound_env = table.get("env_hash") or ""
+    if not bound_env:
+        return _abstain(
+            n, direction, batch, precision,
+            "table carries no env_hash (pre-freshness schema); runtime "
+            "selection fails closed to M0 -- inspect entries offline via "
+            "load_table only")
+    cur = env_hash
+    if cur == "auto":
+        from .envcheck import current_env_hash
+        cur = current_env_hash()
+    if cur is None:
+        return _abstain(
+            n, direction, batch, precision,
+            "environment fingerprint unknown (device/runtime/compiler "
+            "not probeable); this table cannot be verified here and "
+            "must fail closed to M0")
+    if cur != bound_env:
+        return _abstain(
+            n, direction, batch, precision,
+            f"environment hash {cur} != table {bound_env} "
+            "(device/runtime/compiler changed since the table was "
+            "built); re-run the probe and re-measure before selecting")
     for e in table["entries"]:
         if (e["N"] == n and e["batch"] == batch and e["direction"] == direction):
             return Selection(

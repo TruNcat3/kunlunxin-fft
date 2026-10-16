@@ -30,8 +30,8 @@ def test_plan_validation():
 
 
 def test_bitrev_index_matches_numpy():
+    torch = pytest.importorskip("torch")  # host CI has no device stack
     import numpy as np
-    import torch
 
     for n in (8, 16, 64, 256):
         got = _bitrev_index(n, "cpu").tolist()

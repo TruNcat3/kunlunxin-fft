@@ -36,9 +36,26 @@ import math
 import time
 from dataclasses import dataclass, field
 
-import torch
-import triton  # noqa: F401  (kernel decorators below)
-import triton.language as tl  # noqa: F401
+try:
+    import torch
+    import triton  # noqa: F401  (kernel decorators below)
+    import triton.language as tl  # noqa: F401
+    HAS_RUNTIME = True
+except ImportError:  # host CI / offline inspection: no device stack here
+    torch = None
+    triton = None
+    tl = None
+    HAS_RUNTIME = False
+
+
+def _require_runtime() -> None:
+    """Entry-point guard: plan-level APIs are pure Python; execution
+    needs torch+triton (issue #3 P0: adapter must import without them)."""
+    if not HAS_RUNTIME:
+        raise RuntimeError(
+            "adapter_hybrid execution requires torch+triton "
+            "(plan_hybrid/validation works offline)")
+
 
 @dataclass
 class HybridPlan:
@@ -52,6 +69,12 @@ class HybridPlan:
     direction: str = "dit"
     core: str = "vendor"  # vendor | triton
     stage2_len: int = field(init=False)
+    # Plan-owned caches (issue #3 P2: reuse rather than rebuild): the
+    # twiddle table, the staging buffers, and the triton small-stage
+    # (bit-reversal, twiddle) tables live as long as the plan does.
+    _tw: dict = field(default_factory=dict, repr=False)
+    _buffers: dict = field(default_factory=dict, repr=False)
+    _rows: dict = field(default_factory=dict, repr=False)
 
     def __post_init__(self):
         if self.direction != "dit":
@@ -64,6 +87,26 @@ class HybridPlan:
             raise ValueError(f"unknown core {self.core!r}")
         self.stage2_len = self.n // self.tile
 
+    def twiddle(self, device, dtype):
+        """Cached (t2, tile) twiddle table w_N^{k_t*m0} for this plan."""
+        key = (str(device), str(dtype))
+        if key not in self._tw:
+            k_t = torch.arange(self.stage2_len, device=device,
+                               dtype=torch.float64)
+            m0 = torch.arange(self.tile, device=device, dtype=torch.float64)
+            ang = -2.0 * math.pi * torch.outer(k_t, m0) / self.n
+            self._tw[key] = torch.complex(
+                torch.cos(ang), torch.sin(ang)).to(dtype).contiguous()
+        return self._tw[key]
+
+    def buffer(self, name: str, shape, dtype, device):
+        """Cached pre-allocated staging tensor (one per name/shape/dtype)."""
+        key = (name, tuple(shape), str(dtype), str(device))
+        if key not in self._buffers:
+            self._buffers[key] = torch.empty(shape, dtype=dtype,
+                                             device=device)
+        return self._buffers[key]
+
 
 def plan_hybrid(n: int, batch: int, tile: int = 64,
                 core: str = "vendor") -> HybridPlan:
@@ -72,37 +115,38 @@ def plan_hybrid(n: int, batch: int, tile: int = 64,
 
 _ROW_FFT_CACHE: dict = {}
 
-@triton.jit
-def _row_fft_kernel(RE, IM, WRE, WIM, ORE, OIM, N,
-                    STAGE: tl.constexpr, BLOCK: tl.constexpr):
-    row = tl.program_id(0)
-    offs = tl.arange(0, BLOCK)
-    mask = offs < N
-    re = tl.load(RE + row * N + offs, mask=mask, other=0.0)
-    im = tl.load(IM + row * N + offs, mask=mask, other=0.0)
-    half_s = STAGE // 2
-    j = offs % STAGE
-    upper = j >= half_s
-    j2 = tl.where(upper, j - half_s, j)
-    grp = offs // STAGE
-    poffs = grp * STAGE + tl.where(upper, j2, j2 + half_s)
-    bre = tl.load(RE + row * N + poffs, mask=mask, other=0.0)
-    bim = tl.load(IM + row * N + poffs, mask=mask, other=0.0)
-    w_idx = j2 * (N // STAGE)          # < N/2 always
-    wr = tl.load(WRE + w_idx, mask=mask, other=1.0)
-    wi = tl.load(WIM + w_idx, mask=mask, other=0.0)
-    # butterfly (a, b) -> (a + w*b, a - w*b), a = lower, b = upper:
-    # lower writes re + w*bre; upper writes bre - w*re.
-    a_re = tl.where(upper, bre, re)
-    a_im = tl.where(upper, bim, im)
-    b_re = tl.where(upper, re, bre)
-    b_im = tl.where(upper, im, bim)
-    tre = b_re * wr - b_im * wi
-    tim = b_re * wi + b_im * wr
-    ore = tl.where(upper, a_re - tre, a_re + tre)
-    oim = tl.where(upper, a_im - tim, a_im + tim)
-    tl.store(ORE + row * N + offs, ore, mask=mask)
-    tl.store(OIM + row * N + offs, oim, mask=mask)
+if HAS_RUNTIME:
+    @triton.jit
+    def _row_fft_kernel(RE, IM, WRE, WIM, ORE, OIM, N,
+                        STAGE: tl.constexpr, BLOCK: tl.constexpr):
+        row = tl.program_id(0)
+        offs = tl.arange(0, BLOCK)
+        mask = offs < N
+        re = tl.load(RE + row * N + offs, mask=mask, other=0.0)
+        im = tl.load(IM + row * N + offs, mask=mask, other=0.0)
+        half_s = STAGE // 2
+        j = offs % STAGE
+        upper = j >= half_s
+        j2 = tl.where(upper, j - half_s, j)
+        grp = offs // STAGE
+        poffs = grp * STAGE + tl.where(upper, j2, j2 + half_s)
+        bre = tl.load(RE + row * N + poffs, mask=mask, other=0.0)
+        bim = tl.load(IM + row * N + poffs, mask=mask, other=0.0)
+        w_idx = j2 * (N // STAGE)          # < N/2 always
+        wr = tl.load(WRE + w_idx, mask=mask, other=1.0)
+        wi = tl.load(WIM + w_idx, mask=mask, other=0.0)
+        # butterfly (a, b) -> (a + w*b, a - w*b), a = lower, b = upper:
+        # lower writes re + w*bre; upper writes bre - w*re.
+        a_re = tl.where(upper, bre, re)
+        a_im = tl.where(upper, bim, im)
+        b_re = tl.where(upper, re, bre)
+        b_im = tl.where(upper, im, bim)
+        tre = b_re * wr - b_im * wi
+        tim = b_re * wi + b_im * wr
+        ore = tl.where(upper, a_re - tre, a_re + tre)
+        oim = tl.where(upper, a_im - tim, a_im + tim)
+        tl.store(ORE + row * N + offs, ore, mask=mask)
+        tl.store(OIM + row * N + offs, oim, mask=mask)
 
 
 
@@ -116,7 +160,8 @@ def _bitrev_index(n: int, device) -> torch.Tensor:
     return rev
 
 
-def _row_fft_triton_small(flat: torch.Tensor) -> torch.Tensor:
+def _row_fft_triton_small(flat: torch.Tensor,
+                          cache: dict | None = None) -> torch.Tensor:
     """Unfused P0 local stage for small lengths (R < 64): one triton
     program per row, iterative radix-2 DIT over float re/im planes.
 
@@ -131,17 +176,22 @@ def _row_fft_triton_small(flat: torch.Tensor) -> torch.Tensor:
         raise ValueError(f"small triton stage supports pow2 R<=512, got {n}")
 
     block = 1 << (n - 1).bit_length()
-    rev = _bitrev_index(n, flat.device)
+    ckey = (n, str(flat.device))
+    if cache is not None and ckey in cache:
+        rev, w_re, w_im = cache[ckey]
+    else:
+        rev = _bitrev_index(n, flat.device)
+        half = n // 2
+        k = torch.arange(half, device=flat.device, dtype=torch.float64)
+        ang = -2.0 * torch.pi * k / n
+        w_re = torch.cos(ang).to(torch.float32).contiguous()
+        w_im = torch.sin(ang).to(torch.float32).contiguous()
+        if cache is not None:
+            cache[ckey] = (rev, w_re, w_im)
     # complex index_select is unimplemented on this backend; permute the
     # float planes instead (still device-side, still framework IO).
     re = flat.real.to(torch.float32).index_select(1, rev).contiguous()
     im = flat.imag.to(torch.float32).index_select(1, rev).contiguous()
-
-    half = n // 2
-    k = torch.arange(half, device=flat.device, dtype=torch.float64)
-    ang = -2.0 * torch.pi * k / n
-    w_re = torch.cos(ang).to(torch.float32).contiguous()
-    w_im = torch.sin(ang).to(torch.float32).contiguous()
 
     re_b, im_b = re, im
     for stage in (2, 4, 8, 16, 32, 64, 128, 256, 512):
@@ -168,10 +218,12 @@ def _local_stage_triton_1d(flat: torch.Tensor, length: int,
         return fft_dit_matrix_batch(flat, block=min(max(length, 256), 1024),
                                     tile=min(64, length), rows=4,
                                     variant="spread")
-    return _row_fft_triton_small(flat)
+    return _row_fft_triton_small(flat, cache=plan._rows)
 
 
 def run_hybrid(x: torch.Tensor, plan: HybridPlan) -> torch.Tensor:
+    _require_runtime()
+
     """Framework decomposition with the plan's local core; DIT natural
     in, natural out. Verified against NumPy FFT to ~1e-16 for the tile
     sizes in the published space.
@@ -188,27 +240,77 @@ def run_hybrid(x: torch.Tensor, plan: HybridPlan) -> torch.Tensor:
     n, tile, t2 = plan.n, plan.tile, plan.stage2_len
     b = x.shape[0]
 
-    # x is (B, N); digit view per batch row: (m0, m1) with m = m1*R + m0
-    blocks = x.reshape(b, t2, tile).permute(0, 2, 1).reshape(
-        b * tile, t2).contiguous()
+    # x is (B, N); digit view per batch row: (m0, m1) with m = m1*R + m0.
+    # Staging tensors and the twiddle table come from the plan cache
+    # (issue #3 P2: pre-allocate + reuse; no per-call arange/outer/cos).
+    view = x.reshape(b, t2, tile).permute(0, 2, 1).reshape(b * tile, t2)
+    blocks = plan.buffer("blocks", (b * tile, t2), x.dtype, x.device)
+    blocks.copy_(view)
     # (B*R, T): rows are (m0) sequences over m1 — length-T row FFTs
     stage1 = _core_fft_1d(blocks, t2, plan)          # (B*R, T): (m0, k_t)
 
-    grid = stage1.reshape(b, tile, t2).permute(0, 2, 1).contiguous()
     # (B, T, R): (k_t, m0)
-    k_t = torch.arange(t2, device=x.device, dtype=torch.float64)
-    m0 = torch.arange(tile, device=x.device, dtype=torch.float64)
-    ang = -2.0 * math.pi * torch.outer(k_t, m0) / n
-    tw = torch.complex(torch.cos(ang), torch.sin(ang)).to(x.dtype)
-    grid = grid * tw.unsqueeze(0)
+    grid = plan.buffer("grid", (b, t2, tile), x.dtype, x.device)
+    grid.copy_(stage1.reshape(b, tile, t2).permute(0, 2, 1))
+    grid.mul_(plan.twiddle(x.device, x.dtype).unsqueeze(0))
 
-    flat2 = grid.reshape(b * t2, tile).contiguous()  # (B*T, R): (k_t, k_r?)
-    # rows are k_t-sequences over m0 — length-R row FFTs -> (k_t, k_r)
-    stage2 = _core_fft_1d(flat2, tile, plan)         # (B*T, R)
+    # (B*T, R): rows are k_t-sequences over m0 — length-R row FFTs
+    flat2 = plan.buffer("flat2", (b * t2, tile), x.dtype, x.device)
+    flat2.copy_(grid.reshape(b * t2, tile))
+    stage2 = _core_fft_1d(flat2, tile, plan)         # (B*T, R): (k_t, k_r)
 
+    # fresh output tensor every call (reshape of the permuted stage-2
+    # view forces a copy): callers never alias the plan's buffers
     out = stage2.reshape(b, t2, tile).permute(0, 2, 1).reshape(b, n)
     # (B, R, T) -> (k_r, k_t) rows -> flatten: X[k_r*T + k_t]
     return out
+
+
+def plan_ledger(plan: HybridPlan) -> dict:
+    """Call/boundary accounting for one plan (issue #3 P2: call ledger).
+
+    Analytical, not measured: per-stage sub-FFT shapes and call counts,
+    the framework-owned materialized boundaries with GM-byte estimates
+    (complex64 assumed, 8 B/element), and the sync points the timing
+    protocol adds. Vendor-core launches inside the torch/XDNN stack are
+    opaque; they are counted as one host API call per row batch.
+    """
+    n, b, tile, t2 = plan.n, plan.batch, plan.tile, plan.stage2_len
+    elem = 8  # complex64
+
+    def _launches_per_core_call(length: int) -> int:
+        if plan.core == "vendor":
+            return 1  # one host API call; backend-internal unknown
+        if length >= 64:
+            return 1  # fused m2 program
+        return max(0, length.bit_length() - 2)  # radix-2 stages, small path
+
+    boundaries = [
+        {"op": "gather x.reshape(T,R).T -> blocks",
+         "bytes_est": b * n * elem},
+        {"op": "stage1 -> grid transpose (k_t, m0)",
+         "bytes_est": b * t2 * tile * elem},
+        {"op": "twiddle table (plan-cached after first use)",
+         "bytes_est": t2 * tile * elem},
+        {"op": "grid -> flat2 copy (k_t, k_r rows)",
+         "bytes_est": b * t2 * tile * elem},
+        {"op": "digit-reversal transpose + flatten -> out",
+         "bytes_est": b * n * elem},
+    ]
+    return {
+        "core": plan.core,
+        "core_calls": {"stage1": b * tile, "stage1_len": t2,
+                       "stage2": b * t2, "stage2_len": tile},
+        "core_launches_est": (
+            b * tile * _launches_per_core_call(t2)
+            + b * t2 * _launches_per_core_call(tile)),
+        "materialized_boundaries": boundaries,
+        "gm_bytes_framework_est": sum(x["bytes_est"] for x in boundaries),
+        "sync_points_per_timed_call": 1,
+        "element_bytes_assumed": elem,
+        "twiddle_and_row_tables": "plan-cached (HybridPlan fields)",
+        "buffers": "plan-cached staging tensors; output is fresh per call",
+    }
 
 
 def _core_fft_1d(flat2d: torch.Tensor, length: int,
@@ -220,13 +322,16 @@ def _core_fft_1d(flat2d: torch.Tensor, length: int,
 
 
 def time_cell(fn, x: torch.Tensor, warmup: int, trials: int):
-    """(setup_ms, exec_median_ms): setup = first call incl. JIT/compile;
-    exec = median of `trials` timed calls with explicit synchronize."""
+    """Split timing (issue #3 P1-5): (first_ms, steady_median_ms,
+    steady_stdev_ms). `first` is the single first call (JIT/compile +
+    plan cache fill); `steady` is median/stdev of `trials` calls after
+    `warmup`, explicit synchronize around every timed call."""
+    _require_runtime()
     dev = x.device
     t0 = time.perf_counter()
     fn(x)
     torch.cuda.synchronize(dev)
-    setup_ms = (time.perf_counter() - t0) * 1e3
+    first_ms = (time.perf_counter() - t0) * 1e3
     for _ in range(warmup):
         fn(x)
     torch.cuda.synchronize(dev)
@@ -238,4 +343,7 @@ def time_cell(fn, x: torch.Tensor, warmup: int, trials: int):
         torch.cuda.synchronize(dev)
         samples.append((time.perf_counter() - t0) * 1e3)
     samples.sort()
-    return setup_ms, samples[len(samples) // 2]
+    mid = samples[len(samples) // 2]
+    stdev = (sum((s - mid) ** 2 for s in samples) / max(1, len(samples) - 1)
+             ) ** 0.5
+    return first_ms, mid, stdev

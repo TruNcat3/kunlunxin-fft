@@ -23,12 +23,15 @@ lowering 参数。2% 是工程 promotion guard，不是统计显著性声明。
 
 ## 当前闭包
 
-M0 始终存在于设计空间。发布汇总以同 block M0 为 incumbent；profile mismatch、缺失 key 或无
-lowering 时走 conservative fallback。表中 batch 只装载当前 M4 合法项，M1/M2/M3/M5 仍为单
-transform。
+M0 始终存在于设计空间。发布汇总以同 block M0 为 incumbent；profile mismatch、缺失 key、
+**环境指纹缺失/失配**或无 lowering 时走 conservative fallback。生产 schema 的表必须绑定
+`env_hash`（建表时取自测量 manifest）；未绑定的旧表不参与运行时选择，只允许显式离线检查。
+每个表项在加载/建表时都过共享 lowering 契约（`candidates.check_lowering`）与设计空间成员检查，
+非法 flow/unit/residence/pipeline 一律拒载。
 
-`config/selector_table.json` 来自已归档的 `confirm_b1024.json`、`confirm_b256.json` 和
-`confirm_batch.json`。当前 `bench.py` 新生成的 manifest 尚未自动补齐 table builder 要求的
-`timing_scope/protocol_id`，所以文档不把“任意新 bench JSON 一键构表”宣传为已完成能力。
+`config/selector_table.json` 来自 `confirm_b1024.json`、`confirm_b256.json`、`confirm_batch.json`
+与 Issue #3 的 focus 轮（`batch_focus_a/b`）。当前 `bench.py` 新生成的 manifest 尚未自动补齐
+table builder 要求的 `timing_scope/protocol_id`，所以文档不把“任意新 bench JSON 一键构表”
+宣传为已完成能力。
 
 下一页：[实验结果](../benchmarks/results.md)。
