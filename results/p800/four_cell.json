@@ -1,11 +1,41 @@
 {
-  "commit": "2e2702af1ec6f584420388c6ac89c2f37ab28a03",
-  "dirty": true,
   "err_max": 0.0001,
   "factor_scan_enabled": true,
   "kind": "issue-3-four-cell-ablation",
-  "note": "A0P1 abstains by construction (fused core boundary). The vendor whole transform is an external baseline, not a cell. Timing layers: plan_ms (HybridPlan construction, caches filled lazily), first_ms (first execution incl. JIT/compile + cache fill; correctness judged on this result), warmup (untimed), steady_ms (median of trials, explicit synchronize, stdev recorded). A1 cells pay the framework's gathers, twiddles, and transposes \u2014 the IO the review asked us to attribute separately. Ledger: per-call sub-transform shapes, core-call counts (vendor launches opaque), analytical GM bytes for framework boundaries. Factor scan: bounded T\u00d7R pairs, no N/B expansion.",
-  "schema": 2,
+  "note": "A0P1 abstains by construction (fused core boundary). The vendor whole transform is an external baseline, not a cell. Timing layers: plan_ms (HybridPlan construction, caches filled lazily), first_ms (first execution incl. JIT/compile + cache fill; correctness judged on this result), warmup (untimed), steady = p50/MAD/p95/max/outlier count over trials (explicit synchronize; outliers > p50+3*MAD). A1P1 is an experimental canary (materialized external-subtransform), never promoted on this artifact. Ledger records per-call sub-transform shapes, core-call counts (vendor launches opaque), analytical GM bytes for the fused pipeline, and a phase profile with hidden-copy audit. Factor scan: bounded T\u00d7R pairs, no N/B expansion. Freshness: dirty tree or env mismatch aborts with zero kernel launches; A0P0 is fetched via selector.select with the shared env gate.",
+  "provenance": {
+    "argv": [
+      "scripts/four_cell_ablation.py",
+      "--shapes",
+      "1024x16,1024x64,2048x16",
+      "--warmup",
+      "5",
+      "--trials",
+      "30",
+      "--out",
+      "results/p800/four_cell.json"
+    ],
+    "commit": "5fa0613b12d9a870f177553e66ad0509ad001f64",
+    "device": {
+      "device_model": 3,
+      "driver": "515.58",
+      "max_shared_mem": 262144,
+      "multiprocessor_count": 12
+    },
+    "dirty": false,
+    "guard_pct": 2.0,
+    "live_env_hash": "6b50bd316032c0fe",
+    "profile_hash": "a78b86793c7142a0",
+    "runtime": {
+      "torch": "2.9.0+cu129",
+      "triton": "3.0.0",
+      "xhpc": "20770323",
+      "xpytorch": "XMLIR--bc1b1dc6f-dev+2026032411",
+      "xre": "5.13.0.0"
+    },
+    "table_env_hash": "6b50bd316032c0fe"
+  },
+  "schema": 3,
   "seed": 1234,
   "shapes": [
     {
@@ -14,12 +44,20 @@
       "cells": {
         "A0P0": {
           "core": "P0 triton local",
-          "first_ms": 697.7102,
-          "flow": "fused (m2 runner)",
+          "first_ms": 710.6142,
+          "flow": "fused (m2 runner, selector path)",
           "max_rel_err": 5.137526997067726e-07,
+          "outlier_values": [],
           "plan_ms": 0.0,
-          "steady_ms": 0.7348,
-          "steady_stdev_ms": 0.0102
+          "steady": {
+            "mad": 0.0109,
+            "max": 0.7787,
+            "n": 30,
+            "outlier_count": 0,
+            "outlier_threshold": 0.7805,
+            "p50": 0.7476,
+            "p95": 0.7769
+          }
         },
         "A0P1": {
           "abstain": "fused local program cannot host an external whole-tensor core; the core boundary is the whole kernel",
@@ -29,77 +67,190 @@
         },
         "A1P0": {
           "core": "P0 triton local",
-          "first_ms": 725.4548,
+          "first_ms": 13.7839,
           "flow": "framework decomposition (materialized sub-transforms)",
           "max_rel_err": 3.249850866101456e-07,
-          "plan_ms": 0.0203,
-          "steady_ms": 2.2929,
-          "steady_stdev_ms": 0.1797
+          "outlier_values": [
+            2.7629,
+            4.299
+          ],
+          "plan_ms": 0.0215,
+          "steady": {
+            "mad": 0.0192,
+            "max": 4.299,
+            "n": 30,
+            "outlier_count": 2,
+            "outlier_threshold": 2.0965,
+            "p50": 2.039,
+            "p95": 2.7629
+          }
         },
         "A1P1": {
           "core": "P1 vendor host-API sub-blocks (composition canary)",
-          "first_ms": 0.9739,
+          "first_ms": 0.9643,
           "flow": "framework decomposition (materialized sub-transforms)",
           "max_rel_err": 4.0441733385780533e-07,
-          "plan_ms": 0.0203,
-          "steady_ms": 0.2857,
-          "steady_stdev_ms": 0.0063
+          "outlier_values": [
+            0.2292,
+            0.2296,
+            0.2302,
+            0.2308,
+            0.2367
+          ],
+          "plan_ms": 0.0215,
+          "steady": {
+            "mad": 0.0024,
+            "max": 0.2367,
+            "n": 30,
+            "outlier_count": 5,
+            "outlier_threshold": 0.2283,
+            "p50": 0.2212,
+            "p95": 0.2308
+          }
         },
         "vendor_full": {
           "core": "P1 vendor torch.fft",
-          "first_ms": 0.2834,
+          "first_ms": 0.2824,
           "flow": "external whole-transform baseline (not a cell)",
           "max_rel_err": 4.902291647419523e-07,
-          "steady_ms": 0.2411,
-          "steady_stdev_ms": 0.0008
+          "outlier_values": [
+            0.2437,
+            0.2438
+          ],
+          "plan_ms": 0.0215,
+          "steady": {
+            "mad": 0.0005,
+            "max": 0.2438,
+            "n": 30,
+            "outlier_count": 2,
+            "outlier_threshold": 0.2435,
+            "p50": 0.242,
+            "p95": 0.2437
+          }
         }
       },
       "direction": "dit",
       "factor_scan": [
         {
           "A1P0": {
-            "first_ms": 2.7055,
+            "first_ms": 2.6338,
             "max_rel_err": 3.249850866101456e-07,
-            "steady_ms": 2.1842,
-            "steady_stdev_ms": 0.0275
+            "outlier_values": [],
+            "steady": {
+              "mad": 0.0183,
+              "max": 2.1854,
+              "n": 30,
+              "outlier_count": 0,
+              "outlier_threshold": 2.1989,
+              "p50": 2.1439,
+              "p95": 2.1827
+            }
           },
           "A1P1": {
-            "first_ms": 0.5767,
+            "first_ms": 0.5104,
             "max_rel_err": 4.0441733385780533e-07,
-            "steady_ms": 0.2884,
-            "steady_stdev_ms": 0.0057
+            "outlier_values": [
+              0.2283,
+              0.231,
+              0.2326,
+              0.2336,
+              0.234,
+              0.2375,
+              0.2736
+            ],
+            "steady": {
+              "mad": 0.0023,
+              "max": 0.2736,
+              "n": 30,
+              "outlier_count": 7,
+              "outlier_threshold": 0.2271,
+              "p50": 0.2204,
+              "p95": 0.2375
+            }
           },
           "R": 64,
           "T": 16
         },
         {
           "A1P0": {
-            "first_ms": 890.4683,
+            "first_ms": 10.925,
             "max_rel_err": 3.063532305822079e-07,
-            "steady_ms": 3.3101,
-            "steady_stdev_ms": 0.1071
+            "outlier_values": [
+              3.3277
+            ],
+            "steady": {
+              "mad": 0.0165,
+              "max": 3.3277,
+              "n": 30,
+              "outlier_count": 1,
+              "outlier_threshold": 3.3067,
+              "p50": 3.2571,
+              "p95": 3.3061
+            }
           },
           "A1P1": {
-            "first_ms": 0.7253,
+            "first_ms": 0.5996,
             "max_rel_err": 4.864009309390513e-07,
-            "steady_ms": 0.2797,
-            "steady_stdev_ms": 0.0065
+            "outlier_values": [
+              0.2157,
+              0.216,
+              0.2173,
+              0.2181,
+              0.2194,
+              0.2243
+            ],
+            "steady": {
+              "mad": 0.0022,
+              "max": 0.2243,
+              "n": 30,
+              "outlier_count": 6,
+              "outlier_threshold": 0.2133,
+              "p50": 0.2068,
+              "p95": 0.2194
+            }
           },
           "R": 32,
           "T": 32
         },
         {
           "A1P0": {
-            "first_ms": 2.7559,
+            "first_ms": 2.7688,
             "max_rel_err": 5.137526997067726e-07,
-            "steady_ms": 2.0999,
-            "steady_stdev_ms": 0.018
+            "outlier_values": [
+              2.0262,
+              2.0738,
+              6.2568
+            ],
+            "steady": {
+              "mad": 0.0096,
+              "max": 6.2568,
+              "n": 30,
+              "outlier_count": 3,
+              "outlier_threshold": 2.0172,
+              "p50": 1.9883,
+              "p95": 2.0738
+            }
           },
           "A1P1": {
-            "first_ms": 0.5868,
+            "first_ms": 0.5863,
             "max_rel_err": 3.811278418488473e-07,
-            "steady_ms": 0.2934,
-            "steady_stdev_ms": 0.0051
+            "outlier_values": [
+              0.231,
+              0.232,
+              0.2324,
+              0.2342,
+              0.2353,
+              0.2371
+            ],
+            "steady": {
+              "mad": 0.0029,
+              "max": 0.2371,
+              "n": 30,
+              "outlier_count": 6,
+              "outlier_threshold": 0.2288,
+              "p50": 0.2202,
+              "p95": 0.2353
+            }
           },
           "R": 16,
           "T": 64
@@ -117,23 +268,15 @@
           },
           "core_launches_est": 3328,
           "element_bytes_assumed": 8,
-          "gm_bytes_framework_est": 532480,
+          "gm_bytes_framework_est": 401408,
           "materialized_boundaries": [
             {
               "bytes_est": 131072,
-              "op": "gather x.reshape(T,R).T -> blocks"
+              "op": "gather x.reshape(T,R).T -> blocks (single copy into plan buffer)"
             },
             {
-              "bytes_est": 131072,
-              "op": "stage1 -> grid transpose (k_t, m0)"
-            },
-            {
-              "bytes_est": 8192,
-              "op": "twiddle table (plan-cached after first use)"
-            },
-            {
-              "bytes_est": 131072,
-              "op": "grid -> flat2 copy (k_t, k_r rows)"
+              "bytes_est": 139264,
+              "op": "fused stage1 transpose + twiddle -> grid (one GM pass; tw table plan-cached)"
             },
             {
               "bytes_est": 131072,
@@ -154,23 +297,15 @@
           },
           "core_launches_est": 1280,
           "element_bytes_assumed": 8,
-          "gm_bytes_framework_est": 532480,
+          "gm_bytes_framework_est": 401408,
           "materialized_boundaries": [
             {
               "bytes_est": 131072,
-              "op": "gather x.reshape(T,R).T -> blocks"
+              "op": "gather x.reshape(T,R).T -> blocks (single copy into plan buffer)"
             },
             {
-              "bytes_est": 131072,
-              "op": "stage1 -> grid transpose (k_t, m0)"
-            },
-            {
-              "bytes_est": 8192,
-              "op": "twiddle table (plan-cached after first use)"
-            },
-            {
-              "bytes_est": 131072,
-              "op": "grid -> flat2 copy (k_t, k_r rows)"
+              "bytes_est": 139264,
+              "op": "fused stage1 transpose + twiddle -> grid (one GM pass; tw table plan-cached)"
             },
             {
               "bytes_est": 131072,
@@ -179,6 +314,18 @@
           ],
           "sync_points_per_timed_call": 1,
           "twiddle_and_row_tables": "plan-cached (HybridPlan fields)"
+        },
+        "A1P1_phase_profile": {
+          "core": "vendor",
+          "gather_ms": 0.0963,
+          "hidden_copies": [],
+          "scatter_ms": 0.0651,
+          "stage1_core_ms": 0.0617,
+          "stage1_out_contiguous": true,
+          "stage2_core_ms": 0.0337,
+          "stage2_in_contiguous": true,
+          "stage2_out_contiguous": true,
+          "twiddle_transpose_ms": 0.1113
         }
       },
       "tile": 64
@@ -189,12 +336,20 @@
       "cells": {
         "A0P0": {
           "core": "P0 triton local",
-          "first_ms": 2.5762,
-          "flow": "fused (m2 runner)",
+          "first_ms": 2.5819,
+          "flow": "fused (m2 runner, selector path)",
           "max_rel_err": 4.4832672428346e-07,
+          "outlier_values": [],
           "plan_ms": 0.0,
-          "steady_ms": 2.2873,
-          "steady_stdev_ms": 0.0206
+          "steady": {
+            "mad": 0.0189,
+            "max": 2.3581,
+            "n": 30,
+            "outlier_count": 0,
+            "outlier_threshold": 2.3775,
+            "p50": 2.3209,
+            "p95": 2.3538
+          }
         },
         "A0P1": {
           "abstain": "fused local program cannot host an external whole-tensor core; the core boundary is the whole kernel",
@@ -204,77 +359,183 @@
         },
         "A1P0": {
           "core": "P0 triton local",
-          "first_ms": 7.1729,
+          "first_ms": 6.7167,
           "flow": "framework decomposition (materialized sub-transforms)",
           "max_rel_err": 2.814388757605271e-07,
-          "plan_ms": 0.0087,
-          "steady_ms": 6.7321,
-          "steady_stdev_ms": 0.0627
+          "outlier_values": [],
+          "plan_ms": 0.0085,
+          "steady": {
+            "mad": 0.0253,
+            "max": 6.2513,
+            "n": 30,
+            "outlier_count": 0,
+            "outlier_threshold": 6.2546,
+            "p50": 6.1788,
+            "p95": 6.2385
+          }
         },
         "A1P1": {
           "core": "P1 vendor host-API sub-blocks (composition canary)",
-          "first_ms": 0.6131,
+          "first_ms": 0.5416,
           "flow": "framework decomposition (materialized sub-transforms)",
           "max_rel_err": 3.8632532474966235e-07,
-          "plan_ms": 0.0087,
-          "steady_ms": 0.3751,
-          "steady_stdev_ms": 0.0037
+          "outlier_values": [
+            0.3021,
+            0.3029,
+            0.3077,
+            0.3102
+          ],
+          "plan_ms": 0.0085,
+          "steady": {
+            "mad": 0.0011,
+            "max": 0.3102,
+            "n": 30,
+            "outlier_count": 4,
+            "outlier_threshold": 0.3016,
+            "p50": 0.2983,
+            "p95": 0.3077
+          }
         },
         "vendor_full": {
           "core": "P1 vendor torch.fft",
-          "first_ms": 0.2603,
+          "first_ms": 0.2472,
           "flow": "external whole-transform baseline (not a cell)",
           "max_rel_err": 3.375466921732714e-07,
-          "steady_ms": 0.2414,
-          "steady_stdev_ms": 0.0011
+          "outlier_values": [
+            0.2435,
+            0.2442,
+            0.2449
+          ],
+          "plan_ms": 0.0085,
+          "steady": {
+            "mad": 0.0004,
+            "max": 0.2449,
+            "n": 30,
+            "outlier_count": 3,
+            "outlier_threshold": 0.2435,
+            "p50": 0.2422,
+            "p95": 0.2442
+          }
         }
       },
       "direction": "dit",
       "factor_scan": [
         {
           "A1P0": {
-            "first_ms": 6.9369,
+            "first_ms": 6.9085,
             "max_rel_err": 2.814388757605271e-07,
-            "steady_ms": 6.9082,
-            "steady_stdev_ms": 0.057
+            "outlier_values": [
+              6.9918
+            ],
+            "steady": {
+              "mad": 0.0389,
+              "max": 6.9918,
+              "n": 30,
+              "outlier_count": 1,
+              "outlier_threshold": 6.9352,
+              "p50": 6.8185,
+              "p95": 6.8944
+            }
           },
           "A1P1": {
-            "first_ms": 0.6013,
+            "first_ms": 0.5398,
             "max_rel_err": 3.8632532474966235e-07,
-            "steady_ms": 0.3747,
-            "steady_stdev_ms": 0.0028
+            "outlier_values": [
+              0.312,
+              0.3216
+            ],
+            "steady": {
+              "mad": 0.0032,
+              "max": 0.3216,
+              "n": 30,
+              "outlier_count": 2,
+              "outlier_threshold": 0.311,
+              "p50": 0.3014,
+              "p95": 0.312
+            }
           },
           "R": 64,
           "T": 16
         },
         {
           "A1P0": {
-            "first_ms": 10.9645,
+            "first_ms": 10.9855,
             "max_rel_err": 2.664319589336898e-07,
-            "steady_ms": 10.8528,
-            "steady_stdev_ms": 0.0889
+            "outlier_values": [
+              10.9546
+            ],
+            "steady": {
+              "mad": 0.0589,
+              "max": 10.9546,
+              "n": 30,
+              "outlier_count": 1,
+              "outlier_threshold": 10.8812,
+              "p50": 10.7047,
+              "p95": 10.8404
+            }
           },
           "A1P1": {
-            "first_ms": 0.5941,
+            "first_ms": 0.5515,
             "max_rel_err": 4.268123750814388e-07,
-            "steady_ms": 0.2818,
-            "steady_stdev_ms": 0.0037
+            "outlier_values": [
+              0.2153,
+              0.2153,
+              0.2174,
+              0.2174,
+              0.2185,
+              0.2265
+            ],
+            "steady": {
+              "mad": 0.0027,
+              "max": 0.2265,
+              "n": 30,
+              "outlier_count": 6,
+              "outlier_threshold": 0.2133,
+              "p50": 0.2053,
+              "p95": 0.2185
+            }
           },
           "R": 32,
           "T": 32
         },
         {
           "A1P0": {
-            "first_ms": 7.1936,
+            "first_ms": 6.5397,
             "max_rel_err": 4.4832672428346e-07,
-            "steady_ms": 6.8384,
-            "steady_stdev_ms": 0.0639
+            "outlier_values": [
+              6.8413,
+              6.8587
+            ],
+            "steady": {
+              "mad": 0.0426,
+              "max": 6.8587,
+              "n": 30,
+              "outlier_count": 2,
+              "outlier_threshold": 6.836,
+              "p50": 6.7083,
+              "p95": 6.8413
+            }
           },
           "A1P1": {
-            "first_ms": 0.6903,
+            "first_ms": 0.6282,
             "max_rel_err": 3.038407738937157e-07,
-            "steady_ms": 0.3841,
-            "steady_stdev_ms": 0.0042
+            "outlier_values": [
+              0.319,
+              0.3191,
+              0.3193,
+              0.32,
+              0.3207,
+              0.3214
+            ],
+            "steady": {
+              "mad": 0.0018,
+              "max": 0.3214,
+              "n": 30,
+              "outlier_count": 6,
+              "outlier_threshold": 0.3153,
+              "p50": 0.3099,
+              "p95": 0.3207
+            }
           },
           "R": 16,
           "T": 64
@@ -292,23 +553,15 @@
           },
           "core_launches_est": 13312,
           "element_bytes_assumed": 8,
-          "gm_bytes_framework_est": 2105344,
+          "gm_bytes_framework_est": 1581056,
           "materialized_boundaries": [
             {
               "bytes_est": 524288,
-              "op": "gather x.reshape(T,R).T -> blocks"
+              "op": "gather x.reshape(T,R).T -> blocks (single copy into plan buffer)"
             },
             {
-              "bytes_est": 524288,
-              "op": "stage1 -> grid transpose (k_t, m0)"
-            },
-            {
-              "bytes_est": 8192,
-              "op": "twiddle table (plan-cached after first use)"
-            },
-            {
-              "bytes_est": 524288,
-              "op": "grid -> flat2 copy (k_t, k_r rows)"
+              "bytes_est": 532480,
+              "op": "fused stage1 transpose + twiddle -> grid (one GM pass; tw table plan-cached)"
             },
             {
               "bytes_est": 524288,
@@ -329,23 +582,15 @@
           },
           "core_launches_est": 5120,
           "element_bytes_assumed": 8,
-          "gm_bytes_framework_est": 2105344,
+          "gm_bytes_framework_est": 1581056,
           "materialized_boundaries": [
             {
               "bytes_est": 524288,
-              "op": "gather x.reshape(T,R).T -> blocks"
+              "op": "gather x.reshape(T,R).T -> blocks (single copy into plan buffer)"
             },
             {
-              "bytes_est": 524288,
-              "op": "stage1 -> grid transpose (k_t, m0)"
-            },
-            {
-              "bytes_est": 8192,
-              "op": "twiddle table (plan-cached after first use)"
-            },
-            {
-              "bytes_est": 524288,
-              "op": "grid -> flat2 copy (k_t, k_r rows)"
+              "bytes_est": 532480,
+              "op": "fused stage1 transpose + twiddle -> grid (one GM pass; tw table plan-cached)"
             },
             {
               "bytes_est": 524288,
@@ -354,6 +599,18 @@
           ],
           "sync_points_per_timed_call": 1,
           "twiddle_and_row_tables": "plan-cached (HybridPlan fields)"
+        },
+        "A1P1_phase_profile": {
+          "core": "vendor",
+          "gather_ms": 0.0955,
+          "hidden_copies": [],
+          "scatter_ms": 0.0657,
+          "stage1_core_ms": 0.1651,
+          "stage1_out_contiguous": true,
+          "stage2_core_ms": 0.0579,
+          "stage2_in_contiguous": true,
+          "stage2_out_contiguous": true,
+          "twiddle_transpose_ms": 0.1029
         }
       },
       "tile": 64
@@ -364,12 +621,22 @@
       "cells": {
         "A0P0": {
           "core": "P0 triton local",
-          "first_ms": 6.4688,
-          "flow": "fused (m2 runner)",
+          "first_ms": 6.2668,
+          "flow": "fused (m2 runner, selector path)",
           "max_rel_err": 5.879338831883078e-07,
+          "outlier_values": [
+            1.5159
+          ],
           "plan_ms": 0.0,
-          "steady_ms": 1.4905,
-          "steady_stdev_ms": 0.0117
+          "steady": {
+            "mad": 0.0074,
+            "max": 1.5159,
+            "n": 30,
+            "outlier_count": 1,
+            "outlier_threshold": 1.4951,
+            "p50": 1.4731,
+            "p95": 1.4945
+          }
         },
         "A0P1": {
           "abstain": "fused local program cannot host an external whole-tensor core; the core boundary is the whole kernel",
@@ -379,61 +646,142 @@
         },
         "A1P0": {
           "core": "P0 triton local",
-          "first_ms": 4.057,
+          "first_ms": 4.104,
           "flow": "framework decomposition (materialized sub-transforms)",
           "max_rel_err": 3.5721289923599904e-07,
-          "plan_ms": 0.0079,
-          "steady_ms": 3.4166,
-          "steady_stdev_ms": 0.2213
+          "outlier_values": [
+            3.3763,
+            3.3807
+          ],
+          "plan_ms": 0.0054,
+          "steady": {
+            "mad": 0.0236,
+            "max": 3.3807,
+            "n": 30,
+            "outlier_count": 2,
+            "outlier_threshold": 3.3707,
+            "p50": 3.2999,
+            "p95": 3.3763
+          }
         },
         "A1P1": {
           "core": "P1 vendor host-API sub-blocks (composition canary)",
-          "first_ms": 0.6683,
+          "first_ms": 0.4967,
           "flow": "framework decomposition (materialized sub-transforms)",
           "max_rel_err": 4.6207222778840174e-07,
-          "plan_ms": 0.0079,
-          "steady_ms": 0.2809,
-          "steady_stdev_ms": 0.0051
+          "outlier_values": [
+            0.2125,
+            0.215,
+            0.2194,
+            0.22,
+            0.2241
+          ],
+          "plan_ms": 0.0054,
+          "steady": {
+            "mad": 0.002,
+            "max": 0.2241,
+            "n": 30,
+            "outlier_count": 5,
+            "outlier_threshold": 0.2111,
+            "p50": 0.2051,
+            "p95": 0.22
+          }
         },
         "vendor_full": {
           "core": "P1 vendor torch.fft",
-          "first_ms": 0.7166,
+          "first_ms": 0.7052,
           "flow": "external whole-transform baseline (not a cell)",
           "max_rel_err": 3.171509771923451e-07,
-          "steady_ms": 0.6576,
-          "steady_stdev_ms": 0.0032
+          "outlier_values": [
+            0.6676,
+            0.669,
+            0.6718,
+            0.6719
+          ],
+          "plan_ms": 0.0054,
+          "steady": {
+            "mad": 0.0025,
+            "max": 0.6719,
+            "n": 30,
+            "outlier_count": 4,
+            "outlier_threshold": 0.6675,
+            "p50": 0.66,
+            "p95": 0.6718
+          }
         }
       },
       "direction": "dit",
       "factor_scan": [
         {
           "A1P0": {
-            "first_ms": 4.1374,
+            "first_ms": 3.698,
             "max_rel_err": 3.5721289923599904e-07,
-            "steady_ms": 3.4379,
-            "steady_stdev_ms": 0.0358
+            "outlier_values": [
+              3.7215
+            ],
+            "steady": {
+              "mad": 0.0293,
+              "max": 3.7215,
+              "n": 30,
+              "outlier_count": 1,
+              "outlier_threshold": 3.7167,
+              "p50": 3.6287,
+              "p95": 3.6975
+            }
           },
           "A1P1": {
-            "first_ms": 0.5812,
+            "first_ms": 0.4974,
             "max_rel_err": 4.6207222778840174e-07,
-            "steady_ms": 0.2828,
-            "steady_stdev_ms": 0.0049
+            "outlier_values": [
+              0.3035,
+              0.3177
+            ],
+            "steady": {
+              "mad": 0.0099,
+              "max": 0.3177,
+              "n": 30,
+              "outlier_count": 2,
+              "outlier_threshold": 0.3023,
+              "p50": 0.2726,
+              "p95": 0.3035
+            }
           },
           "R": 64,
           "T": 32
         },
         {
           "A1P0": {
-            "first_ms": 3.8217,
+            "first_ms": 4.3277,
             "max_rel_err": 6.110727185199713e-07,
-            "steady_ms": 3.3946,
-            "steady_stdev_ms": 0.0552
+            "outlier_values": [
+              3.4299,
+              3.4459,
+              3.4476,
+              3.5578
+            ],
+            "steady": {
+              "mad": 0.0208,
+              "max": 3.5578,
+              "n": 30,
+              "outlier_count": 4,
+              "outlier_threshold": 3.4238,
+              "p50": 3.3615,
+              "p95": 3.4476
+            }
           },
           "A1P1": {
-            "first_ms": 0.575,
+            "first_ms": 0.5085,
             "max_rel_err": 4.952424554369727e-07,
-            "steady_ms": 0.2836,
-            "steady_stdev_ms": 0.0048
+            "outlier_values": [],
+            "steady": {
+              "mad": 0.0058,
+              "max": 0.2294,
+              "n": 30,
+              "outlier_count": 0,
+              "outlier_threshold": 0.2353,
+              "p50": 0.2178,
+              "p95": 0.2281
+            }
           },
           "R": 32,
           "T": 64
@@ -451,23 +799,15 @@
           },
           "core_launches_est": 4608,
           "element_bytes_assumed": 8,
-          "gm_bytes_framework_est": 1064960,
+          "gm_bytes_framework_est": 802816,
           "materialized_boundaries": [
             {
               "bytes_est": 262144,
-              "op": "gather x.reshape(T,R).T -> blocks"
+              "op": "gather x.reshape(T,R).T -> blocks (single copy into plan buffer)"
             },
             {
-              "bytes_est": 262144,
-              "op": "stage1 -> grid transpose (k_t, m0)"
-            },
-            {
-              "bytes_est": 16384,
-              "op": "twiddle table (plan-cached after first use)"
-            },
-            {
-              "bytes_est": 262144,
-              "op": "grid -> flat2 copy (k_t, k_r rows)"
+              "bytes_est": 278528,
+              "op": "fused stage1 transpose + twiddle -> grid (one GM pass; tw table plan-cached)"
             },
             {
               "bytes_est": 262144,
@@ -488,23 +828,15 @@
           },
           "core_launches_est": 1536,
           "element_bytes_assumed": 8,
-          "gm_bytes_framework_est": 1064960,
+          "gm_bytes_framework_est": 802816,
           "materialized_boundaries": [
             {
               "bytes_est": 262144,
-              "op": "gather x.reshape(T,R).T -> blocks"
+              "op": "gather x.reshape(T,R).T -> blocks (single copy into plan buffer)"
             },
             {
-              "bytes_est": 262144,
-              "op": "stage1 -> grid transpose (k_t, m0)"
-            },
-            {
-              "bytes_est": 16384,
-              "op": "twiddle table (plan-cached after first use)"
-            },
-            {
-              "bytes_est": 262144,
-              "op": "grid -> flat2 copy (k_t, k_r rows)"
+              "bytes_est": 278528,
+              "op": "fused stage1 transpose + twiddle -> grid (one GM pass; tw table plan-cached)"
             },
             {
               "bytes_est": 262144,
@@ -513,6 +845,18 @@
           ],
           "sync_points_per_timed_call": 1,
           "twiddle_and_row_tables": "plan-cached (HybridPlan fields)"
+        },
+        "A1P1_phase_profile": {
+          "core": "vendor",
+          "gather_ms": 0.1161,
+          "hidden_copies": [],
+          "scatter_ms": 0.0647,
+          "stage1_core_ms": 0.0347,
+          "stage1_out_contiguous": true,
+          "stage2_core_ms": 0.0385,
+          "stage2_in_contiguous": true,
+          "stage2_out_contiguous": true,
+          "twiddle_transpose_ms": 0.1057
         }
       },
       "tile": 64
