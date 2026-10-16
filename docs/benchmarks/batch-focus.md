@@ -189,7 +189,7 @@ correctness gate against the NumPy reference first. The vendor
 A0P1 abstains by construction (fused core boundary). The vendor whole transform is an external baseline, not a cell. Setup = first call incl. compile; exec = median wall ms, explicit synchronize. A1 cells pay the framework's gathers, twiddle materialization, transposes, and digit-reversal transpose — the IO the review asked us to attribute separately.
 
 Reading (measured, single card): the decomposition flow with our
-triton local core (A1P0) pays **4–8×** over the fused path
+triton local core (A1P0) pays **2.6–3.4×** over the fused path
 (A0P0) — framework gathers, transposes, and twiddle
 materialization dominate exactly as the review suspected. With
 the vendor's per-block core (A1P1) the same decomposition is

@@ -503,7 +503,7 @@ def inventory_section(four_cell: dict | None) -> list[str]:
         four_cell.get("note", ""),
         "",
         "Reading (measured, single card): the decomposition flow with our",
-        "triton local core (A1P0) pays **4–8×** over the fused path",
+        "triton local core (A1P0) pays **2.6–3.4×** over the fused path",
         "(A0P0) — framework gathers, transposes, and twiddle",
         "materialization dominate exactly as the review suspected. With",
         "the vendor's per-block core (A1P1) the same decomposition is",
