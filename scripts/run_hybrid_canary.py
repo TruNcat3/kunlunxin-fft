@@ -394,6 +394,7 @@ def main() -> None:
             "guard": guard,
         })
 
+    commits = {r["provenance"]["commit"] for r in results}
     single_commit = len(commits) == 1
     result = {
         "kind": "issue-3-hybrid-canary",
