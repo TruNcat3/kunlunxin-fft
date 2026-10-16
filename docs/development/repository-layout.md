@@ -31,4 +31,4 @@ Triton kernel；`matrices.py` 生成 M2/M3 的 host 常量。
 - `scripts/plot_release_docs.py`：从正式 summary 生成 README 图；
 - `scripts/plot_results.py`：从 Phase 3 JSON 生成消融图。
 
-下一页：[P800 设备路径](device-stack.md)。
+下一页：[性能与故障诊断](profiling.md)。

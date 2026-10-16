@@ -281,11 +281,11 @@ def vendor_gap_section(pairs) -> list[str]:
         "The four-cell ablation (below) shows the *shape* of the gap:",
         "the vendor's small-block kernels are strong enough that a",
         "framework composition calling them on materialized sub-blocks",
-        "(A1P1) comes close at 1024 and flips the comparison at one",
-        "holdout point — see the four-cell section for the measured",
-        "per-shape numbers. Closing the focus-row gap means better",
-        "local-stage kernels or a guard-passing hybrid entry, neither of",
-        "which this round claims.",
+        "(A1P1) is shape-dependent. The later independent-process canary",
+        "keeps both 1024 points negative but flips N=2048,B=16 by 2.87×",
+        "versus the vendor whole transform. That A1P1 result is reported",
+        "separately as experimental evidence; it is not a focus-model",
+        "candidate and is not promoted into the frozen selector.",
         "",
     ]
     return lines
@@ -333,7 +333,7 @@ def stability_section(pairs) -> list[str]:
     return lines
 
 
-def holdout_section(pairs, holdout) -> list[str]:
+def holdout_section(pairs, holdout, calib=None) -> list[str]:
     lines = [
         "## Full-space holdout (9 published (tile, rows) points)",
         "",
@@ -363,7 +363,8 @@ def holdout_section(pairs, holdout) -> list[str]:
         # The model's pick is its *predicted* top-1 (bounded_search at
         # generation time, same declared constants, never refitted);
         # regret measures that pick against the measured full space.
-        ranked = bounded_search("m2_batch", sa["N"], sa["batch"], k=3)
+        ranked = bounded_search(
+            "m2_batch", sa["N"], sa["batch"], k=3, calib=calib)
         model_pick = (ranked[0]["tile"], ranked[0]["rows"])
         top3 = {(r["tile"], r["rows"]) for r in ranked}
         hit = best in top3
@@ -980,27 +981,28 @@ python scripts/build_selector_table.py \\
   --out config/selector_table.json
 
 # 4. four-cell ablation + P2 canary
-CUDA_VISIBLE_DEVICES=<healthy card> timeout -s KILL 1800 \
-  python scripts/four_cell_ablation.py \
-    --shapes 1024x16,1024x64,2048x16 \
+CUDA_VISIBLE_DEVICES=<healthy card> timeout -s KILL 1800 \\
+  python scripts/four_cell_ablation.py \\
+    --shapes 1024x16,1024x64,2048x16 \\
     --out results/p800/four_cell.json
-CUDA_VISIBLE_DEVICES=<healthy card> timeout -s KILL 1800 \
-  python scripts/run_hybrid_canary.py \
-    --shapes 1024x16,1024x64,2048x16 \
-    --sessions 3 --trials 30 \
+CUDA_VISIBLE_DEVICES=<healthy card> timeout -s KILL 1800 \\
+  python scripts/run_hybrid_canary.py \\
+    --shapes 1024x16,1024x64,2048x16 \\
+    --sessions 3 --trials 30 \\
     --out results/p800/hybrid_canary.json
 
 # 5. model validation + this report
-python scripts/validate_cost_model.py \
-  results/p800/batch_focus_a/summary.json \
-  results/p800/batch_holdout/summary.json \
+python scripts/validate_cost_model.py \\
+  results/p800/batch_focus_a/summary.json \\
+  results/p800/batch_focus_b/summary.json \\
+  results/p800/batch_holdout/summary.json \\
   --out results/p800/model_validation.json
-python scripts/gen_focus_report.py \
-  --focus results/p800/batch_focus_a results/p800/batch_focus_b \
-  --holdout results/p800/batch_holdout \
-  --validation results/p800/model_validation.json \
-  --four-cell results/p800/four_cell.json \
-  --hybrid-canary results/p800/hybrid_canary.json \
+python scripts/gen_focus_report.py \\
+  --focus results/p800/batch_focus_a results/p800/batch_focus_b \\
+  --holdout results/p800/batch_holdout \\
+  --validation results/p800/model_validation.json \\
+  --four-cell results/p800/four_cell.json \\
+  --hybrid-canary results/p800/hybrid_canary.json \\
   --out docs/benchmarks/batch-focus.md
 
 # 6. tests
@@ -1039,7 +1041,7 @@ def main() -> None:
                      if args.hybrid_canary.exists() else None)
 
     headline, exact = headline_section(pairs)
-    out = ["# Batch focus report — issue #3 (P800)", ""]
+    out = ["# Batch / model validation report (P800)", ""]
     out += provenance_section(args.focus, args.holdout, table, calib,
                               four_cell=four_cell,
                               hybrid_canary=hybrid_canary)
@@ -1047,7 +1049,7 @@ def main() -> None:
     out += attribution_section(pairs)
     out += vendor_gap_section(pairs)
     out += stability_section(pairs)
-    out += holdout_section(pairs, holdout)
+    out += holdout_section(pairs, holdout, calib=calib)
     out += validation_section(validation)
     out += canary_section(pairs)
     out += inventory_section(four_cell)
@@ -1073,12 +1075,15 @@ def main() -> None:
         "rounds enter `config/selector_table.json`, validated against the "
         "shared design space and the live env fingerprint at load time",
         "- experimental: holdout rows, packet canary, bounded-search "
-        "variants — reported above, never promoted on a single round",
+        "variants and A1P1 external-core canary — reported above, never "
+        "promoted on a single round",
         "",
         REPRO,
+        "",
+        "下一页：[外部计算核心证据](external-cores.md)。",
     ]
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text("\n".join(out))
+    args.out.write_text("\n".join(out) + "\n")
     print(f"wrote {args.out} "
           f"({len(out)} lines, exact winner agreement {exact}/8)")
 

@@ -34,6 +34,20 @@ selector 和保守 fallback。
 [测量协议](docs/benchmarks/methodology.md)。按实验目的继续阅读[C2C 性能](docs/benchmarks/c2c.md)、
 [端到端口径](docs/benchmarks/end-to-end.md)和[规模切片](docs/benchmarks/scale.md)。
 
+### 最新迁移验收
+
+Issue #3 已完成并关闭。该轮证据不改写上面的冻结 release 快照，而是验证新增 batch 核心、
+性能模型和外部计算核心组合：
+
+| 验收项 | 最新结果 | 发布边界 |
+|---|---|---|
+| Batch 局部核心 | `N=1024/2048, B=16/64` 相对旧 M4 incumbent 提升 `2.2x--2.7x` | M2/M5 参与比较；通过 2% guard 的 M2 local-fused 项进入冻结 selector |
+| 模型筛选 | full-space holdout top-3 命中 `6/6`；top-1 regret `0.00%--0.22%`，均值 `0.0816%` | 模型只筛选候选，最终仍由实测决定 |
+| 外部核心组合 | `N=2048, B=16` 的 A1P1 为 `0.2298 ms`，vendor 为 `0.6586 ms`，即 `2.87x` | 仅 experimental canary；`N=1024` 两点仍落后，不进入 selector |
+
+完整协议、稳定性和负结果见[批量与模型验证](docs/benchmarks/batch-focus.md)。三类数字必须分开
+阅读：冻结 release、已晋升的 focus selector 项、未晋升的 experimental canary。
+
 ## 快速开始
 
 需要厂商 xpytorch 环境（`torch + torch_xmlir + Triton XPU backend`）。脚本检查现有环境，
@@ -94,13 +108,14 @@ Kunlunxin-FFT 保留这套方法层抽象，但所有 kernel、布局和 lowerin
 |---|---|
 | 方法抽象与合法 lowering | 已迁移并实测 M0--M5 |
 | 单变换局部融合/核心选择 | 已完成首轮优化，代表点相对 M0 为 `1.23x--2.07x` |
-| Batch 高效局部核心 | 尚未接入 M2/M5；当前主要是 M4 global-stage radix-2 |
-| 自动硬件 profile/成本模型 | 路线图中，当前使用静态 profile 与冻结表 |
+| Batch 高效局部核心 | 已接入 matrix/radix-4/local-fused 候选；focus 点相对旧 incumbent 为 `2.2x--2.7x` |
+| 硬件 profile/成本模型 | 手动 probe、环境 fail-closed、结构模型、bounded search 与 holdout 已实现；安装期一键自动化仍在路线图中 |
+| 外部计算核心组合 | 已完成 materialized sub-transform canary；只在 `N=2048,B=16` 形成稳定正证据，仍属实验路径 |
 | 跨 worker persistent pipeline | 路线图中，不是当前发布路径 |
 
 新增实现应先阅读[增加设计点](docs/development/adding-design-points.md)和[测试策略](docs/testing.md)，
-再更新 selector 与发布证据。当前收敛任务集中在
-[Issue #3](https://github.com/TruNcat3/kunlunxin-fft/issues/3)。
+再更新 selector 与发布证据。[Issue #3](https://github.com/TruNcat3/kunlunxin-fft/issues/3)
+已作为本轮 batch/模型/外部核心迁移验收关闭；后续未完成项见[未来计划](docs/roadmap.md)。
 
 ## 阅读顺序
 

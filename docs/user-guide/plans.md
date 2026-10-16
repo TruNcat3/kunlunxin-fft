@@ -3,7 +3,7 @@
 Kunlunxin-FFT 把“决定运行什么”与“重复执行”分开，避免在稳态循环中反复查表。
 
 ```text
-静态硬件 profile + frozen selector table
+静态硬件 profile + live env fingerprint + frozen selector table
                 -> plan_fft(shape, semantics)
                 -> ExecutionPlan
                 -> execute_fft_plan(plan, x) repeated
@@ -52,8 +52,9 @@ print(plan)
 
 ## 换硬件
 
-不要修改 `config/device.json` 的设备名后继续使用旧表。profile hash 只是配置签名，并不自动探测
-实际硬件。新硬件应重新验证 lowering、采集候选、构建表并保留独立 provenance；当前自动化缺口见
+不要修改 `config/device.json` 的设备名后继续使用旧表。profile hash 是静态配置签名，live
+driver/toolchain/设备属性由 `scripts/hw_probe.py` 形成 `env_hash`；两者都匹配才允许复用冻结表。
+新硬件应重新验证 lowering、采集候选、构建表并保留独立 provenance；安装期一键自动化缺口见
 [未来计划](../roadmap.md)。
 
 下一页：[Python API](../reference/api.md)。

@@ -64,7 +64,7 @@ spread/folded。450 条 long rows 全部通过阈值，最坏误差 `1.126129e-5
 - M5 radix-4：固定 global-stage flow 时，DIT 在 `N<=1024` 约 `1.03x`，`N>=4096` 约
   `1.69x`，说明计算核心偏好随尺寸变化。
 
-## Round E：批量聚焦（issue #3，clean-commit 重跑）
+## Round E：批量与模型迁移验收（Issue #3 已关闭）
 
 正式 release matrix 中四个重点 shape（N=1024/2048 × B=16/64，双向）在聚焦前选中
 M4 fallback（对 M0 约 `1.0x`）。评审要求以干净提交重跑重点矩阵：两轮独立 focus
@@ -121,5 +121,8 @@ M4 fallback（对 M0 约 `1.0x`）。评审要求以干净提交重跑重点矩�
   路径上 vendor 仍快 `2.3–8.9x`（融合后 A1P1@N2048B16 多进程下反超，见上）。
 - 完整证据（provenance、5 问作答、holdout 明细、外部核 inventory、复现命令）
   见[批量聚焦报告](batch-focus.md)与[外部核清单](external-cores.md)。
+
+该轮已经完成代码、数据与 provenance 验收并关闭。这里的 focus winner 已按 guard 进入冻结
+selector；A1P1 多进程结果仍是 experimental canary，二者不能合并为同一种“发布性能”。
 
 下一页：[测量协议](methodology.md)。
