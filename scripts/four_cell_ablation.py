@@ -116,8 +116,15 @@ def _provenance(table: dict, env_hash: str) -> dict:
 
 
 def _timed_cell(fn, x, ref_np, warmup: int, trials: int) -> dict:
-    """Correctness on the FIRST call, then warmup, then steady stats."""
+    """Correctness on the FIRST call, then warmup, then steady stats.
+
+    Device-stack symbols are imported here (not at module scope) so the
+    freshness gate in :func:`main` still runs before any torch/triton
+    import; this function is only ever called after that gate.
+    """
     import torch
+    from src.xpu.adapter_hybrid import time_cell
+    from src.xpu.error_metric import max_rel_error
     t0 = _time.perf_counter()
     y = fn(x)
     torch.cuda.synchronize(x.device)
