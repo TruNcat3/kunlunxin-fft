@@ -70,7 +70,7 @@ The holdout round enumerates the entire design space for three
 shapes (never used to tune the model's constants) and reports
 where the bounded search's pick lands:
 
-| shape | holdout best | best ms | spread worst/best | bounded top-3 (focus A) in holdout top-3? | holdout regret of model pick |
+| shape | holdout best | best ms | spread worst/best | model predicted top-3 contains holdout best? | holdout regret of model top-1 |
 |---|---|---|---|---|---|
 | N1024B16_dif | `(128, 8)` | 0.7302 | 40% | yes (model top-3 [(128, 4), (128, 8), (128, 16)]) | 0.22% (`(128, 16)`) |
 | N1024B16_dit | `(128, 16)` | 0.6969 | 41% | yes (model top-3 [(128, 4), (128, 8), (128, 16)]) | 0.00% (`(128, 16)`) |

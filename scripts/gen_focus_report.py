@@ -234,8 +234,9 @@ def holdout_section(pairs, holdout) -> list[str]:
         "shapes (never used to tune the model's constants) and reports",
         "where the bounded search's pick lands:",
         "",
-        "| shape | holdout best | best ms | spread worst/best | bounded "
-        "top-3 (focus A) in holdout top-3? | holdout regret of model pick |",
+        "| shape | holdout best | best ms | spread worst/best | model "
+        "predicted top-3 contains holdout best? | holdout regret of "
+        "model top-1 |",
         "|---|---|---|---|---|---|",
     ]
     hs = {_shape_key(s): s for s in holdout["shapes"]}
