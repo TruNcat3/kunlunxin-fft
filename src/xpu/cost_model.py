@@ -21,6 +21,7 @@ Families use the protocol names of ``scripts/run_batch_release.py``.
 from __future__ import annotations
 
 from .calibration import load as load_calibration
+from .selector import GUARD_PCT  # single promotion guard for model+table
 
 # a-priori compute efficiencies (declared; never fitted to run data)
 EFFICIENCY = {
@@ -29,11 +30,16 @@ EFFICIENCY = {
     "dot-matrix": 0.30,      # M2 register-resident matrix group
 }
 
-_M2_SPACE = tuple(
-    {"tile": t, "rows": r}
-    for t in (32, 64, 128)
-    for r in (4, 8, 16)
-)
+def m2_space() -> list[dict]:
+    """The published M2 search space -- read from the single shared
+    candidate description (config/butterfly_space.json P.register_matrix),
+    the same source the harness enumeration, lowering contract and
+    selector validation use (issue #3 fix: one design space)."""
+    from .config import DesignSpace
+
+    sp = DesignSpace.load()
+    return [{"tile": t, "rows": r}
+            for t in sp.matrix_tiles for r in sp.matrix_rows]
 
 
 def _log2(n: int) -> int:
@@ -127,7 +133,7 @@ def bounded_search(family: str, n: int, batch: int, k: int = 3,
         raise ValueError(
             f"bounded search supports m2_batch (the only tunable family); "
             f"got {family!r}")
-    space = list(space) if space is not None else [dict(s) for s in _M2_SPACE]
+    space = list(space) if space is not None else m2_space()
     scored = []
     for params in space:
         try:
@@ -139,7 +145,38 @@ def bounded_search(family: str, n: int, batch: int, k: int = 3,
     return [p for _, p in scored[:max(0, int(k))]]
 
 
-def validate(records, incumbent="incumbent_m4_folded") -> dict:
+def records_from_summary(summary: dict) -> list[dict]:
+    """Measured decision rows from a run_batch_release summary.json dict.
+
+    Skips non-finite rows, candidates that failed the correctness
+    threshold, and candidates whose session/trial evidence is incomplete
+    (``complete: false`` when the artifact records it) -- the same rows
+    the selector would refuse to promote.
+    """
+    thr = float((summary.get("manifest") or {}).get("error_threshold")
+                or 1e-4)
+    out = []
+    for sh in summary.get("shapes") or []:
+        for name, c in (sh.get("candidates") or {}).items():
+            import math
+            ms = c.get("median_ms")
+            if not isinstance(ms, (int, float)) or not math.isfinite(ms) \
+                    or ms <= 0:
+                continue
+            err = c.get("err_max", c.get("err"))
+            if not isinstance(err, (int, float)) or not math.isfinite(err) \
+                    or err >= thr:
+                continue
+            if c.get("complete") is False:
+                continue
+            out.append({"name": name, "N": sh["N"], "batch": sh["batch"],
+                        "direction": sh.get("direction"),
+                        "measured_ms": ms, "params": c.get("params")})
+    return out
+
+
+def validate(records, incumbent="incumbent_m4_folded",
+             guard_pct: float | None = None) -> dict:
     """Holdout metrics vs measured rows (never used to tune constants).
 
     ``records``: iterable of dicts with keys family-or-name, N, batch,
@@ -147,12 +184,20 @@ def validate(records, incumbent="incumbent_m4_folded") -> dict:
 
     * ``mdape`` — median absolute % error per family (model vs measured);
     * ``guard_agreement`` — fraction of (challenger, incumbent) pairs where
-      model and measurement agree on which side of the guard line the
-      challenger lands (the stable incumbent participates explicitly);
-    * ``topk_hit`` — fraction of shapes where the model's predicted-best
-      measured variant is within K of the measured-best (K = 3).
+      model and measurement agree on whether the challenger **clears the
+      formal promotion guard** (``GUARD_PCT``, default 2% -- the same line
+      the selector uses; sign-of-gain agreement is deliberately NOT the
+      metric); the stable incumbent participates explicitly;
+    * ``topk_hit`` / ``topk_shapes`` -- legacy measured-subset metric (K =
+      3), optimistic when only the model's own top-K was measured;
+    * ``topk_full_space`` -- for shapes where **all nine** published m2
+      (tile, rows) points were measured (the holdout protocol): ``recall``
+      (model top-3 contains the measured best) and mean selection
+      ``regret_pct`` over the full space.
     """
     import statistics
+
+    guard = float(GUARD_PCT if guard_pct is None else guard_pct)
 
     rows = []
     for r in records:
@@ -192,14 +237,25 @@ def validate(records, incumbent="incumbent_m4_folded") -> dict:
         for r in shape_rows:
             if r["name"] in (incumbent, "vendor", "selected"):
                 continue
-            meas_gain = inc_r["measured_ms"] - r["measured_ms"]
-            pred_gain = inc_r["pred_ms"] - r["pred_ms"]
+            # promotion decision, NOT sign-of-gain: both sides must
+            # clear the same formal guard line the selector uses
+            meas_promote = (
+                (inc_r["measured_ms"] - r["measured_ms"])
+                / inc_r["measured_ms"] * 100.0) >= guard
+            pred_promote = (
+                (inc_r["pred_ms"] - r["pred_ms"])
+                / inc_r["pred_ms"] * 100.0) >= guard
             pairs += 1
-            if (meas_gain > 0) == (pred_gain > 0):
+            if meas_promote == pred_promote:
                 agree += 1
 
-    # top-K hit among measured M2 variants (m2 family), per shape
+    # top-K metrics per shape. `topk_hit` stays the measured-subset
+    # metric (optimistic when only the model's own top-K was measured);
+    # `topk_full_space` is computed ONLY where all nine published m2
+    # points were measured (issue #3 review fix: full-space recall/regret).
     topk_hits, topk_shapes = 0, 0
+    full_recall, full_total, regrets = 0, 0, []
+    full_space = {(int(s["tile"]), int(s["rows"])) for s in m2_space()}
     for shape_rows in by_shape.values():
         m2 = [r for r in shape_rows if r["family"] == "m2_batch"]
         if len(m2) < 2:
@@ -210,14 +266,36 @@ def validate(records, incumbent="incumbent_m4_folded") -> dict:
         names_ranked = [r["name"] for r in ranked[:3]]
         if measured_best["name"] in names_ranked:
             topk_hits += 1
+        measured_space = set()
+        for r in m2:
+            prm = r.get("params") or {}
+            measured_space.add((int(prm.get("tile", 64)),
+                                int(prm.get("rows", 8))))
+        if measured_space >= full_space:
+            full_total += 1
+            pick = ranked[0]
+            if measured_best["name"] in names_ranked:
+                full_recall += 1
+            regrets.append(
+                (pick["measured_ms"] - measured_best["measured_ms"])
+                / measured_best["measured_ms"] * 100.0)
 
     return {
         "n_records": len(rows),
         "mdape_pct": mdape,
+        "guard_pct": guard,
         "guard_agreement": (agree / pairs) if pairs else None,
         "guard_pairs": pairs,
         "topk_hit": (topk_hits / topk_shapes) if topk_shapes else None,
         "topk_shapes": topk_shapes,
+        "topk_full_space": {
+            "recall": (full_recall / full_total) if full_total else None,
+            "shapes": full_total,
+            "mean_regret_pct": (sum(regrets) / len(regrets))
+            if regrets else None,
+            "regrets_pct": regrets,
+            "space_size": len(full_space),
+        },
         "constants_declared": True,
         "fitted": False,
     }

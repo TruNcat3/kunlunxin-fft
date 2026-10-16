@@ -140,18 +140,23 @@ def _entry_block(table: dict, sel: Selection) -> int:
 
 def plan_fft(direction: str, n: int, batch: int = 1, precision: str = "fp32",
              profile_hash: str | None = None,
-             table: dict | None = None) -> ExecutionPlan:
+             table: dict | None = None,
+             env_hash: str | None = "auto") -> ExecutionPlan:
     """Resolve the frozen table onto a concrete plan (host-only, no torch).
 
     Unsupported direction/precision raise ``ValueError`` before the table
     query — they must never fall back onto a different transform.
     ``profile_hash=None`` abstains to M0; an undispatchable table entry
     (e.g. a hypothetical batched M1) falls back to M0 with the reason.
+    ``env_hash`` (default ``"auto"``) re-verifies that a table bound to an
+    environment fingerprint is being used on that same device/runtime/
+    compiler stack; unknown or stale environment falls back to M0.
     """
     _validate_semantics(direction, precision)
     table = table if table is not None else load_table()
     sel = select(direction, n, batch=batch, precision=precision,
-                 profile_hash=profile_hash, table=table)
+                 profile_hash=profile_hash, table=table,
+                 env_hash=env_hash)
     if not sel.selected:
         return _m0_plan(n, batch, direction, precision, sel.reason, True,
                         block=_entry_block(table, sel))

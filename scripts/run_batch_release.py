@@ -48,6 +48,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import math
 import os
 import random
 import statistics
@@ -62,6 +63,26 @@ sys.path.insert(0, SCRIPTS)
 
 import run_release_matrix as relm  # noqa: E402  (import-safe module)
 
+def _parse_shapes(spec):
+    """\"1024x16,2048x64\" -> [(1024, 16), ...]; None/'' -> None."""
+    if not spec:
+        return None
+    out = []
+    for part in spec.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        n_s, b_s = part.lower().split("x")
+        n, b = int(n_s), int(b_s)
+        if n <= 0 or (n & (n - 1)) or b <= 0:
+            raise SystemExit(f"bad --shapes entry {part!r} "
+                             "(N must be a power of two, B > 0)")
+        out.append((n, b))
+    if not out:
+        raise SystemExit("--shapes given but empty")
+    return out
+
+
 PROTOCOL_ID = (
     "batch-release-v1:focus:plan-reuse:interleave:correctness-first:3sess:p11"
 )
@@ -74,8 +95,10 @@ SHAPES = [
 ]
 CANARY_SHAPE = (1024, 16)
 DIRECTION = "dit"
-TILE = 64
-ROWS = 8
+from src.xpu.config import DesignSpace  # noqa: E402  (single design space)
+
+_space = DesignSpace.load()
+TILE, ROWS = _space.matrix_default or (64, 8)
 
 CANDIDATES = [
     "baseline_m0_rank1_loop",
@@ -89,6 +112,10 @@ CANDIDATES = [
 CANARY_CANDIDATES = ["m2_packet_td1", "m2_packet_td2"]
 
 METRIC_COLS = ["err", "correct", "status"]
+
+
+def _finite_positive(v) -> bool:
+    return isinstance(v, (int, float)) and math.isfinite(v) and v > 0
 
 
 def _log2(n: int) -> int:
@@ -266,13 +293,14 @@ def _m0_rank1_loop(x, direction, block):
     return torch.stack(rows, dim=0)
 
 
-def _build_candidates(x, n, batch, direction, block, table, ph):
+def _build_candidates(x, n, batch, direction, block, table, ph,
+                      protocol=PROTOCOL_ID, full_space=False):
     """name -> (callable, attribution dict incl. P1.1 axes)."""
     from src.xpu.entry import execute_fft_plan, plan_fft
     from src.xpu import runner
 
     def _meta(name, extra=None):
-        m = _row_meta(name, n, batch, block, direction, ph, PROTOCOL_ID)
+        m = _row_meta(name, n, batch, block, direction, ph, protocol)
         m.update(extra or {})
         return m
 
@@ -344,7 +372,7 @@ def _build_candidates(x, n, batch, direction, block, table, ph):
                  dtype="complex64",
                  layout="(B,N) C-contiguous complex; kernels split re/im "
                         "(SOA)",
-                 profile_hash=ph, protocol_id=PROTOCOL_ID,
+                 profile_hash=ph, protocol_id=protocol,
                  timed_scope="api wall time (dispatch+alloc+layout+sync), "
                              "ms",
                  tile=plan.params.get("tile") if isinstance(plan.params, dict)
@@ -378,11 +406,21 @@ def _build_candidates(x, n, batch, direction, block, table, ph):
     # P1.3 bounded search: model screens tile x rows, measurement decides.
     # Any name starting with m2_t is soft-gated in run_shape (a failing
     # experimental variant is recorded and dropped, never fatal).
+    screen_failure = None
     try:
         from src.xpu import cost_model as _cm
-        tops = _cm.bounded_search("m2_batch", n, batch, k=3)
-    except Exception:  # noqa: BLE001  (screening must not kill the run)
+        if full_space:
+            tops = [dict(s) for s in _cm.m2_space()]
+        else:
+            tops = _cm.bounded_search("m2_batch", n, batch, k=3)
+    except Exception as e:  # noqa: BLE001  (screening must not kill run)
         tops = []
+        screen_failure = f"{type(e).__name__}: {e}"
+        if full_space:
+            raise SystemExit(
+                f"[{n}x{batch}] full-space enumeration failed: "
+                f"{screen_failure} (holdout run requires the published "
+                "space; aborting instead of silently shrinking it)")
     for prm in tops:
         pt, pr = int(prm["tile"]), int(prm["rows"])
         if (pt, pr) == (TILE, ROWS):
@@ -400,8 +438,11 @@ def _build_candidates(x, n, batch, direction, block, table, ph):
                  params={"variant": "spread", "tile": pt, "rows": pr,
                          "batch": batch},
                  fallback=False,
-                 reason="cost-model bounded-search top-K (issue #3 P1.3)"))
-    return cands, plan
+                 reason=("full published m2 space (holdout, issue #3 fix)"
+                         if full_space else
+                         "cost-model bounded-search top-K "
+                         "(issue #3 P1.3)")))
+    return cands, plan, screen_failure
 
 
 def _vendor_call(x):
@@ -435,7 +476,7 @@ def _canary_candidates(x, n, batch, direction, block):
 # per-shape run
 # --------------------------------------------------------------------------
 def run_shape(session, n, batch, direction, trials, seed, table, raw,
-              warmup):
+              warmup, protocol=PROTOCOL_ID, full_space=False):
     import torch
     from src.xpu.config import DeviceProfile
 
@@ -459,10 +500,12 @@ def run_shape(session, n, batch, direction, trials, seed, table, raw,
                   f"fallback", flush=True)
     inc_block = int(entry.get("incumbent_block") or entry.get("block") or 1024)
 
-    cands, plan = _build_candidates(x, n, batch, direction, inc_block,
-                                    table, ph)
-    # The Td=2 packet canary is DIT-only this round (no DIF interleave).
-    if (n, batch) == CANARY_SHAPE and direction == "dit":
+    cands, plan, screen_failure = _build_candidates(
+        x, n, batch, direction, inc_block, table, ph, protocol=protocol,
+        full_space=full_space)
+    # The Td=2 packet canary is DIT-only this round (no DIF interleave);
+    # holdout runs enumerate the m2 space and skip the packet canary.
+    if not full_space and (n, batch) == CANARY_SHAPE and direction == "dit":
         cands.update(_canary_candidates(x, n, batch, direction, inc_block))
 
     # plan creation cost (diagnostic; not part of interleaved timing)
@@ -478,6 +521,10 @@ def run_shape(session, n, batch, direction, trials, seed, table, raw,
     # experimental and soft-gate (recorded failure, dropped from timing).
     errs = {}
     extras_failed = []
+    if screen_failure:
+        extras_failed.append({
+            "candidate": "m2_t* (space screening)", "status": "screen-failed",
+            "detail": screen_failure})
     for name in list(cands):
         fn, _d = cands[name]
         is_extra = name.startswith("m2_t")
@@ -600,12 +647,18 @@ def run_child(args):
     table = load_table()
     seed = args.seed + args.session * 7919
     results = []
-    print(f"session {args.session}: seed={seed}", flush=True)
-    for n, b in SHAPES:
+    shapes = _parse_shapes(args.shapes) or SHAPES
+    protocol = PROTOCOL_ID
+    if args.full_space:
+        protocol += ":m2-fullspace-holdout"
+    print(f"session {args.session}: seed={seed} protocol={protocol}",
+          flush=True)
+    for n, b in shapes:
         for direction in ("dit", "dif"):
             results.append(run_shape(args.session, n, b, direction,
                                      args.trials, seed, table, raw,
-                                     args.warmup))
+                                     args.warmup, protocol=protocol,
+                                     full_space=args.full_space))
     with open(os.path.join(out_dir,
                            f"summary_session{args.session}.json"), "w") as f:
         json.dump({"session": args.session, "shapes": results}, f, indent=2)
@@ -633,9 +686,12 @@ def _vendor_probe():
     return out
 
 
-def _manifest(seed, warmup, trials, sessions):
+def _manifest(seed, warmup, trials, sessions, shapes=None,
+              full_space=False):
     import torch
     from src.xpu.config import DeviceProfile
+    from src.xpu.envcheck import collect as _collect_env
+    from src.xpu.envcheck import env_hash as _current_env_hash
     p = DeviceProfile.load()
     table_path = os.path.join(ROOT, "config", "selector_table.json")
     toolchain = f"torch {torch.__version__} + torch_xmlir"
@@ -646,14 +702,26 @@ def _manifest(seed, warmup, trials, sessions):
                       f"XRE {vd.get('XRE', '?')})")
     except Exception:
         pass
+    shapes = shapes or SHAPES
+    protocol = PROTOCOL_ID
+    if full_space:
+        protocol += ":m2-fullspace-holdout"
+    shape_arg = ("" if (not full_space and shapes == SHAPES) else
+                 "--shapes "
+                 + ",".join(f"{n}x{b}" for n, b in shapes)
+                 + (" --full-space " if full_space else " "))
     repro = (
         "CUDA_VISIBLE_DEVICES=<healthy card> timeout -s KILL 3600 "
         "python scripts/run_batch_release.py --sessions "
         f"{sessions} --trials {trials} --warmup {warmup} "
-        "--out results/p800/batch_release"
+        f"{shape_arg}--out results/p800/batch_release"
     )
     return {
-        "focus": "issue #3 P0 acceptance + P1.1 execution metadata",
+        "focus": ("issue #3 P1.3 full-space holdout validation"
+                  if full_space else
+                  "issue #3 P0 acceptance + P1.1 execution metadata"),
+        "protocol_id": protocol,
+        "full_space": bool(full_space),
         "commit": relm._git("rev-parse", "HEAD"),
         "dirty": bool(relm._git("status", "--porcelain")),
         "device": p.device,
@@ -662,16 +730,21 @@ def _manifest(seed, warmup, trials, sessions):
         "toolchain": toolchain,
         "profile_hash": p.hash(),
         "config_hash": p.hash(),
+        "env_hash": _current_env_hash(),
+        "env": _collect_env(),
         "selector_table_sha256": relm._sha256(table_path),
-        "protocol_id": PROTOCOL_ID,
         "sessions": sessions,
         "warmup": warmup,
         "trials": trials,
         "seed_base": seed,
-        "shapes": [f"N{n}B{b}:{d}" for n, b in SHAPES
+        "shapes": [f"N{n}B{b}:{d}" for n, b in shapes
                    for d in ("dit", "dif")],
-        "candidates": CANDIDATES + CANARY_CANDIDATES
-        + ["m2_t*_rows* (cost-model bounded search, per-shape, soft-gated)"],
+        "candidates": CANDIDATES + (CANARY_CANDIDATES
+                                    if not full_space else [])
+        + [("m2_t*_rows* (full published space, holdout: 9 points)"
+            if full_space else
+            "m2_t*_rows* (cost-model bounded search, per-shape, "
+            "soft-gated)")],
         "canary_shape": f"N{CANARY_SHAPE[0]}B{CANARY_SHAPE[1]}",
         "timing_scope": "api wall time (dispatch+alloc+layout+sync), ms",
         "kernel_time_status": (
@@ -711,6 +784,10 @@ def _load_raw_trials(out_dir):
 
 
 def _aggregate(out_dir, args):
+    with open(os.path.join(out_dir, "manifest.json")) as f:
+        man = json.load(f)
+    expected_sessions = int(man.get("sessions") or 0)
+    trials_per_session = int(man.get("trials") or 0)
     per_session = []
     s = 0
     while True:
@@ -729,7 +806,10 @@ def _aggregate(out_dir, args):
             shapes.setdefault(r["label"], []).append(r)
     agg = []
     for label, rs in sorted(shapes.items()):
-        names = list(rs[0]["candidates"])
+        # union across sessions: a candidate present only in a later
+        # session must still surface (with incomplete evidence flags)
+        names = list(dict.fromkeys(
+            name for r in rs for name in r["candidates"]))
         entry = {
             "label": label, "N": rs[0]["N"], "batch": rs[0]["batch"],
             "direction": rs[0]["direction"],
@@ -756,9 +836,11 @@ def _aggregate(out_dir, args):
             meta = next((r["candidates"][name] for r in rs
                          if name in r["candidates"]), {})
             med = relm._median(meds)
-            inc = relm._median([r["candidates"]["incumbent_m4_folded"]
-                                ["median_ms"] for r in rs])
-            ratio = (inc / med) if med else None
+            inc_meds = [r["candidates"]["incumbent_m4_folded"]["median_ms"]
+                        for r in rs
+                        if "incumbent_m4_folded" in r["candidates"]]
+            inc = relm._median(inc_meds) if inc_meds else None
+            ratio = (inc / med) if inc and med else None
             if errs and not all(relm._err_gate(e) for e in errs):
                 all_correct = False
             verdict = None
@@ -766,8 +848,23 @@ def _aggregate(out_dir, args):
                 verdict = ("speedup" if ratio >= 1.02
                            else "regression" if ratio <= 0.98 else "parity")
             all_trials = raw_trials.get((label, name), [])
+            # Promotion-integrity metadata (issue #3 review fix): the
+            # builder refuses anything whose session/trial evidence is not
+            # complete; `complete` makes that checkable in the artifact.
+            n_sess = len(meds)
+            want_trials = expected_sessions * trials_per_session
+            complete = bool(
+                expected_sessions and trials_per_session
+                and n_sess == expected_sessions
+                and len(all_trials) == want_trials
+                and all(_finite_positive(v) for v in meds)
+                and all(isinstance(e, (int, float)) and math.isfinite(e)
+                        for e in errs)
+                and all(relm._err_gate(e) for e in errs))
             entry["candidates"][name] = dict(
-                meta, median_ms=med, sessions=len(meds),
+                meta, median_ms=med, sessions=n_sess,
+                sessions_expected=expected_sessions,
+                n_trials_want=want_trials, complete=complete,
                 stdev_ms=(statistics.pstdev(meds) if len(meds) > 1
                           else 0.0),
                 session_medians_ms=meds,
@@ -778,10 +875,18 @@ def _aggregate(out_dir, args):
                 err_max=(max(errs) if errs else None),
                 speedup_over_incumbent=ratio, verdict=verdict)
         entry["all_correct"] = all_correct
+        entry["complete"] = all(c.get("complete")
+                                for c in entry["candidates"].values())
         agg.append(entry)
-    with open(os.path.join(out_dir, "manifest.json")) as f:
-        man = json.load(f)
-    summary = {"manifest": man, "sessions": len(per_session), "shapes": agg}
+    missing_sessions = expected_sessions - len(per_session)
+    if missing_sessions > 0:
+        print(f"WARNING: {out_dir}: {len(per_session)}/{expected_sessions} "
+              "sessions aggregated -- incomplete run, the selector table "
+              "builder will refuse it", flush=True)
+    summary = {"manifest": man, "sessions": len(per_session),
+               "sessions_expected": expected_sessions,
+               "sessions_missing": max(0, missing_sessions),
+               "shapes": agg}
     with open(os.path.join(out_dir, "summary.json"), "w") as f:
         json.dump(summary, f, indent=2)
         f.write("\n")
@@ -980,6 +1085,12 @@ def main():
         ROOT, "results", "p800", "batch_release"))
     ap.add_argument("--session", type=int, default=None,
                     help="internal: run one child session")
+    ap.add_argument("--shapes", default=None,
+                    help="comma NxB list (e.g. 1024x16,2048x64); default "
+                    "the issue's four focus shapes")
+    ap.add_argument("--full-space", action="store_true",
+                    help="enumerate ALL published m2 (tile,rows) points "
+                    "instead of the model top-K (holdout validation)")
     ap.add_argument("--aggregate-only", action="store_true")
     ap.add_argument("--overwrite", action="store_true")
     args = ap.parse_args()
@@ -1000,7 +1111,9 @@ def run_parent(args):
         raise SystemExit(f"{out_dir} already holds a finished run; "
                          "pass --overwrite to replace")
     os.makedirs(out_dir, exist_ok=True)
-    man = _manifest(args.seed, args.warmup, args.trials, args.sessions)
+    man = _manifest(args.seed, args.warmup, args.trials, args.sessions,
+                    shapes=_parse_shapes(args.shapes),
+                    full_space=args.full_space)
     with open(os.path.join(out_dir, "manifest.json"), "w") as f:
         json.dump(man, f, indent=2)
         f.write("\n")
@@ -1010,6 +1123,10 @@ def run_parent(args):
                "--session", str(s), "--trials", str(args.trials),
                "--warmup", str(args.warmup), "--seed", str(args.seed),
                "--out", out_dir]
+        if args.shapes:
+            cmd += ["--shapes", args.shapes]
+        if args.full_space:
+            cmd += ["--full-space"]
         env = dict(os.environ)
         env["PYTHONPATH"] = ROOT + os.pathsep + env.get("PYTHONPATH", "")
         print(f"=== session {s} ===", flush=True)

@@ -40,7 +40,10 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.xpu.config import ConfigError, DeviceProfile  # noqa: E402
+from src.xpu.envcheck import collect as collect_env  # noqa: E402
+from src.xpu.envcheck import env_hash as fingerprint_env  # noqa: E402
 from src.xpu.selector import GUARD_PCT  # noqa: E402
+from src.xpu.selector import entry_contract_violations  # noqa: E402
 
 # candidate key -> (flow_id, flow_realization, processing_unit, params-beyond-block)
 _UNIT = {
@@ -181,7 +184,7 @@ def _check_manifest_consistency(runs, table_profile_hash: str) -> None:
 
 _FOCUS_MANIFEST_KEYS = ("device", "profile_hash", "protocol_id",
                         "error_threshold", "shapes", "candidates",
-                        "timing_scope")
+                        "timing_scope", "sessions", "trials")
 _FOCUS_CONSISTENCY_KEYS = ("device", "profile_hash", "protocol_id",
                            "error_threshold")
 # Focus challengers entering the frozen table (issue #3 P0): batch M2/M5.
@@ -209,32 +212,78 @@ def _load_focus(path: str, rejections) -> dict:
     shapes = data.get("shapes") or []
     if not shapes:
         raise ConfigError(f"focus run {path}: no shape results")
-    sessions = int(data.get("sessions") or man.get("sessions") or 0)
+    sessions = int(data.get("sessions") or 0)
+    expected = int(man["sessions"])
+    trials = int(man["trials"])
+    if not isinstance(man.get("sessions"), int) or expected < 1:
+        raise ConfigError(f"focus run {path}: manifest sessions invalid")
+    if not isinstance(man.get("trials"), int) or trials < 1:
+        raise ConfigError(f"focus run {path}: manifest trials invalid")
+    if sessions < expected:
+        raise ConfigError(
+            f"focus run {path}: aggregated {sessions} session(s) but the "
+            f"manifest declares {expected} (a session failed or was "
+            "dropped); promotion requires the complete session set -- "
+            "re-run the focus protocol, refusing to build")
     return {"path": path, "manifest": man, "shapes": shapes,
-            "sessions": sessions, "threshold": float(thr)}
+            "sessions": sessions, "expected_sessions": expected,
+            "trials": trials, "threshold": float(thr)}
 
 
-def _focus_ms(shape, name, threshold, path, rejections):
-    """Gated (median_ms, err_max) for one candidate, else None."""
+def _focus_ms(shape, name, run, threshold, path, rejections):
+    """Gated (median_ms) for one candidate with COMPLETE evidence, else None.
+
+    Promotion integrity (issue #3 review fix): a candidate may only be
+    considered when *every* declared session contributed a finite positive
+    median and the raw trial log holds the full session x trials count,
+    its error is finite and below threshold, and no session recorded a
+    failure (``extras_failed``). Anything missing, non-finite, wrong-value
+    or failed rejects the candidate with a reason -- never a silent skip.
+    """
+    label = shape.get("label")
     cand = (shape.get("candidates") or {}).get(name)
     if cand is None:
+        rejections.append(
+            f"{path} {label} key={name}: absent from the session set "
+            "(incomplete evidence; cannot promote)")
+        return None
+    failed = {f.get("candidate")
+              for f in (shape.get("extras_failed") or [])}
+    if name in failed:
+        rejections.append(
+            f"{path} {label} key={name}: recorded failure in a session "
+            "(extras_failed); cannot promote")
         return None
     ms = cand.get("median_ms")
     if not _finite_positive(ms):
         rejections.append(
-            f"{path} {shape.get('label')} key={name}: "
+            f"{path} {label} key={name}: "
             f"median not finite positive ({ms!r})")
         return None
     err = cand.get("err_max", cand.get("err"))
     if not isinstance(err, (int, float)) or not math.isfinite(err):
         rejections.append(
-            f"{path} {shape.get('label')} key={name}: missing/non-finite "
+            f"{path} {label} key={name}: missing/non-finite "
             f"error ({err!r})")
         return None
     if err >= threshold:
         rejections.append(
-            f"{path} {shape.get('label')} key={name}: max_rel_error "
+            f"{path} {label} key={name}: max_rel_error "
             f"{err:.3e} >= {threshold:g}")
+        return None
+    got_s = cand.get("sessions")
+    if got_s != run["expected_sessions"]:
+        rejections.append(
+            f"{path} {label} key={name}: session evidence "
+            f"{got_s!r}/{run['expected_sessions']} incomplete; "
+            "cannot promote")
+        return None
+    want_trials = run["expected_sessions"] * run["trials"]
+    n_trials = cand.get("n_trials")
+    if n_trials != want_trials:
+        rejections.append(
+            f"{path} {label} key={name}: trial evidence "
+            f"{n_trials!r}/{want_trials} incomplete; cannot promote")
         return None
     return ms
 
@@ -293,28 +342,60 @@ def build_focus_entries(focus_runs, guard=GUARD_PCT, min_sessions=3,
         thr = min(run["threshold"] for run, _ in pairs)
         sessions = min(run["sessions"] for run, _ in pairs)
 
-        def _collect(names):
+        def _collect(names, kind):
+            """name -> complete medians across EVERY usable run.
+
+            A name expected anywhere but incomplete in any run (absent
+            session, missing trial, recorded failure, wrong value,
+            non-finite) is dropped with a rejection -- partial medians
+            never enter the comparison.
+            """
+            expected = set()
+            for _, shape in pairs:
+                expected.update(shape["candidates"])
+            expected &= set(names)
             per_name = {}
-            blocks, cands = {}, {}
+            blocks, cands, poisoned = {}, {}, set()
             for run, shape in pairs:
                 blk = int(shape.get("incumbent_block") or 256)
-                for name in names:
-                    if name not in shape["candidates"]:
-                        continue
-                    ms = _focus_ms(shape, name, thr, run["path"], rejections)
+                for name in expected:
+                    ms = _focus_ms(shape, name, run, thr, run["path"],
+                                   rejections)
                     if ms is None:
+                        poisoned.add(name)
                         continue
                     per_name.setdefault(name, []).append(ms)
                     cands[name] = shape["candidates"][name]
                     blocks[name] = int(
                         shape["candidates"][name].get("block") or blk)
-            return per_name, blocks, cands
+            n_runs = len(pairs)
+            for name in list(per_name):
+                if name in poisoned or len(per_name[name]) != n_runs:
+                    rejections.append(
+                        f"N={n} B={b} {d}: {kind} {name} incomplete "
+                        f"({len(per_name.get(name, []))}/{n_runs} complete "
+                        "runs after gates); excluded from promotion")
+                    per_name.pop(name, None)
+                    blocks.pop(name, None)
+                    cands.pop(name, None)
+            return per_name, blocks, cands, expected
 
-        inc_by, inc_blocks, _ = _collect(INCUMBENTS)
-        ch_by, ch_blocks, ch_cands = _collect(
+        inc_by, inc_blocks, _, inc_expected = _collect(INCUMBENTS,
+                                                       "incumbent")
+        ch_by, ch_blocks, ch_cands, _ = _collect(
             _focus_challenger_names(
-                set().union(*(s["candidates"] for _, s in pairs))))
+                set().union(*(s["candidates"] for _, s in pairs))),
+            "challenger")
 
+        if inc_expected - set(inc_by):
+            # An expected incumbent control is incomplete anywhere: the
+            # comparison would be biased, so the shape gets no focus entry
+            # (the selector keeps whatever non-focus entry it has / M0).
+            rejections.append(
+                f"N={n} B={b} {d}: incomplete incumbent control "
+                f"{sorted(inc_expected - set(inc_by))}; refusing a focus "
+                "entry (fail closed)")
+            continue
         if not inc_by:
             if ch_by:
                 rejections.append(
@@ -473,6 +554,13 @@ def main() -> None:
 
     profile = DeviceProfile.load()
     profile_hash = profile.hash()
+    env = collect_env()
+    current_env = fingerprint_env(env)
+    if current_env is None:
+        raise ConfigError(
+            "live environment fingerprint unavailable (device/runtime/"
+            "compiler not probeable on this host); refusing to build an "
+            "unbound selector table -- run on the device host")
     rejections = []
 
     def _rel(path):
@@ -503,6 +591,13 @@ def main() -> None:
                 f"focus profile_hash {ref['profile_hash']} != current "
                 f"DeviceProfile hash {profile_hash}; re-measure under the "
                 "current profile before building")
+        for run in focus_runs:
+            run_env = run["manifest"].get("env_hash")
+            if run_env and run_env != current_env:
+                raise ConfigError(
+                    f"focus run {run['path']} env_hash {run_env} != live "
+                    f"environment {current_env} (device/runtime/compiler "
+                    "changed); re-measure before building")
 
     rows_by_path = {r["path"]: r["rows"] for r in runs}
     run_by_path = {r["path"]: r for r in runs}
@@ -539,10 +634,27 @@ def main() -> None:
                     "focus/confirm overlap); refusing to build")
             seen[key] = e.get("reason", "?")
 
+    # Entries must satisfy the shared design space / lowering contract
+    # BEFORE they are written: a frozen item goes through the same
+    # contract as any candidate (issue #3 review fix).
+    illegal = []
+    for e in entries:
+        for msg in entry_contract_violations(e):
+            key = (e["N"], e["batch"], e["direction"])
+            illegal.append(f"entry {key}: {msg}")
+    if illegal:
+        raise ConfigError(
+            f"built {len(entries)} entries but {len(illegal)} violate the "
+            f"design-space/lowering contract: " + "; ".join(illegal[:8])
+            + (" ..." if len(illegal) > 8 else "")
+            + "; refusing to write the table")
+
     table = {
         "schema_version": 2,
         "device": profile.device,
         "profile_hash": profile_hash,
+        "env_hash": current_env,
+        "env": env,
         "precision": "fp32",
         "guard_pct": args.guard,
         "selection_semantics": (

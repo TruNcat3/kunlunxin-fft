@@ -130,6 +130,7 @@ class DesignSpace:
     # M2 register-resident matrix axes (P.register_matrix)
     matrix_tiles: tuple
     matrix_rows: tuple
+    matrix_default: tuple | None
     # M3 execution-group boundary axes (P.grouped_boundary)
     grouped_tiles: tuple
     grouped_rows: tuple
@@ -194,6 +195,17 @@ class DesignSpace:
                 and all(isinstance(t, int) and t > 0 and (t & (t - 1)) == 0 for t in vals),
                 f"butterfly_space.json: P.register_matrix.{name} must be powers of two",
             )
+        reg_def = reg.get("default")
+        matrix_default = None
+        if reg_def is not None:
+            _require(
+                isinstance(reg_def, dict)
+                and reg_def.get("tile") in matrix_tiles
+                and reg_def.get("rows") in matrix_rows,
+                "butterfly_space.json: P.register_matrix.default must pick "
+                "tile/rows from the published lists",
+            )
+            matrix_default = (int(reg_def["tile"]), int(reg_def["rows"]))
 
         # M3 execution-group boundary axes (tile x rows x glog x maxp x cells).
         grp = p.get("grouped_boundary")
@@ -233,6 +245,7 @@ class DesignSpace:
             layout_out=lay["out"][0],
             matrix_tiles=tuple(matrix_tiles),
             matrix_rows=tuple(matrix_rows),
+            matrix_default=matrix_default,
             grouped_tiles=tuple(grouped_tiles),
             grouped_rows=tuple(grouped_rows),
             grouped_glog=tuple(grouped_glog),

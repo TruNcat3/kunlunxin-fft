@@ -121,3 +121,60 @@ def test_validate_against_repo_focus_summary_if_present():
     assert m["n_records"] > 0
     # decision-level agreement must be reported, whatever its value
     assert m["guard_agreement"] is None or 0.0 <= m["guard_agreement"] <= 1.0
+
+
+def test_validate_guard_uses_two_percent_line_not_sign():
+    # A 1.5% measured gain does NOT clear the 2% promotion guard while the
+    # model predicts a clear win: sign-of-gain would call this agreement,
+    # the formal guard line must call it a disagreement.
+    _calib()
+    pred_inc = cm.predict("incumbent_m4_folded", 1024, 16)
+    pred_m2 = cm.predict("m2_batch", 1024, 16, {"tile": 128, "rows": 8})
+    assert (pred_inc - pred_m2) / pred_inc * 100.0 >= cm.GUARD_PCT  # model: promote
+    recs = [
+        {"name": "incumbent_m4_folded", "family": "incumbent_m4_folded",
+         "N": 1024, "batch": 16, "direction": "dit",
+         "measured_ms": 100.0, "params": {}},
+        {"name": "m2_batch", "family": "m2_batch", "N": 1024, "batch": 16,
+         "direction": "dit", "measured_ms": 98.5,  # 1.5% < 2% guard
+         "params": {"tile": 128, "rows": 8}},
+    ]
+    m = cm.validate(recs)
+    assert m["guard_pct"] == cm.GUARD_PCT
+    assert m["guard_pairs"] == 1
+    assert m["guard_agreement"] == 0.0
+
+
+def test_validate_full_space_recall_and_regret():
+    _calib()
+    rows = [{"name": "incumbent_m4_folded", "family": "incumbent_m4_folded",
+             "N": 1024, "batch": 16, "direction": "dit",
+             "measured_ms": 5.0, "params": {}}]
+    for s in cm.m2_space():
+        pred = cm.predict("m2_batch", 1024, 16, s)
+        rows.append({"name": f"m2_t{s['tile']}_rows{s['rows']}",
+                     "family": "m2_batch", "N": 1024, "batch": 16,
+                     "direction": "dit", "measured_ms": pred,
+                     "params": dict(s)})
+    m = cm.validate(rows)
+    fs = m["topk_full_space"]
+    assert fs["shapes"] == 1
+    assert fs["space_size"] == 9
+    assert fs["recall"] == 1.0          # model-perfect measurements
+    assert fs["mean_regret_pct"] == 0.0
+    assert m["topk_shapes"] >= 1        # subset metric still reported
+
+
+def test_records_from_summary_skips_bad_rows():
+    summary = {"manifest": {"error_threshold": 1e-4}, "shapes": [
+        {"N": 1024, "batch": 16, "direction": "dit", "candidates": {
+            "ok": {"median_ms": 1.0, "err_max": 1e-6, "complete": True,
+                   "params": {"tile": 64, "rows": 8}},
+            "wrong_value": {"median_ms": 0.5, "err_max": 0.1,
+                            "complete": True},
+            "incomplete": {"median_ms": 0.9, "err_max": 1e-6,
+                           "complete": False},
+            "nan": {"median_ms": float("nan"), "err_max": 1e-6},
+        }}]}
+    recs = cm.records_from_summary(summary)
+    assert [r["name"] for r in recs] == ["ok"]

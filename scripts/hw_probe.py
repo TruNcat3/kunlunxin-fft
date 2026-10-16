@@ -297,6 +297,19 @@ def main() -> None:
         profile["baseline_costs"] = _baseline_costs()
 
     from src.xpu.calibration import compute_hash
+    # Bind the profile to the live device/runtime/compiler fingerprint
+    # (issue #3 review fix): self-hash proves integrity, env_hash proves
+    # provenance. An unprobeable environment refuses to write.
+    from src.xpu.envcheck import collect as collect_env
+    from src.xpu.envcheck import env_hash as fingerprint_env
+    env = collect_env()
+    if env is None:
+        raise SystemExit(
+            "live environment fingerprint unavailable (xpu-smi / "
+            "torch / triton / device props); refusing to write an "
+            "unbound calibration profile")
+    profile["env"] = env
+    profile["env_hash"] = fingerprint_env(env)
     profile["profile_hash"] = compute_hash(profile)
 
     out = Path(args.out)

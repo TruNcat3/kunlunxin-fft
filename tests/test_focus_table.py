@@ -24,6 +24,8 @@ def _manifest(profile_hash=None):
         "shapes": ["N1024B16:dit"],
         "candidates": ["m2_batch", "m5_batch"],
         "timing_scope": "api wall time",
+        "sessions": 3,
+        "trials": 30,
     }
 
 
@@ -46,6 +48,11 @@ def _shape(n=1024, batch=16, direction="dit", m2_ms=1.0, m4_ms=2.0,
         "vendor": {"median_ms": 0.2, "err_max": 1e-7, "block": None},
     }
     cands.update(extra or {})
+    # complete evidence by default (3 sessions x 30 trials); negative
+    # tests override sessions/n_trials per candidate.
+    for c in cands.values():
+        c.setdefault("sessions", 3)
+        c.setdefault("n_trials", 90)
     return {"label": f"N{n}B{batch}_{direction}", "N": n, "batch": batch,
             "direction": direction, "incumbent_block": block,
             "candidates": cands}
@@ -61,10 +68,11 @@ def _focus_run(tmp_path, shapes, sessions=3, manifest=None, name="s.json"):
 
 
 def test_focus_run_below_session_floor_is_refused(tmp_path):
+    # 1 aggregated session vs a manifest declaring 3 is a failed run:
+    # _load_focus refuses it outright (promotion needs the full set).
     p = _focus_run(tmp_path, [_shape()], sessions=1)
-    run = _load_focus(str(p), [])
-    entries = build_focus_entries([run], min_sessions=3, rejections=[])
-    assert entries == []
+    with pytest.raises(ConfigError, match="session failed or was dropped"):
+        _load_focus(str(p), [])
 
 
 def test_focus_challenger_clears_guard_and_lands_in_table(tmp_path):
@@ -148,3 +156,90 @@ def test_focus_packet_canary_never_enters_table(tmp_path):
     assert len(entries) == 1
     assert entries[0]["challenger_ms"] == 1.0  # m2_batch, not the packet
     assert entries[0]["evidence"].get("challenger") == "m2_batch"
+
+
+# --- promotion integrity (issue #3 review fix: no partial evidence) ---
+
+
+def test_focus_incomplete_session_evidence_blocks_promotion(tmp_path):
+    # m2_batch present in only 2 of 3 sessions -> excluded entirely;
+    # m5 is complete but slower than the incumbent -> incumbent kept.
+    slow_m5 = {"m5_batch": {"median_ms": 2.1, "err_max": 1e-6, "block": 256,
+                            "params": {"variant": "spread", "batch": 16},
+                            "sessions": 3, "n_trials": 90}}
+    partial = {"m2_batch": {"median_ms": 1.0, "err_max": 1e-5, "block": 256,
+                            "params": {"variant": "spread", "tile": 64,
+                                       "rows": 8, "batch": 16},
+                            "sessions": 2, "n_trials": 60}}
+    p = _focus_run(tmp_path, [_shape(extra=dict(slow_m5, **partial))])
+    run = _load_focus(str(p), [])
+    rejections = []
+    entries = build_focus_entries([run], guard=2.0, min_sessions=3,
+                                  rejections=rejections)
+    assert len(entries) == 1
+    assert entries[0]["flow_id"] == "batch-folded"  # incumbent kept
+    assert any("session evidence" in r for r in rejections)
+
+
+def test_focus_missing_trials_blocks_promotion(tmp_path):
+    short_trials = {
+        "m2_batch": {"median_ms": 1.0, "err_max": 1e-5, "block": 256,
+                     "params": {"variant": "spread", "tile": 64,
+                                "rows": 8, "batch": 16},
+                     "sessions": 3, "n_trials": 60},
+        "m5_batch": {"median_ms": 2.1, "err_max": 1e-6, "block": 256,
+                     "params": {"variant": "spread", "batch": 16},
+                     "sessions": 3, "n_trials": 90},
+    }
+    p = _focus_run(tmp_path, [_shape(extra=short_trials)])
+    run = _load_focus(str(p), [])
+    rejections = []
+    entries = build_focus_entries([run], guard=2.0, min_sessions=3,
+                                  rejections=rejections)
+    assert len(entries) == 1
+    assert entries[0]["flow_id"] == "batch-folded"
+    assert any("trial evidence" in r for r in rejections)
+
+
+def test_focus_recorded_failure_blocks_promotion(tmp_path):
+    # extras_failed in any session disqualifies that candidate outright.
+    slow_m5 = {"m5_batch": {"median_ms": 2.1, "err_max": 1e-6, "block": 256,
+                            "params": {"variant": "spread", "batch": 16},
+                            "sessions": 3, "n_trials": 90}}
+    p = _focus_run(tmp_path, [_shape(extra=slow_m5)])
+    import json
+    data = json.loads(p.read_text())
+    data["shapes"][0]["extras_failed"] = [
+        {"candidate": "m2_batch", "status": "wrong-value",
+         "max_rel_error": 0.5}]
+    p.write_text(json.dumps(data))
+    run = _load_focus(str(p), [])
+    rejections = []
+    entries = build_focus_entries([run], guard=2.0, min_sessions=3,
+                                  rejections=rejections)
+    assert len(entries) == 1
+    assert entries[0]["flow_id"] == "batch-folded"
+    assert any("recorded failure" in r for r in rejections)
+
+
+def test_focus_incomplete_incumbent_refuses_entry(tmp_path):
+    bad_inc = {"incumbent_m4_folded": {"median_ms": 2.0, "err_max": 1e-6,
+                                       "block": 256,
+                                       "params": {"variant": "folded",
+                                                  "batch": 16},
+                                       "sessions": 2, "n_trials": 60}}
+    p = _focus_run(tmp_path, [_shape(extra=bad_inc)])
+    run = _load_focus(str(p), [])
+    rejections = []
+    entries = build_focus_entries([run], guard=2.0, min_sessions=3,
+                                  rejections=rejections)
+    assert entries == []
+    assert any("incomplete incumbent control" in r for r in rejections)
+
+
+def test_focus_loader_refuses_failed_session_run(tmp_path):
+    # summary aggregated 2 sessions while the manifest declares 3.
+    import json
+    p = _focus_run(tmp_path, [_shape()], sessions=2)
+    with pytest.raises(ConfigError, match="re-run the focus protocol"):
+        _load_focus(str(p), [])

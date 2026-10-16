@@ -2,6 +2,18 @@
   "schema_version": 2,
   "device": "kunlunxin-p800",
   "profile_hash": "a78b86793c7142a0",
+  "env_hash": "6b50bd316032c0fe",
+  "env": {
+    "torch": "2.9.0+cu129",
+    "triton": "3.0.0",
+    "xpytorch": "XMLIR--bc1b1dc6f-dev+2026032411",
+    "xre": "5.13.0.0",
+    "xhpc": "20770323",
+    "driver": "515.58",
+    "device_model": 3,
+    "multiprocessor_count": 12,
+    "max_shared_mem": 262144
+  },
   "precision": "fp32",
   "guard_pct": 2.0,
   "selection_semantics": "search-stage median improvement (aggregated medians within one run schedule), not paired per-trial medians",

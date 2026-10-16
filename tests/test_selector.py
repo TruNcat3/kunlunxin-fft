@@ -311,3 +311,80 @@ def test_builder_rejects_dtype_precision_mismatch(tmp_path):
     proc, _ = _build(tmp_path, run)
     assert proc.returncode != 0
     assert "does not match" in (proc.stderr + proc.stdout)
+
+
+# --- environment fingerprint gate (issue #3 review fix: profile freshness)
+
+
+def _env_table(**overrides):
+    from src.xpu.selector import load_table
+    t = dict(load_table())
+    t.update(overrides)
+    return t
+
+
+def test_env_bound_table_abstains_on_unknown_environment():
+    from src.xpu.selector import select
+    t = _env_table(env_hash="deadbeefdeadbeef")
+    s = select("dit", 1024, batch=16,
+               profile_hash=t["profile_hash"], table=t, env_hash=None)
+    assert not s.selected
+    assert "environment fingerprint unknown" in s.reason
+    # plan_fft fails closed to M0 for the same condition
+    from src.xpu.entry import plan_fft
+    p = plan_fft("dit", 1024, batch=16, profile_hash=t["profile_hash"],
+                 table=t, env_hash=None)
+    assert p.fallback and p.executed.startswith("fft_dit")
+
+
+def test_env_bound_table_abstains_on_stale_environment():
+    from src.xpu.selector import select
+    t = _env_table(env_hash="deadbeefdeadbeef")
+    s = select("dit", 1024, batch=16, profile_hash=t["profile_hash"],
+               table=t, env_hash="0000000000000000")
+    assert not s.selected
+    assert "environment hash" in s.reason and "changed" in s.reason
+
+
+def test_env_bound_table_selects_on_matching_environment():
+    from src.xpu.envcheck import current_env_hash
+    from src.xpu.selector import select
+    live = current_env_hash()
+    if live is None:
+        import pytest
+        pytest.skip("live environment not probeable")
+    t = _env_table(env_hash=live)
+    s = select("dit", 1024, batch=16, profile_hash=t["profile_hash"],
+               table=t, env_hash="auto")
+    assert s.selected
+
+
+def test_table_without_env_hash_skips_gate():
+    # Pre-binding / synthetic tables keep the old pure semantics.
+    from src.xpu.selector import select, load_table
+    t = dict(load_table())
+    t.pop("env_hash", None)
+    s = select("dit", 1024, batch=16, profile_hash=t["profile_hash"],
+               table=t, env_hash=None)
+    assert s.selected
+
+
+def test_load_table_refuses_entries_outside_design_space():
+    import pytest
+    from src.xpu.config import ConfigError
+    from src.xpu.selector import load_table, TABLE_PATH
+    import json
+    raw = json.loads(open(TABLE_PATH).read())
+    raw["entries"] = list(raw["entries"])
+    bad = dict(raw["entries"][0])
+    bad["params"] = {**(bad.get("params") or {}), "tile": 48, "rows": 3}
+    raw["entries"].append(bad)
+    import tempfile, os
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+        json.dump(raw, f)
+        path = f.name
+    try:
+        with pytest.raises(ConfigError, match="design space"):
+            load_table(path)
+    finally:
+        os.unlink(path)
