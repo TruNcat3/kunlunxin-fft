@@ -259,13 +259,21 @@ def main() -> None:
     ctx = mp.get_context("spawn")
     results: list[dict] = []
     result_jobs: list[dict] = []  # parallel to results
-    with ctx.Pool(processes=1) as pool:  # serial: one healthy card
-        for job in base_jobs:
-            print(f"session {job['session_index']} "
-                  f"(N{job['n']}B{job['batch']}, {job['role']}) ...",
-                  flush=True)
-            results.append(pool.apply(_run_session, (job,)))
-            result_jobs.append(job)
+
+    def _spawn(job: dict) -> dict:
+        # Fresh Pool per session: with spawn context the pool's worker
+        # is a NEW process every time (fresh allocator / JIT cache /
+        # runtime state), and it dies with the pool — the review's
+        # "independent processes" requirement.
+        with ctx.Pool(processes=1) as pool:
+            return pool.apply(_run_session, (job,))
+
+    for job in base_jobs:
+        print(f"session {job['session_index']} "
+              f"(N{job['n']}B{job['batch']}, {job['role']}) ...",
+              flush=True)
+        results.append(_spawn(job))
+        result_jobs.append(job)
 
     # Guard evaluation on the protocol sessions (per shape) -> maybe
     # one confirmation session per shape that passes.
@@ -287,20 +295,19 @@ def main() -> None:
             need_confirm_shapes.append((n, batch))
 
     if need_confirm_shapes:
-        with ctx.Pool(processes=1) as pool:
-            for n, batch in need_confirm_shapes:
-                job = {
-                    "n": n, "batch": batch, "tile": args.tile,
-                    "seed": args.seed_base + 99 * 1000 + n + batch,
-                    "session_index": args.sessions,
-                    "role": "confirmation",
-                    "trials": args.trials, "warmup": args.warmup,
-                    "argv": sys.argv,
-                }
-                print(f"session {job['session_index']} "
-                      f"(N{n}B{batch}, confirmation) ...", flush=True)
-                results.append(pool.apply(_run_session, (job,)))
-                result_jobs.append(job)
+        for n, batch in need_confirm_shapes:
+            job = {
+                "n": n, "batch": batch, "tile": args.tile,
+                "seed": args.seed_base + 99 * 1000 + n + batch,
+                "session_index": args.sessions,
+                "role": "confirmation",
+                "trials": args.trials, "warmup": args.warmup,
+                "argv": sys.argv,
+            }
+            print(f"session {job['session_index']} "
+                  f"(N{n}B{batch}, confirmation) ...", flush=True)
+            results.append(_spawn(job))
+            result_jobs.append(job)
 
     # Merge: pooled + per-session stats + outlier disclosure.
     results_by_shape: dict[tuple, list] = {s: [] for s in
@@ -416,6 +423,7 @@ def main() -> None:
             "Python allocator, JIT cache, and runtime state); the "
             "parent gates freshness once, every worker re-gates before "
             "any launch"),
+        "distinct_pids": len({r["pid"] for r in results}) == len(results),
         "protocol": (
             f"{args.sessions} independent process sessions, "
             f"{args.trials} interleaved steady trials each (random "
