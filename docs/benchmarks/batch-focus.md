@@ -193,8 +193,7 @@ timed cell passed the 1e-4 correctness gate against the NumPy
 reference. The vendor *whole* transform is an external
 baseline, never a cell.
 
-| shape | cell | flow | local core | plan ms | first ms |
- p50 | MAD | p95 | max | outliers |
+| shape | cell | flow | local core | plan ms | first ms | p50 | MAD | p95 | max | outliers |
 |---|---|---|---|---|---|---|---|---|---|---|
 | N1024B16_dit | A0P0 | fused (m2 runner, selector path) | P0 triton local | 0.00 | 710.61 | 0.7476 | 0.0109 | 0.7769 | 0.7787 | 0 |
 | N1024B16_dit | **A0P1** | fused (m2 runner) | P1 vendor (whole-tensor API) | — | — | — | — | — | — | abstain: fused local program cannot host an e… |

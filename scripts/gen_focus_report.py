@@ -736,8 +736,8 @@ def inventory_section(four_cell: dict | None) -> list[str]:
         "reference. The vendor *whole* transform is an external",
         "baseline, never a cell.",
         "",
-        "| shape | cell | flow | local core | plan ms | first ms |",
-        " p50 | MAD | p95 | max | outliers |",
+        "| shape | cell | flow | local core | plan ms | first ms "
+        "| p50 | MAD | p95 | max | outliers |",
         "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for sh in four_cell["shapes"]:

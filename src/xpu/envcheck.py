@@ -37,8 +37,11 @@ from functools import lru_cache
 _REQUIRED = ("driver", "torch", "triton", "xpytorch", "xre",
              "device_model", "multiprocessor_count", "max_shared_mem")
 
-# Explicit scope marker recorded in every fingerprint blob so the
-# card-family contract is machine-readable, not just a docstring.
+# Public scope-contract constant (documentation + tests only). It is
+# deliberately NOT folded into the hashed fingerprint: adding it now
+# would invalidate every existing calibration and selector table.
+# The card-family scope itself is documented in the module docstring
+# and enforced by the required-key set above (no card identity field).
 SCOPE = "card-family"
 
 

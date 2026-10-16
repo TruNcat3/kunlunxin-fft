@@ -270,6 +270,12 @@ def main() -> None:
             "provenance is meaningful (or pass --allow-dirty)")
     table = load_table()
     env_hash = assert_current_environment(table)
+    # Parent-side provenance captured IMMEDIATELY after the gate; this
+    # is the single reference every worker (and the artifact header)
+    # must match. Capturing it late would let a table/code change
+    # between gate and first spawn slip through as worker-vs-worker
+    # agreement with a divergent header (review P1).
+    parent_provenance = _provenance(table, env_hash, sys.argv)
 
     import torch
     if not torch.cuda.is_available():
@@ -299,7 +305,14 @@ def main() -> None:
         # runtime state), and it dies with the pool — the review's
         # "independent processes" requirement.
         with ctx.Pool(processes=1) as pool:
-            return pool.apply(_run_session, (job,))
+            res = pool.apply(_run_session, (job,))
+        # Validate against the PARENT contract at spawn return, before
+        # the result is appended to any list that later feeds a pooled
+        # statistic or the confirmation decision (review P1).
+        _validate_worker_provenance(
+            parent_provenance, res["provenance"],
+            where=f"session {job['session_index']} (pid {res.get('pid')})")
+        return res
 
     for job in base_jobs:
         print(f"session {job['session_index']} "
@@ -348,15 +361,11 @@ def main() -> None:
     assert len(result_jobs) == len(results), (
         f"job/result count mismatch: {len(result_jobs)} vs "
         f"{len(results)}")
-    # Strict pre-merge gate: every worker's full provenance contract
-    # must equal the parent's reference (commit, dirty, env/profile
-    # hashes, device, runtime). Mismatch aborts before any pooled
-    # statistic is computed — a publishable artifact is never written
-    # from mixed provenance (review P1).
-    reference = results[0]["provenance"]
+    # Every result was already validated against parent_provenance at
+    # spawn return; re-assert here as defense in depth before merge.
     for i, res in enumerate(results):
         _validate_worker_provenance(
-            reference, res["provenance"],
+            parent_provenance, res["provenance"],
             where=f"session {res.get('session_index', i)} "
                   f"(pid {res.get('pid')})")
     for job, res in zip(result_jobs, results):
@@ -412,9 +421,12 @@ def main() -> None:
                 "provenance": r["provenance"],
                 "cells": cells_out,
             })
-        # Guard from protocol-session pooled medians only (never the
-        # confirmation session; never the all-session pool).
-        med = {k: v.get("p50") for k, v in protocol_stats.items()}
+        # Guard from RAW protocol-session pooled medians only (never
+        # the confirmation session; never the all-session pool; never
+        # the rounded display stats — near a 2% boundary a 4-decimal
+        # round could flip the verdict, review P2).
+        med = {k: summarize_samples(v).get("p50")
+               for k, v in proto_only.items()}
         a0, ap1, av = med.get("A0P0"), med.get("A1P1"), med.get(
             "vendor_full")
         guard = {}
@@ -446,20 +458,20 @@ def main() -> None:
             "guard": guard,
         })
 
-    # The strict gate above guarantees a single provenance; these are
-    # now invariants, not post-hoc diagnostics.
-    commits = {r["provenance"]["commit"] for r in results}
-    assert len(commits) == 1, "strict provenance gate should guarantee this"
+    # The per-spawn gate guarantees every worker matches the parent
+    # contract; the artifact header is generated FROM that same parent
+    # contract so header and workers can never diverge.
     result = {
         "kind": "issue-3-hybrid-canary",
         "schema": 3,
-        "commit": results[0]["provenance"]["commit"],
+        "commit": parent_provenance["commit"],
         "all_sessions_same_commit": True,
-        "provenance_gate": "strict-equal-contract",
-        "dirty": any(r["provenance"]["dirty"] for r in results),
-        "table_env_hash": table.get("env_hash"),
-        "live_env_hash": env_hash,
-        "profile_hash": table.get("profile_hash"),
+        "provenance_gate": "strict-equal-parent-contract",
+        "parent_pid": parent_provenance["pid"],
+        "dirty": parent_provenance["dirty"],
+        "table_env_hash": parent_provenance["table_env_hash"],
+        "live_env_hash": parent_provenance["live_env_hash"],
+        "profile_hash": parent_provenance["profile_hash"],
         "sessions_protocol": args.sessions,
         "confirmation_session_added": bool(need_confirm_shapes),
         "trials": args.trials,

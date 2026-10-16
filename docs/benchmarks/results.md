@@ -109,7 +109,8 @@ M4 fallback（对 M0 约 `1.0x`）。评审要求以干净提交重跑重点矩�
   （确认 session 从不混入）：N2048B16 A1P1 **0.2298 vs vendor 0.6586 ms
   （2.87×，guard +65.1% 通过）**，逐 session 0.2518/0.2226/0.2228 + 确认
   session 0.2512（guard 触发后单列）；all-session 池化 0.2345/0.6592 仅作
-  诊断披露。A1P1 无离群样本。1024 shape 仍慢于 vendor（B16 −3.6%，
+  诊断披露（all-session A1P1 离群 0 个；protocol-only 主表 A1P1 有 3 个
+  离群样本，已列入 batch-focus）。1024 shape 仍慢于 vendor（B16 −3.6%，
   B64 −33.3%）——**N1024B16 单进程 1.09× 翻转在独立进程下不成立**；
   A1P1 对 A0P0 全 shape 通过 2% guard（+67.7~85.1%）。A0P0 经
   `selector.select` env 门获取；两份 artifact provenance 完整

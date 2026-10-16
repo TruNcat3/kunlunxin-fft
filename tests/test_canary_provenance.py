@@ -82,3 +82,20 @@ def test_pid_and_argv_are_not_part_of_the_contract():
     ref = _prov()
     rhc._validate_worker_provenance(
         ref, _prov(pid=99999, argv=["different"]), where="w")
+
+
+def test_workers_agreeing_with_each_other_still_fail_vs_parent():
+    # Review P1: the reference is the PARENT contract captured after
+    # the freshness gate — not results[0]. Two workers that agree with
+    # each other but were produced after a table/code change must be
+    # rejected against the parent reference.
+    parent = _prov(commit="a" * 40, profile_hash="1" * 16)
+    worker0 = _prov(commit="b" * 40, profile_hash="1" * 16, pid=1001)
+    worker1 = _prov(commit="b" * 40, profile_hash="1" * 16, pid=1002)
+    # worker0 == worker1 on the contract ...
+    assert rhc._provenance_contract(worker0) == \
+        rhc._provenance_contract(worker1)
+    # ... but both differ from the parent: each must abort.
+    for w in (worker0, worker1):
+        with pytest.raises(RuntimeError, match="commit"):
+            rhc._validate_worker_provenance(parent, w, where="worker")

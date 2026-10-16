@@ -58,15 +58,10 @@ if str(ROOT) not in sys.path:
 if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
 
-from src.xpu.adapter_hybrid import (  # noqa: E402
-    plan_hybrid,
-    plan_ledger,
-    profile_hybrid,
-    run_hybrid,
-    summarize_samples,
-    time_cell,
-)
-from src.xpu.error_metric import max_rel_error  # noqa: E402
+# adapter_hybrid / error_metric pull in torch+triton at import time;
+# they are deferred until AFTER the freshness gate in main() so the
+# "gate before any device-stack import" contract is fully honoured
+# (review P2). git_dirty is pure subprocess and stays module-level.
 from src.xpu.config import git_dirty  # noqa: E402
 
 ERR_MAX = 1e-4  # same correctness threshold the focus protocol uses
@@ -183,6 +178,16 @@ def main() -> None:
     table = load_table()
     env_hash = assert_current_environment(table)  # raises on mismatch
 
+    # Device-stack imports now happen strictly after the gate.
+    from src.xpu.adapter_hybrid import (
+        plan_hybrid,
+        plan_ledger,
+        profile_hybrid,
+        run_hybrid,
+        summarize_samples,
+        time_cell,
+    )
+    from src.xpu.error_metric import max_rel_error
     import torch
     import run_release_matrix as relm
     from src.xpu import runner
