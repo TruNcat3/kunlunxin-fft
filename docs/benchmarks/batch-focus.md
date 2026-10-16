@@ -118,14 +118,55 @@ table.
 
 ## External processing-unit inventory and adapter cells
 
-Full inventory and classifications live in `docs/benchmarks/external-cores.md` (local-core | full-transform-only | reference-only | unavailable). Summary of
+Full inventory and classifications live in
+`docs/benchmarks/external-cores.md` (local-core |
+full-transform-only | reference-only | unavailable). Summary of
 what the machine actually exposes:
 
 - vendor full transform: `torch.fft.*` → xdnn_pytorch `fft_fft` family (whole-tensor API; measured `vendor` rows above; N≤2048 shapes supported, ≥4096 rejected by the runtime)
 - device-side length kernels exist in `libxpuapi.so` (`fft_len256/512/1024`, `FFT32`) but are `__device_stub__` symbols — not a host-callable API; reference-only
 - no standalone Kunlunxin FFT SDK, headers, or kernel sources are present on this machine
 
-_Four-cell adapter results pending `results/p800/four_cell.json`._
+### Four-cell ablation (A0/A1 flow × P0/P1 core)
+
+Cells measured with setup (first call incl. compile) and
+execution (median of the run's trials, explicit synchronize)
+reported separately; every timed cell passed the 1e-4
+correctness gate against the NumPy reference first. The vendor
+*whole* transform is an external baseline, never a cell.
+
+| shape | cell | flow | local core | setup ms | exec ms |
+|---|---|---|---|---|---|
+| N1024B16_dit | A0P0 | fused (m2 runner) | P0 triton local | 0.91 | 0.7533 |
+| N1024B16_dit | **A0P1** | fused (m2 runner) | P1 vendor (whole-tensor API) | — | abstain: fused local program cannot host an exter… |
+| N1024B16_dit | A1P0 | framework decomposition | P0 triton local | 2.68 | 2.5489 |
+| N1024B16_dit | A1P1 | framework decomposition | P1 vendor torch.fft on sub-blocks | 0.36 | 0.3092 |
+| N1024B16_dit | baseline (full) | external baseline (not a cell) | P1 vendor whole transform | 0.25 | 0.2407 |
+| N1024B64_dit | A0P0 | fused (m2 runner) | P0 triton local | 2.29 | 2.2706 |
+| N1024B64_dit | **A0P1** | fused (m2 runner) | P1 vendor (whole-tensor API) | — | abstain: fused local program cannot host an exter… |
+| N1024B64_dit | A1P0 | framework decomposition | P0 triton local | 6.27 | 6.2166 |
+| N1024B64_dit | A1P1 | framework decomposition | P1 vendor torch.fft on sub-blocks | 0.38 | 0.3120 |
+| N1024B64_dit | baseline (full) | external baseline (not a cell) | P1 vendor whole transform | 0.26 | 0.2408 |
+| N2048B16_dit | A0P0 | fused (m2 runner) | P0 triton local | 1.54 | 1.4750 |
+| N2048B16_dit | **A0P1** | fused (m2 runner) | P1 vendor (whole-tensor API) | — | abstain: fused local program cannot host an exter… |
+| N2048B16_dit | A1P0 | framework decomposition | P0 triton local | 3.86 | 3.8700 |
+| N2048B16_dit | A1P1 | framework decomposition | P1 vendor torch.fft on sub-blocks | 0.37 | 0.3006 |
+| N2048B16_dit | baseline (full) | external baseline (not a cell) | P1 vendor whole transform | 0.66 | 0.6581 |
+
+A0P1 abstains by construction (fused core boundary). The vendor whole transform is an external baseline, not a cell. Setup = first call incl. compile; exec = median wall ms, explicit synchronize. A1 cells pay the framework's gathers, twiddle materialization, transposes, and digit-reversal transpose — the IO the review asked us to attribute separately.
+
+Reading (measured, single card): the decomposition flow with our
+triton local core (A1P0) pays **4–8×** over the fused path
+(A0P0) — framework gathers, transposes, and twiddle
+materialization dominate exactly as the review suspected. With
+the vendor's per-block core (A1P1) the same decomposition is
+**faster than A0P0 at B=16**: the vendor kernels are better at
+small lengths than our fused stage, and the framework IO there
+costs ~0.08 ms over the whole transform. That is a real hybrid
+win on this stack — and also why the frozen table does *not*
+chase it silently: A1P1 changes the core provenance and would
+have to pass the same guard/freshness path as any candidate
+(this canary is reported, not promoted).
 
 ## What the evidence does not prove
 

@@ -40,22 +40,6 @@ import torch
 import triton  # noqa: F401  (kernel decorators below)
 import triton.language as tl  # noqa: F401
 
-_TWIDDLE: dict = {}
-
-
-def _twiddle_grid(n: int, r: int, t: int, dtype, device) -> torch.Tensor:
-    """ω_N^{k0·k1} on the (R, T) frequency grid, cached per (n, r, dtype)."""
-    key = (n, r, str(dtype), str(device))
-    w = _TWIDDLE.get(key)
-    if w is None:
-        k0 = torch.arange(r, device=device, dtype=torch.float64)
-        k1 = torch.arange(t, device=device, dtype=torch.float64)
-        ang = -2.0 * math.pi * torch.outer(k0, k1) / n
-        w = torch.complex(torch.cos(ang), torch.sin(ang)).to(dtype)
-        _TWIDDLE[key] = w
-    return w
-
-
 @dataclass
 class HybridPlan:
     """Framework-owned decomposition plan; the core is a parameter, not
@@ -233,11 +217,6 @@ def _core_fft_1d(flat2d: torch.Tensor, length: int,
     if plan.core == "vendor":
         return torch.fft.fft(flat2d, dim=-1)
     return _local_stage_triton_1d(flat2d, length, plan)
-
-
-def max_rel_err(y: torch.Tensor, ref: torch.Tensor) -> float:
-    scale = ref.abs().max().clamp_min(1e-12)
-    return float((y - ref).abs().max() / scale)
 
 
 def time_cell(fn, x: torch.Tensor, warmup: int, trials: int):

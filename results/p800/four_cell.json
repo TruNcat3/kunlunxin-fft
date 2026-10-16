@@ -1,6 +1,6 @@
 {
-  "commit": "70bd4718b38b38930bbd9b6bb247beb7112e48a3",
-  "dirty": true,
+  "commit": "61f9a80d86dc22005ffc491acdd1566f45a68204",
+  "dirty": false,
   "err_max": 0.0001,
   "kind": "issue-3-four-cell-ablation",
   "note": "A0P1 abstains by construction (fused core boundary). The vendor whole transform is an external baseline, not a cell. Setup = first call incl. compile; exec = median wall ms, explicit synchronize. A1 cells pay the framework's gathers, twiddle materialization, transposes, and digit-reversal transpose \u2014 the IO the review asked us to attribute separately.",
@@ -9,17 +9,17 @@
     {
       "N": 1024,
       "a0p0_speedup_of_a1": {
-        "A1P0": 0.259,
-        "A1P1": 2.346
+        "A1P0": 0.296,
+        "A1P1": 2.436
       },
       "batch": 16,
       "cells": {
         "A0P0": {
           "core": "P0 triton local",
-          "exec_ms": 0.7531,
+          "exec_ms": 0.7533,
           "flow": "fused (m2 runner)",
           "max_rel_err": 5.137526997067726e-07,
-          "setup_ms": 0.9471
+          "setup_ms": 0.9078
         },
         "A0P1": {
           "abstain": "fused local program cannot host an external whole-tensor core; the core boundary is the whole kernel",
@@ -28,24 +28,24 @@
         },
         "A1P0": {
           "core": "P0 triton local",
-          "exec_ms": 2.9035,
+          "exec_ms": 2.5489,
           "flow": "framework decomposition",
           "max_rel_err": 3.249850866101456e-07,
-          "setup_ms": 3.1109
+          "setup_ms": 2.6766
         },
         "A1P1": {
           "core": "P1 vendor torch.fft on sub-blocks",
-          "exec_ms": 0.3211,
+          "exec_ms": 0.3092,
           "flow": "framework decomposition",
           "max_rel_err": 4.0441733385780533e-07,
-          "setup_ms": 0.3712
+          "setup_ms": 0.3583
         },
         "vendor_full": {
           "core": "P1 vendor whole transform",
-          "exec_ms": 0.241,
+          "exec_ms": 0.2407,
           "flow": "external baseline (not a cell)",
           "max_rel_err": 4.902291647419523e-07,
-          "setup_ms": 0.2688
+          "setup_ms": 0.2539
         }
       },
       "direction": "dit",
@@ -54,17 +54,17 @@
     {
       "N": 1024,
       "a0p0_speedup_of_a1": {
-        "A1P0": 0.36,
-        "A1P1": 6.95
+        "A1P0": 0.365,
+        "A1P1": 7.278
       },
       "batch": 64,
       "cells": {
         "A0P0": {
           "core": "P0 triton local",
-          "exec_ms": 2.2577,
+          "exec_ms": 2.2706,
           "flow": "fused (m2 runner)",
           "max_rel_err": 4.4832672428346e-07,
-          "setup_ms": 2.3153
+          "setup_ms": 2.2898
         },
         "A0P1": {
           "abstain": "fused local program cannot host an external whole-tensor core; the core boundary is the whole kernel",
@@ -73,24 +73,24 @@
         },
         "A1P0": {
           "core": "P0 triton local",
-          "exec_ms": 6.2795,
+          "exec_ms": 6.2166,
           "flow": "framework decomposition",
           "max_rel_err": 2.814388757605271e-07,
-          "setup_ms": 6.3372
+          "setup_ms": 6.2712
         },
         "A1P1": {
           "core": "P1 vendor torch.fft on sub-blocks",
-          "exec_ms": 0.3248,
+          "exec_ms": 0.312,
           "flow": "framework decomposition",
           "max_rel_err": 3.8632532474966235e-07,
-          "setup_ms": 0.3902
+          "setup_ms": 0.3832
         },
         "vendor_full": {
           "core": "P1 vendor whole transform",
-          "exec_ms": 0.2412,
+          "exec_ms": 0.2408,
           "flow": "external baseline (not a cell)",
           "max_rel_err": 3.375466921732714e-07,
-          "setup_ms": 0.2531
+          "setup_ms": 0.26
         }
       },
       "direction": "dit",
@@ -99,17 +99,17 @@
     {
       "N": 2048,
       "a0p0_speedup_of_a1": {
-        "A1P0": 0.382,
-        "A1P1": 4.86
+        "A1P0": 0.381,
+        "A1P1": 4.908
       },
       "batch": 16,
       "cells": {
         "A0P0": {
           "core": "P0 triton local",
-          "exec_ms": 1.4803,
+          "exec_ms": 1.475,
           "flow": "fused (m2 runner)",
           "max_rel_err": 5.879338831883078e-07,
-          "setup_ms": 1.5514
+          "setup_ms": 1.537
         },
         "A0P1": {
           "abstain": "fused local program cannot host an external whole-tensor core; the core boundary is the whole kernel",
@@ -118,24 +118,24 @@
         },
         "A1P0": {
           "core": "P0 triton local",
-          "exec_ms": 3.8792,
+          "exec_ms": 3.87,
           "flow": "framework decomposition",
           "max_rel_err": 3.5721289923599904e-07,
-          "setup_ms": 4.4711
+          "setup_ms": 3.8568
         },
         "A1P1": {
           "core": "P1 vendor torch.fft on sub-blocks",
-          "exec_ms": 0.3046,
+          "exec_ms": 0.3006,
           "flow": "framework decomposition",
           "max_rel_err": 4.6207222778840174e-07,
-          "setup_ms": 0.376
+          "setup_ms": 0.3664
         },
         "vendor_full": {
           "core": "P1 vendor whole transform",
-          "exec_ms": 0.6573,
+          "exec_ms": 0.6581,
           "flow": "external baseline (not a cell)",
           "max_rel_err": 3.171509771923451e-07,
-          "setup_ms": 0.6626
+          "setup_ms": 0.6617
         }
       },
       "direction": "dit",

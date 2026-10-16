@@ -405,7 +405,6 @@ def inventory_section(four_cell: dict | None) -> list[str]:
                 lines.append(
                     f"| {key} | {label} | {c['flow']} | {c['core']} | "
                     f"{c['setup_ms']:.2f} | {c['exec_ms']:.4f} |")
-        lines.append(f"| {key} | | | | | |")
     lines += [
         "",
         four_cell.get("note", ""),
