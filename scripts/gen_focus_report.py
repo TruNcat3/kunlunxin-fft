@@ -456,70 +456,125 @@ def canary_section(pairs) -> list[str]:
 
 
 def hybrid_canary_section(canary: dict | None) -> list[str]:
-    """P2 re-test section: 3-session interleaved canary for A1P1."""
+    """P2 re-test section: multi-process canary for A1P1 (review §3)."""
     if canary is None:
         return [
-            "## P2 hybrid canary (3-session re-test)",
+            "## P2 hybrid canary (multi-process re-test)",
             "",
             "_Canary results pending `results/p800/hybrid_canary.json`._",
             "",
         ]
     lines = [
-        "## P2 hybrid canary (3-session interleaved re-test)",
+        "## P2 hybrid canary (multi-process re-test)",
         "",
-        "Issue #3 P2 acceptance asked for a bounded re-measure of the",
-        "A1P1 composition cell: 3 independent sessions, 30 interleaved",
-        "trials each (random cell order per trial), explicit",
-        "synchronize, HybridPlan caches cold per session, 1e-4",
-        "correctness gate on the first call before warmup.",
+        canary.get("process_model", ""),
         "",
         canary.get("protocol", ""),
         "",
-        "| shape | cell | pooled median ms ± stdev (all sessions) |",
-        "|---|---|---|",
+        "### Provenance (freshness gate)",
+        "",
+        f"- commit: `{canary.get('commit', '?')[:12]}` "
+        f"(all sessions same commit: "
+        f"{canary.get('all_sessions_same_commit')})",
+        f"- dirty: {canary.get('dirty')}",
+        f"- table env_hash: `{canary.get('table_env_hash')}` / live: "
+        f"`{canary.get('live_env_hash')}` (mismatch aborts with zero "
+        "kernel launches, in parent and in every worker)",
+        f"- profile_hash: `{canary.get('profile_hash')}`",
+        f"- protocol sessions: {canary.get('sessions_protocol')} "
+        f"+ confirmation added: "
+        f"{canary.get('confirmation_session_added')}",
+        f"- trials/session: {canary.get('trials')}, warmup: "
+        f"{canary.get('warmup')}, seed_base: {canary.get('seed_base')}",
+        "",
     ]
     for sh in canary.get("shapes", []):
         key = f"N{sh['N']}B{sh['batch']}_{sh.get('direction', 'dit')}"
         pooled = sh.get("pooled", {})
+        lines += [
+            f"### {key}",
+            "",
+            "| cell | p50 ms | MAD | p95 ms | max ms | outliers |",
+            "|---|---|---|---|---|---|",
+        ]
         for name in ("A0P0", "A1P0", "A1P1", "vendor_full"):
             v = pooled.get(name)
             if not v:
                 continue
+            out_n = v.get("outlier_count", 0)
+            out_v = v.get("outlier_values", [])
+            out_str = str(out_n)
+            if out_v:
+                out_str += " (" + ", ".join(
+                    f"{x:.4f}" for x in out_v[:4])
+                if len(out_v) > 4:
+                    out_str += ", ..."
+                out_str += ")"
             lines.append(
-                f"| {key} | {name} | "
-                f"{v['pooled_median_ms']:.4f} ± "
-                f"{v['pooled_stdev_ms']:.4f} |")
-    lines += [
-        "",
-        "### Guard evaluation (2% threshold)",
-        "",
-        "| shape | A1P1 vs A0P0 | A1P1 vs vendor_full |",
-        "|---|---|---|",
-    ]
-    for sh in canary.get("shapes", []):
-        key = f"N{sh['N']}B{sh['batch']}"
+                f"| {name} | {v.get('p50', 0):.4f} | "
+                f"{v.get('mad', 0):.4f} | {v.get('p95', 0):.4f} | "
+                f"{v.get('max', 0):.4f} | {out_str} |")
+        # Per-session p50 table
+        per = sh.get("per_session_p50", {})
+        if per:
+            sess_ids = sorted({i for d in per.values() for i in d})
+            header = "| cell | " + " | ".join(
+                f"s{i}" for i in sess_ids) + " |"
+            lines += [
+                "",
+                "Per-session p50 (ms) — a pooled median is never shown",
+                "alone:",
+                "",
+                header,
+                "|" + "---|" * (len(sess_ids) + 1),
+            ]
+            for name in ("A0P0", "A1P0", "A1P1", "vendor_full"):
+                row = per.get(name)
+                if not row:
+                    continue
+                cells = " | ".join(
+                    f"{row.get(i, float('nan')):.4f}" if row.get(i)
+                    is not None else "—" for i in sess_ids)
+                lines.append(f"| {name} | {cells} |")
         g = sh.get("guard", {})
         a0 = g.get("A1P1_vs_A0P0_pct")
         av = g.get("A1P1_vs_vendor_full_pct")
-        a0_mark = ("pass" if g.get("A1P1_beats_A0P0_by_2pct") else "fail")
-        av_mark = ("pass" if g.get("A1P1_beats_vendor_by_2pct") else "fail")
+        a0_mark = ("pass" if g.get("A1P1_beats_A0P0_by_2pct")
+                   else "fail")
+        av_mark = ("pass" if g.get("A1P1_beats_vendor_by_2pct")
+                   else "fail")
         a0_str = f"{a0:+.1f}% ({a0_mark})" if a0 is not None else "—"
         av_str = f"{av:+.1f}% ({av_mark})" if av is not None else "—"
-        lines.append(f"| {key} | {a0_str} | {av_str} |")
+        lines += [
+            "",
+            f"Guard (protocol-session pooled p50, 2% threshold): "
+            f"A1P1 vs A0P0 **{a0_str}**; A1P1 vs vendor_full "
+            f"**{av_str}**.",
+            "",
+        ]
     lines += [
+        "### Diagnostic reading (review §3 rules)",
         "",
-        "A1P1 beats the in-table A0P0 path by 54–81% at every shape",
-        "(the vendor sub-block core is much faster than our triton",
-        "local stage in the A1 flow). Against the vendor *whole*",
-        "transform, A1P1 is slower at 1024 shapes but **50.4% faster at",
-        "N2048B16** (0.3261 vs 0.6578 ms, ~2.02×) — the two-stage",
-        "decomposition with vendor sub-block cores beats the vendor's",
-        "single whole-transform call at this shape. This is an",
-        "experimental canary: even a guard pass does not promote A1P1",
-        "into the selector table this round (the cost model has no A1",
-        "family; promotion would require a full model + focus round).",
-        "The finding is a data point for future work, not a frozen",
-        "claim.",
+        "- first high, steady normal → JIT/compile or first cache fill;",
+        "- steady tracks analytical GM bytes → materialization / "
+        "transpose / boundary writeback;",
+        "- core time dominates → sub-transform length, thread layout, "
+        "or external-core call granularity;",
+        "- p95 / max spike → sync, allocator, thermal, or runtime "
+        "scheduling (re-measure in independent processes before "
+        "interpreting);",
+        "- env hash mismatch → do not interpret performance; "
+        "recalibrate first.",
+        "",
+        "A1P1 beats the in-table A0P0 path by a wide margin at every",
+        "shape (the vendor sub-block core is much faster than our",
+        "triton local stage in the A1 flow). Against the vendor",
+        "*whole* transform the picture is shape-dependent — see the",
+        "guard tables above. This is an experimental canary: even a",
+        "guard pass does not promote A1P1 into the selector table",
+        "(the cost model has no A1 family; promotion would require a",
+        "full model + focus round). The finding is a data point for",
+        "future work, not a frozen claim.",
         "",
     ]
     return lines
@@ -553,20 +608,40 @@ def inventory_section(four_cell: dict | None) -> list[str]:
             "",
         ]
         return lines
+    prov = four_cell.get("provenance", {})
     lines += [
+        "### Provenance (freshness gate)",
+        "",
+        f"- commit: `{prov.get('commit', '?')[:12]}`, dirty: "
+        f"{prov.get('dirty')}",
+        f"- table env_hash: `{prov.get('table_env_hash')}` / live: "
+        f"`{prov.get('live_env_hash')}` (mismatch aborts with zero "
+        "kernel launches)",
+        f"- profile_hash: `{prov.get('profile_hash')}`, guard: "
+        f"{prov.get('guard_pct')}%",
+        f"- device: driver {prov.get('device', {}).get('driver')}, "
+        f"model {prov.get('device', {}).get('device_model')}, "
+        f"MPs {prov.get('device', {}).get('multiprocessor_count')}",
+        f"- runtime: torch {prov.get('runtime', {}).get('torch')}, "
+        f"triton {prov.get('runtime', {}).get('triton')}, xpytorch "
+        f"{prov.get('runtime', {}).get('xpytorch')}, xre "
+        f"{prov.get('runtime', {}).get('xre')}",
+        "",
         "### Four-cell ablation (A0/A1 flow \u00d7 P0/P1 core)",
         "",
-        "Timing layers (issue #3 P1-5): **plan** = HybridPlan construction",
-        "(caches filled lazily), **first** = the first execution call",
+        "Timing layers (issue #3 P1-5 / review \u00a73): **plan** =",
+        "HybridPlan construction, **first** = the first execution call",
         "including JIT/compile and cache fill (correctness is judged on",
-        "this result), **steady** = median \u00b1 stdev of the run's trials",
-        "after warmup, explicit synchronize. Every timed cell passed the",
-        "1e-4 correctness gate against the NumPy reference. The vendor",
-        "*whole* transform is an external baseline, never a cell.",
+        "this result), **steady** = p50 / MAD / p95 / max / outlier",
+        "count of the run's trials after warmup, explicit synchronize.",
+        "A0P0 is fetched through `selector.select` (env gate); every",
+        "timed cell passed the 1e-4 correctness gate against the NumPy",
+        "reference. The vendor *whole* transform is an external",
+        "baseline, never a cell.",
         "",
-        "| shape | cell | flow | local core | plan ms | first ms "
-        "| steady ms \u00b1 stdev |",
-        "|---|---|---|---|---|---|---|",
+        "| shape | cell | flow | local core | plan ms | first ms |",
+        " p50 | MAD | p95 | max | outliers |",
+        "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for sh in four_cell["shapes"]:
         key = f"N{sh['N']}B{sh['batch']}_{sh['direction']}"
@@ -578,24 +653,35 @@ def inventory_section(four_cell: dict | None) -> list[str]:
             label = name if name != "vendor_full" else "baseline (full)"
             if c.get("abstain"):
                 note = c["abstain"]
-                note = note[:40] + "\u2026" if len(note) > 40 else note
+                note = note[:36] + "\u2026" if len(note) > 36 else note
                 lines.append(
                     f"| {key} | **{label}** | {c['flow']} | {c['core']} | "
-                    f"\u2014 | \u2014 | abstain: {note} |")
+                    f"\u2014 | \u2014 | \u2014 | \u2014 | \u2014 | \u2014 "
+                    f"| abstain: {note} |")
             else:
+                st = c.get("steady", {}) or {}
                 plan = c.get("plan_ms", 0.0)
                 first = c.get("first_ms")
-                steady = c.get("steady_ms")
-                stdev = c.get("steady_stdev_ms", 0.0)
+                out_n = st.get("outlier_count", 0)
+                out_v = c.get("outlier_values", [])
+                out_str = str(out_n)
+                if out_v:
+                    out_str += " (" + ", ".join(f"{x:.3f}"
+                                                for x in out_v[:3])
+                    if len(out_v) > 3:
+                        out_str += ", ..."
+                    out_str += ")"
                 lines.append(
                     f"| {key} | {label} | {c['flow']} | {c['core']} | "
-                    f"{plan:.2f} | {first:.2f} | {steady:.4f} \u00b1 {stdev:.4f} |")
+                    f"{plan:.2f} | {first:.2f} | {st.get('p50', 0):.4f} "
+                    f"| {st.get('mad', 0):.4f} | {st.get('p95', 0):.4f} "
+                    f"| {st.get('max', 0):.4f} | {out_str} |")
     lines += [
         "",
         four_cell.get("note", ""),
         "",
     ]
-    # Ledger (P2 call/boundary accounting): one compact table per shape.
+    # Ledger + phase profile for the A1 plans.
     ledgers = [(f"N{sh['N']}B{sh['batch']}_{sh['direction']}",
                 sh.get("ledger") or {}) for sh in four_cell["shapes"]]
     ledgers = [(k, led) for k, led in ledgers if led]
@@ -605,7 +691,9 @@ def inventory_section(four_cell: dict | None) -> list[str]:
             "",
             "Analytical accounting per call (complex64, 8 B/element).",
             "Vendor launches inside the xdnn stack are opaque; they are",
-            "counted as one host API call per row batch.",
+            "counted as one host API call per row batch. The pipeline",
+            "fuses transpose+twiddle into one GM pass and reuses the",
+            "grid buffer as the stage-2 input view (no flat2 copy).",
             "",
             "| shape | plan | core calls (s1\u00d7len / s2\u00d7len) "
             "| launches est | GM bytes (framework) |",
@@ -625,36 +713,71 @@ def inventory_section(four_cell: dict | None) -> list[str]:
                     f"{ld['gm_bytes_framework_est']} |")
         lines += [
             "",
-            "Twiddle and row tables are plan-cached; staging buffers are",
-            "pre-allocated per plan; the output tensor is fresh per call",
-            "(callers never alias plan buffers).",
+            "Twiddle and row tables are plan-cached; staging buffers",
+            "are pre-allocated per plan; the output tensor is fresh per",
+            "call (callers never alias plan buffers).",
             "",
         ]
+        # Phase profile of A1P1 (vendor core) with hidden-copy audit.
+        profs = [(k, led.get("A1P1_phase_profile"))
+                 for k, led in ledgers]
+        profs = [(k, pr) for k, pr in profs if pr]
+        if profs:
+            lines += [
+                "### Phase profile of the A1 pipeline (A1P1, "
+                "diagnostic)",
+                "",
+                "Explicit synchronize between phases (slower than the",
+                "steady path; not mixed into steady stats).",
+                "Hidden-copy audit: a non-contiguous core input would",
+                "force an opaque copy inside the vendor/local API.",
+                "",
+                "| shape | gather | stage1 core | twiddle+T | "
+                "stage2 core | scatter | hidden copies |",
+                "|---|---|---|---|---|---|---|",
+            ]
+            for key, pr in profs:
+                hid = pr.get("hidden_copies") or []
+                hid_str = ", ".join(hid) if hid else "none"
+                lines.append(
+                    f"| {key} | {pr.get('gather_ms', 0):.3f} | "
+                    f"{pr.get('stage1_core_ms', 0):.3f} | "
+                    f"{pr.get('twiddle_transpose_ms', 0):.3f} | "
+                    f"{pr.get('stage2_core_ms', 0):.3f} | "
+                    f"{pr.get('scatter_ms', 0):.3f} | {hid_str} |")
+            lines += [
+                "",
+                "stage2 input is a contiguous reshape view of the grid",
+                "buffer (no flat2 copy); stage1/stage2 outputs are",
+                "contiguous (recorded per run in the JSON).",
+                "",
+            ]
     # Bounded T\u00d7R factor scan (P2).
     scans = [(f"N{sh['N']}B{sh['batch']}_{sh['direction']}",
               sh.get("factor_scan") or []) for sh in four_cell["shapes"]]
     scans = [(k, rows) for k, rows in scans if rows]
     if scans:
+        a0p0_ref = {}
+        for sh in four_cell["shapes"]:
+            key = f"N{sh['N']}B{sh['batch']}_{sh['direction']}"
+            c = sh["cells"].get("A0P0") or {}
+            st = c.get("steady") or {}
+            if st.get("p50"):
+                a0p0_ref[key] = st["p50"]
         lines += [
             "### Bounded T\u00d7R factor scan (A1 flow)",
             "",
             "1024: 16\u00d764 / 32\u00d732 / 64\u00d716; 2048: 32\u00d764 / 64\u00d732.",
             "Same correctness gate and steady protocol; no N/B expansion.",
             "",
-            "| shape | T\u00d7R | A1P0 steady ms | A1P1 steady ms | A1P0/A0P0-like |",
+            "| shape | T\u00d7R | A1P0 p50 ms | A1P1 p50 ms | "
+            "A1P0/A0P0 |",
             "|---|---|---|---|---|",
         ]
-        # A0P0 reference per shape from the main cells.
-        a0p0_ref = {}
-        for sh in four_cell["shapes"]:
-            key = f"N{sh['N']}B{sh['batch']}_{sh['direction']}"
-            c = sh["cells"].get("A0P0") or {}
-            if c.get("steady_ms"):
-                a0p0_ref[key] = c["steady_ms"]
         for key, rows in scans:
             for row in rows:
-                a0 = row["A1P0"].get("steady_ms")
-                a1 = row["A1P1"].get("steady_ms")
+                a0 = (row["A1P0"].get("steady") or {}).get("p50")
+                a1 = (row["A1P1"].get("steady") or {}).get("p50")
                 a0r = a0p0_ref.get(key)
                 ratio = f"{a0 / a0r:.2f}\u00d7" if (a0 and a0r) else "\u2014"
                 lines.append(
@@ -682,13 +805,15 @@ def inventory_section(four_cell: dict | None) -> list[str]:
     for sh in four_cell["shapes"]:
         cells = sh["cells"]
 
-        def _steady(name):
+        def _p50(name):
             c = cells.get(name) or {}
-            return None if c.get("abstain") else c.get("steady_ms")
+            if c.get("abstain"):
+                return None
+            return (c.get("steady") or {}).get("p50")
 
         key = f"N{sh['N']}B{sh['batch']}_{sh['direction']}"
-        a0, a1 = _steady("A0P0"), _steady("A1P0")
-        av, ap1 = _steady("vendor_full"), _steady("A1P1")
+        a0, a1 = _p50("A0P0"), _p50("A1P0")
+        av, ap1 = _p50("vendor_full"), _p50("A1P1")
         if a0 and a1:
             a1p0_ratios.append(a1 / a0)
         if av and ap1:

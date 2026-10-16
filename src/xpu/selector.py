@@ -222,6 +222,37 @@ def load_table(path: str = TABLE_PATH) -> dict:
     return table
 
 
+def assert_current_environment(table: dict) -> str:
+    """Shared freshness gate for measurement scripts (issue #3 review).
+
+    Computes the live environment fingerprint and compares it to the
+    table's bound ``env_hash``. Raises ``RuntimeError`` on any mismatch
+    or unknown fingerprint — callers MUST exit **before any kernel
+    launch** (this function only imports torch/triton and queries the
+    driver; it never creates tensors). Returns the live env hash on
+    success so runs can record it in provenance.
+    """
+    bound = table.get("env_hash") or ""
+    if not bound:
+        raise RuntimeError(
+            "selector table carries no env_hash (pre-freshness schema); "
+            "refusing to measure against it -- rebuild the table from "
+            "clean focus rounds under the current env")
+    from .envcheck import current_env_hash
+    cur = current_env_hash()
+    if cur is None:
+        raise RuntimeError(
+            "live environment fingerprint unknown (device/runtime/"
+            "compiler not probeable); cannot verify the table -- "
+            "fail closed, recalibrate before measuring")
+    if cur != bound:
+        raise RuntimeError(
+            f"environment hash {cur} != table {bound} (device/runtime/"
+            "compiler changed since the table was built); re-run the "
+            "probe and re-measure before producing new artifacts")
+    return cur
+
+
 def _abstain(n, direction, batch, precision, reason) -> Selection:
     return Selection(n=n, direction=direction, batch=batch,
                      precision=precision, source="abstain", reason=reason)

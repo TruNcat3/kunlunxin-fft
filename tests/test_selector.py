@@ -408,3 +408,22 @@ def test_load_table_refuses_entries_outside_design_space():
             load_table(path)
     finally:
         os.unlink(path)
+
+
+def test_assert_current_environment_mismatch_raises():
+    from src.xpu.selector import assert_current_environment
+    # Pre-freshness table: no env_hash at all -> refuse.
+    with pytest.raises(RuntimeError, match="no env_hash"):
+        assert_current_environment({"entries": []})
+    # A bound table on a host without a live fingerprint: the live
+    # hash is unknown (envcheck.collect returns None without torch)
+    # -> refuse rather than guess.
+    try:
+        import torch  # noqa: F401
+        has_torch = True
+    except ImportError:
+        has_torch = False
+    table = {"env_hash": "0" * 16, "entries": []}
+    if not has_torch:
+        with pytest.raises(RuntimeError, match="unknown"):
+            assert_current_environment(table)

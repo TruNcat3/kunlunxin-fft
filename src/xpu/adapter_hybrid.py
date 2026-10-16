@@ -243,21 +243,25 @@ def run_hybrid(x: torch.Tensor, plan: HybridPlan) -> torch.Tensor:
     # x is (B, N); digit view per batch row: (m0, m1) with m = m1*R + m0.
     # Staging tensors and the twiddle table come from the plan cache
     # (issue #3 P2: pre-allocate + reuse; no per-call arange/outer/cos).
-    view = x.reshape(b, t2, tile).permute(0, 2, 1).reshape(b * tile, t2)
+    # The gather is ONE copy into the cached buffer: the (b, tile, t2)
+    # source is a free view, and blocks.view(b, tile, t2) is the cached
+    # memory itself (no intermediate reshape copy).
+    src = x.reshape(b, t2, tile).permute(0, 2, 1)    # (b, tile, t2) view
     blocks = plan.buffer("blocks", (b * tile, t2), x.dtype, x.device)
-    blocks.copy_(view)
+    blocks.view(b, tile, t2).copy_(src)
     # (B*R, T): rows are (m0) sequences over m1 — length-T row FFTs
     stage1 = _core_fft_1d(blocks, t2, plan)          # (B*R, T): (m0, k_t)
 
-    # (B, T, R): (k_t, m0)
+    # Fused transpose + twiddle (issue #3 P2: one GM pass, not copy
+    # then mul): read the permuted stage-1 view and the cached twiddle,
+    # write the cached (b, t2, tile) grid once.
     grid = plan.buffer("grid", (b, t2, tile), x.dtype, x.device)
-    grid.copy_(stage1.reshape(b, tile, t2).permute(0, 2, 1))
-    grid.mul_(plan.twiddle(x.device, x.dtype).unsqueeze(0))
+    torch.mul(stage1.reshape(b, tile, t2).permute(0, 2, 1),
+              plan.twiddle(x.device, x.dtype), out=grid)
 
-    # (B*T, R): rows are k_t-sequences over m0 — length-R row FFTs
-    flat2 = plan.buffer("flat2", (b * t2, tile), x.dtype, x.device)
-    flat2.copy_(grid.reshape(b * t2, tile))
-    stage2 = _core_fft_1d(flat2, tile, plan)         # (B*T, R): (k_t, k_r)
+    # (B*T, R): rows are k_t-sequences over m0 — length-R row FFTs.
+    # grid is contiguous, so the reshape is a free view — no flat2 copy.
+    stage2 = _core_fft_1d(grid.reshape(b * t2, tile), tile, plan)
 
     # fresh output tensor every call (reshape of the permuted stage-2
     # view forces a copy): callers never alias the plan's buffers
@@ -286,14 +290,12 @@ def plan_ledger(plan: HybridPlan) -> dict:
         return max(0, length.bit_length() - 2)  # radix-2 stages, small path
 
     boundaries = [
-        {"op": "gather x.reshape(T,R).T -> blocks",
+        {"op": "gather x.reshape(T,R).T -> blocks (single copy into "
+               "plan buffer)",
          "bytes_est": b * n * elem},
-        {"op": "stage1 -> grid transpose (k_t, m0)",
-         "bytes_est": b * t2 * tile * elem},
-        {"op": "twiddle table (plan-cached after first use)",
-         "bytes_est": t2 * tile * elem},
-        {"op": "grid -> flat2 copy (k_t, k_r rows)",
-         "bytes_est": b * t2 * tile * elem},
+        {"op": "fused stage1 transpose + twiddle -> grid (one GM "
+               "pass; tw table plan-cached)",
+         "bytes_est": b * t2 * tile * elem + t2 * tile * elem},
         {"op": "digit-reversal transpose + flatten -> out",
          "bytes_est": b * n * elem},
     ]
@@ -321,11 +323,38 @@ def _core_fft_1d(flat2d: torch.Tensor, length: int,
     return _local_stage_triton_1d(flat2d, length, plan)
 
 
+def summarize_samples(samples: list[float]) -> dict:
+    """Robust steady-state stats (issue #3 review): p50, MAD, p95, max,
+    outlier count. An outlier is a sample > p50 + 3*MAD (or, when
+    MAD == 0, > 1.5 * p50). Pure Python, host-testable."""
+    if not samples:
+        return {"n": 0}
+    s = sorted(samples)
+    n = len(s)
+    p50 = s[n // 2] if n % 2 else 0.5 * (s[n // 2 - 1] + s[n // 2])
+    abs_dev = sorted(abs(v - p50) for v in s)
+    mad = abs_dev[n // 2] if n % 2 else 0.5 * (abs_dev[n // 2 - 1]
+                                               + abs_dev[n // 2])
+    p95 = s[min(n - 1, int(round(0.95 * (n - 1))))]
+    thr = p50 + 3.0 * mad if mad > 0 else 1.5 * p50
+    outliers = [v for v in s if v > thr]
+    return {
+        "n": n,
+        "p50": p50,
+        "mad": mad,
+        "p95": p95,
+        "max": s[-1],
+        "outlier_count": len(outliers),
+        "outlier_values": outliers,
+        "outlier_threshold": thr,
+    }
+
+
 def time_cell(fn, x: torch.Tensor, warmup: int, trials: int):
-    """Split timing (issue #3 P1-5): (first_ms, steady_median_ms,
-    steady_stdev_ms). `first` is the single first call (JIT/compile +
-    plan cache fill); `steady` is median/stdev of `trials` calls after
-    `warmup`, explicit synchronize around every timed call."""
+    """Split timing (issue #3 P1-5): (first_ms, stats). `first` is the
+    single first call (JIT/compile + plan cache fill); `stats` is
+    summarize_samples over `trials` calls after `warmup`, explicit
+    synchronize around every timed call."""
     _require_runtime()
     dev = x.device
     t0 = time.perf_counter()
@@ -342,8 +371,60 @@ def time_cell(fn, x: torch.Tensor, warmup: int, trials: int):
         fn(x)
         torch.cuda.synchronize(dev)
         samples.append((time.perf_counter() - t0) * 1e3)
-    samples.sort()
-    mid = samples[len(samples) // 2]
-    stdev = (sum((s - mid) ** 2 for s in samples) / max(1, len(samples) - 1)
-             ) ** 0.5
-    return first_ms, mid, stdev
+    return first_ms, summarize_samples(samples)
+
+
+def profile_hybrid(x: torch.Tensor, plan: HybridPlan):
+    """Phase-level breakdown of run_hybrid (issue #3 review §3).
+
+    Returns (out, phases) where phases has explicit-synchronize wall
+    times for gather, stage1 core, fused transpose+twiddle, stage2
+    core, and scatter, plus per-phase materialized-input contiguity
+    (hidden-copy audit: a non-contiguous core input would force an
+    opaque copy inside the vendor/local API). Diagnostic only — the
+    sync between phases makes it slower than the steady path.
+    """
+    _require_runtime()
+    dev = x.device
+    n, tile, t2 = plan.n, plan.tile, plan.stage2_len
+    b = x.shape[0]
+    phases: dict = {"core": plan.core}
+
+    def _lap(t0):
+        torch.cuda.synchronize(dev)
+        return (time.perf_counter() - t0) * 1e3
+
+    t0 = time.perf_counter()
+    src = x.reshape(b, t2, tile).permute(0, 2, 1)
+    blocks = plan.buffer("blocks", (b * tile, t2), x.dtype, x.device)
+    blocks.view(b, tile, t2).copy_(src)
+    phases["gather_ms"] = _lap(t0)
+
+    t0 = time.perf_counter()
+    stage1 = _core_fft_1d(blocks, t2, plan)
+    phases["stage1_core_ms"] = _lap(t0)
+    phases["stage1_out_contiguous"] = bool(stage1.is_contiguous())
+
+    t0 = time.perf_counter()
+    grid = plan.buffer("grid", (b, t2, tile), x.dtype, x.device)
+    torch.mul(stage1.reshape(b, tile, t2).permute(0, 2, 1),
+              plan.twiddle(dev, x.dtype), out=grid)
+    phases["twiddle_transpose_ms"] = _lap(t0)
+
+    t0 = time.perf_counter()
+    flat2_view = grid.reshape(b * t2, tile)
+    phases["stage2_in_contiguous"] = bool(flat2_view.is_contiguous())
+    stage2 = _core_fft_1d(flat2_view, tile, plan)
+    phases["stage2_core_ms"] = _lap(t0)
+    phases["stage2_out_contiguous"] = bool(stage2.is_contiguous())
+
+    t0 = time.perf_counter()
+    out = stage2.reshape(b, t2, tile).permute(0, 2, 1).reshape(b, n)
+    phases["scatter_ms"] = _lap(t0)
+    phases["hidden_copies"] = [
+        name for name, ok in (
+            ("stage1_in", blocks.is_contiguous()),
+            ("stage2_in", phases["stage2_in_contiguous"]),
+        ) if not ok
+    ]
+    return out, phases
