@@ -184,6 +184,98 @@ def headline_section(pairs) -> list[str]:
     return lines, exact
 
 
+def attribution_section(pairs) -> list[str]:
+    """Q2: where does the gain come from — one axis varied per contrast,
+    ratios computed from BOTH clean rounds (control/variant, >1 =
+    variant faster)."""
+    rows = [
+        ("m0 host loop / m4_spread — batch lowering, radix-2 held",
+         "flow: Ud=B on the grid axis vs no batch lowering",
+         "baseline_m0_rank1_loop", "m4_spread"),
+        ("m4_spread / m5 — core radix, global-stage flow held",
+         "core: radix-4 spans beat radix-2 stages",
+         "m4_spread", "m5_batch"),
+        ("m4_spread / m2_batch — local-matrix vs scalar stages",
+         "joint flow+unit: register-resident dot group "
+         "(local-fused-tile + dense-dot-fft64)",
+         "m4_spread", "m2_batch"),
+        ("m2_batch / best screened m2 — parameters only",
+         "cost-model bounded search: tile=128 variants",
+         "m2_batch", "best_m2"),
+    ]
+    lines = [
+        "## Q2. Where the gain comes from (one axis per contrast)",
+        "",
+        "Ratios computed from both clean rounds (control/variant, >1 =",
+        "variant faster); ranges span all eight focus shapes:",
+        "",
+        "| contrast (axis varied, others held) | ratio range (A/B) | "
+        "attribution |",
+        "|---|---:|---|",
+    ]
+    for label, attr, ctrl, var in rows:
+        ratios = []
+        for _, sa, sb in pairs:
+            for sh in (sa, sb):
+                cands = sh["candidates"]
+                if ctrl not in cands:
+                    continue
+                if var == "best_m2":
+                    pts = _m2_points(sh)
+                    if not pts:
+                        continue
+                    v = min(pts.values())
+                else:
+                    if var not in cands:
+                        continue
+                    v = float(cands[var]["median_ms"])
+                ratios.append(float(cands[ctrl]["median_ms"]) / v)
+        if not ratios:
+            continue
+        lines.append(
+            f"| {label} | {min(ratios):.2f}–{max(ratios):.2f}× | "
+            f"{attr} |")
+    lines += [
+        "",
+        "Reading: the incumbent-relative win is the M2 lowering (joint",
+        "flow + processing unit) multiplied by the bounded search's",
+        "parameter gain; radix-4 (M5) is the faster global-stage core",
+        "but still loses to M2's register residency. The P2 packet",
+        "canary is reported with its own denominators below, not here.",
+        "",
+    ]
+    return lines
+
+
+def vendor_gap_section(pairs) -> list[str]:
+    """Q3: where we still lose to the vendor baseline."""
+    gaps = []
+    for key, sa, sb in pairs:
+        for sh in (sa, sb):
+            ka, ma, _ = _winner(sh)
+            gaps.append(ma / _vendor_ms(sh))  # >1: vendor faster
+    lines = [
+        "## Q3. Where we still lose to the vendor",
+        "",
+        f"`torch.fft.fft` (vendor, whole transform) is "
+        f"**{min(gaps):.1f}–{max(gaps):.1f}×** faster than our best",
+        "measured model candidate across the eight focus shape/direction "
+        "rows — everywhere we measured. The vendor probe also rejects",
+        "N≥4096 (`NOT IMPLEMENTED` in aten capture), so the gap is a",
+        "speed gap on N≤2048 only; larger sizes have no vendor baseline",
+        "to chase on this stack.",
+        "",
+        "The four-cell ablation (below) shows the *shape* of the gap:",
+        "the vendor's small-block kernels are strong enough that a",
+        "framework decomposition calling them (A1P1) reaches within",
+        "~0.07 ms of the whole transform — our fused path (A0P0) is",
+        "further out. Closing it means better local-stage kernels or a",
+        "guard-passing hybrid entry, neither of which this round claims.",
+        "",
+    ]
+    return lines
+
+
 def stability_section(pairs) -> list[str]:
     lines = [
         "## Winner stability across independent rounds",
@@ -498,6 +590,8 @@ def main() -> None:
     out = ["# Batch focus report — issue #3 (P800)", ""]
     out += provenance_section(args.focus, args.holdout, table, calib)
     out += headline
+    out += attribution_section(pairs)
+    out += vendor_gap_section(pairs)
     out += stability_section(pairs)
     out += holdout_section(pairs, holdout)
     out += validation_section(validation)

@@ -37,6 +37,39 @@
 
 Exact winner agreement across the two clean rounds: **2/8**. Where the names differ, see the stability section: the disputed pairs are ties inside measurement noise, not regressions.
 
+## Q2. Where the gain comes from (one axis per contrast)
+
+Ratios computed from both clean rounds (control/variant, >1 =
+variant faster); ranges span all eight focus shapes:
+
+| contrast (axis varied, others held) | ratio range (A/B) | attribution |
+|---|---:|---|
+| m0 host loop / m4_spread — batch lowering, radix-2 held | 1.90–4.65× | flow: Ud=B on the grid axis vs no batch lowering |
+| m4_spread / m5 — core radix, global-stage flow held | 1.69–2.20× | core: radix-4 spans beat radix-2 stages |
+| m4_spread / m2_batch — local-matrix vs scalar stages | 1.99–2.21× | joint flow+unit: register-resident dot group (local-fused-tile + dense-dot-fft64) |
+| m2_batch / best screened m2 — parameters only | 1.17–1.29× | cost-model bounded search: tile=128 variants |
+
+Reading: the incumbent-relative win is the M2 lowering (joint
+flow + processing unit) multiplied by the bounded search's
+parameter gain; radix-4 (M5) is the faster global-stage core
+but still loses to M2's register residency. The P2 packet
+canary is reported with its own denominators below, not here.
+
+## Q3. Where we still lose to the vendor
+
+`torch.fft.fft` (vendor, whole transform) is **2.3–8.8×** faster than our best
+measured model candidate across the eight focus shape/direction rows — everywhere we measured. The vendor probe also rejects
+N≥4096 (`NOT IMPLEMENTED` in aten capture), so the gap is a
+speed gap on N≤2048 only; larger sizes have no vendor baseline
+to chase on this stack.
+
+The four-cell ablation (below) shows the *shape* of the gap:
+the vendor's small-block kernels are strong enough that a
+framework decomposition calling them (A1P1) reaches within
+~0.07 ms of the whole transform — our fused path (A0P0) is
+further out. Closing it means better local-stage kernels or a
+guard-passing hybrid entry, neither of which this round claims.
+
 ## Winner stability across independent rounds
 
 Two full independent rounds (fresh processes, same seed
