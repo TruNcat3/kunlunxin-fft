@@ -15,9 +15,10 @@
 
 ## 扩展矩阵
 
-当前发布语义是 `FP32/complex64 × forward C2C × 1D × 二次幂`。新增 batch-aware kernel 时，
-先固定 `N=1024,2048`、`B=16,64`，逐点比较 M0、M4、新 M2/M5；通过后再扩展
-`N=16,64,4096,65536,1048576` 和其他 batch。
+当前发布语义是 `FP32/complex64 × forward C2C × 1D × 二次幂`。Issue #3 已在
+`N=1024,2048`、`B=16,64` 上逐点比较 M0、M4、M2/M5/local-fused，并完成两轮 focus 与全空间
+holdout。后续扩展应覆盖 `N=16,64,4096,65536,1048576` 和其他 batch，同时保留该网格作为回归
+锚点。
 
 任何超出设备内存、局部容量或 compiler envelope 的点都应在分配前记录为 `unsupported/resource`
 并继续后续点，不能用 OOM 或挂起掩盖矩阵缺口。
@@ -28,4 +29,7 @@
 trial、中位数和波动。API wall、kernel/device、plan creation 分列。没有硬件 counter 时不要把
 解析 GM bytes 写成实测带宽或 occupancy。
 
-下一页：[验证与发布](development/validation-and-release.md)。
+基于提交 `5e1b0d3` 的本轮工作树，host 门禁为 `170 passed, 9 skipped, 11 deselected`；设备性能
+结论来自归档的 P800 独立 session，而不是在无 P800 的文档主机上重算。
+
+下一页：[P800 设备路径](development/device-stack.md)。

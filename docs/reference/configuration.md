@@ -7,9 +7,13 @@
 | `config/sizes.json` | correctness/benchmark 长度与 block 列表 | 所有点都进入 selector |
 | `config/test_matrix.json` | smoke/full 正确性 suite 声明 | 脚本已经执行所有列出的 pattern |
 | `config/selector_table.json` | 已确认 shape 的冻结运行表 | 表外插值或跨硬件模型 |
+| `config/calibration.json` | `hw_probe` 采集的环境指纹、资源观察与性能锚点 | 自动完成所有候选重测 |
+| `config/external_cores.json` | 外部计算核心能力与可组合性分类 | 已进入默认 selector |
 
-`DeviceProfile.hash()` 对 `device.json` 的规范化内容做哈希，用于防止错误表静默命中。它不查询
-`xpu-smi`，也不检测当前 driver、设备数或时钟。
+`DeviceProfile.hash()` 对 `device.json` 的规范化内容做哈希；live environment 由
+`scripts/hw_probe.py` 采集并以 `env_hash` 绑定 `calibration.json`、测量 manifest 与 selector。
+二者失配时运行时 fail closed。结构模型实现在 `src/xpu/cost_model.py`，效率常数是声明值而不是
+从验证数据回拟合的隐藏配置。
 
 设计空间沿用 cuButterfly 的分层：A 是架构/流映射，P 是 processing unit，L 是 layout，G 是
 twiddle/系数策略，F 是变换结构，H 是硬件 envelope。JSON 中历史描述若与当前 runner 冲突，以

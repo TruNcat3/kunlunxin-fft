@@ -22,8 +22,11 @@
 - 小长度的 M1 主要节省 launch 和早期边界；长度增大后 barrier/store-load 链可能反转收益。
 - 中等长度的 M2 是 dense-dot 核心与局部驻留的联合效果。
 - 大长度的 M5 固定 global-stage flow，只替换 radix-4 核心，适合做 core A/B。
-- 目前 batch 点主要走 M4/M0-shaped global-stage 路径，不能拿单变换结果外推 batch 吞吐。
+- 上表所属的冻结 release 中，batch 点主要走 M4/M0-shaped global-stage 路径；后续 Issue #3
+  已接入 batch M2/M5/local-fused 候选，并在 focus 网格相对旧 incumbent 提升 `2.2x--2.7x`。
+  两轮协议不同，不能把单变换或 focus 结果外推到未测 batch。
 
-宽范围交叉点见[消融](ablations.md)，原始文件和重跑命令见[复现](reproducibility.md)。
+最新 batch 数据见[批量与模型验证](batch-focus.md)，宽范围交叉点见[消融](ablations.md)，原始
+文件和重跑命令见[复现](reproducibility.md)。
 
 下一页：[端到端与应用](end-to-end.md)。

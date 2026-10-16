@@ -75,4 +75,4 @@ y = execute_fft_plan(plan, x)
 当前只有 M4/M0 batch lowering。不存在已测表项或不满足 lowering contract 时，plan 会保守回退
 到 folded M0，而不是猜测一个候选。
 
-下一页：[变换契约](../user-guide/transforms.md)。
+下一页：[故障排查](../reference/troubleshooting.md)。

@@ -1,7 +1,8 @@
 # 性能与故障诊断
 
-当前仓库没有等价于 NCU 的通用 XPU counter 采集器，也没有安装期自动硬件 profile。文档中的
-`kernel_ms` 来自 runtime 计时，GM bytes/launches 部分来自解析账本，不能称为硬件 counter。
+当前仓库没有等价于 NCU 的通用 XPU counter 采集器，也没有安装期一键完成的自动校准。已有
+`scripts/hw_probe.py` 会采集设备/软件环境和少量性能锚点，成本模型据此筛选候选；文档中的
+`kernel_ms` 仍来自 runtime 计时，GM bytes/launches 部分来自解析账本，不能称为硬件 counter。
 
 ## 性能问题的检查顺序
 
@@ -23,7 +24,9 @@ bash scripts/diag_snapshot.sh <PID> <bench.log> diagnostics/local
 
 ## 新硬件
 
-不要把 `config/device.json` 当作动态探针。新设备需要单独记录硬件/driver/toolchain，验证 context、
-lowering 与资源边界，再采集有限代表点并做留出验证。自动 probe、成本建模和 table 生成尚未闭环。
+不要把 `config/device.json` 当作动态探针。新设备需要单独记录硬件/driver/toolchain，运行
+`scripts/hw_probe.py`，验证 context、lowering 与资源边界，再采集有限代表点并做留出验证。当前
+probe、环境绑定、成本模型与表构建组件均已存在，但“安装后自动测量并发布新表”的一键工作流尚未
+闭环。
 
-下一页：[验证与发布](validation-and-release.md)。
+下一页：[增加设计点](adding-design-points.md)。

@@ -30,7 +30,7 @@ M0 始终存在于设计空间。发布汇总以同 block M0 为 incumbent；pro
 非法 flow/unit/residence/pipeline 一律拒载。
 
 `config/selector_table.json` 来自 `confirm_b1024.json`、`confirm_b256.json`、`confirm_batch.json`
-与 Issue #3 的 focus 轮（`batch_focus_a/b`）。当前 `bench.py` 新生成的 manifest 尚未自动补齐
+与已关闭 Issue #3 的 focus 轮（`batch_focus_a/b`）。当前 `bench.py` 新生成的 manifest 尚未自动补齐
 table builder 要求的 `timing_scope/protocol_id`，所以文档不把“任意新 bench JSON 一键构表”
 宣传为已完成能力。
 

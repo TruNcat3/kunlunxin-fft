@@ -66,8 +66,8 @@ T ≈ T_dispatch
 按少量典型变量校准，而不是为每个 shape 单独拟合（Issue #3 轮次已落地）：
 
 1. `cost_model.axes()` 从真实 lowering 生成 execution groups、GM 边界、核心操作量和同步计数；
-2. 固定开销、边界流量、核心系数声明在 `config/cost_model.json`（来源 `config/calibration.json`
-   的 probe 锚点），**从不**对验证 run 回拟合；
+2. 固定开销和硬件锚点来自 `config/calibration.json`，核心效率常数显式声明在
+   `src/xpu/cost_model.py`，**从不**对验证 run 回拟合；
 3. `bounded_search` 用模型筛选 top-K，再以 correctness-first 的实测决定 winner；
 4. 留出验证已跑：focus 轮的 2% guard 晋升决策一致率、full-space holdout 的 top-3 命中与选择
    regret 见 [batch-focus 报告](../benchmarks/batch-focus.md)与
@@ -75,7 +75,8 @@ T ≈ T_dispatch
 5. M0 闭包与环境绑定同时生效：profile/环境指纹缺失或失配时拒绝静默复用旧表。
 
 模型不声称绝对时间精度（MDAPE 结构性偏高：只有 launch + 带宽 + 峰值 flops 三段账本，无硬件
-计数器）；它的声明范围是 guard 决策一致性与 bounded-search 的低 regret。后续任务见
-[未来计划](../roadmap.md)与 [Issue #3](https://github.com/TruNcat3/kunlunxin-fft/issues/3)。
+计数器）；它的声明范围是 guard 决策一致性与 bounded-search 的低 regret。Issue #3 已完成并
+关闭，其验收数据见[批量与模型验证](../benchmarks/batch-focus.md)；未完成能力见
+[未来计划](../roadmap.md)。
 
 下一页：[实数变换边界](real-transforms.md)。

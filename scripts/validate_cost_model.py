@@ -18,8 +18,9 @@ and runs :meth:`src.xpu.cost_model.validate`:
 
 The result is written to ``results/p800/model_validation.json`` and
 embedded in the regenerated batch-focus report. Nothing here tunes the
-model: constants are declared in ``config/cost_model.json`` beforehand;
-this script only measures.
+model: efficiency constants are declared in ``src/xpu/cost_model.py`` and
+hardware anchors come from ``config/calibration.json``; this script only
+measures.
 
 Usage::
 

@@ -93,3 +93,5 @@ the *whole* signal, the honest conclusion would be "no legal local core
 exists on this machine" — that is not the case here: the sub-block
 invocation is legal (public torch API), measurable, and the report says
 exactly what it costs.
+
+下一页：[工程结构](../development/repository-layout.md)。

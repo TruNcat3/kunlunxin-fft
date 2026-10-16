@@ -28,9 +28,11 @@ M2 的 dense-dot FFT64 与 matrix-resident lowering 同时变化，所以 `1.64x
   <figcaption>M4 将 batch 映射为 spread（数据空间展开 Ud）或 folded（数据时间展开 Td）。图为 Phase 3 协议，不能与正式 release latency 直接合并。</figcaption>
 </figure>
 
-大 batch 提供更多同构 packet，但不会消除每个 packet 的阶段 GM 流量。当前 release 中 batch
-selector 多数回退或与 M0 持平，并明显落后 matched vendor。这说明数据维度模板已经存在，但高效
-batched local core / residence 尚未接入，不应把“负载更多”直接等价为“相对专业库更快”。
+大 batch 提供更多同构 packet，但不会消除每个 packet 的阶段 GM 流量。旧 release 中 batch
+selector 多数回退或与 M0 持平；Issue #3 随后接入 batch M2/M5/local-fused，将四个 focus shape
+相对旧 incumbent 提升 `2.2x--2.7x`。不过原生 focus 路径仍落后 matched vendor `2.3x--8.9x`，
+只有独立的 experimental A1P1 在 `N=2048,B=16` 形成 `2.87x` 正向 canary。因此“负载更多”只
+提供摊销机会，不自动保证专业库相对性能；核心、边界和 lowering 仍要一起选择。
 
 ## Block 也是硬件参数
 

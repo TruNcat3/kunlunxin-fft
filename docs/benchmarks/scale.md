@@ -20,6 +20,8 @@ Phase 3 扫描覆盖 `N=2^3..2^20` 的 18 个二次幂长度，并包含 M0/M1/M
 
 大长度不自动意味着更高加速：必要 GM 边界、同步、局部容量、波次和 processing unit 成本仍会
 随 shape 改变。大 batch 也只增加同构 packet，不能自动把 M4 的 global-stage radix-2 变成驻留
-batch pipeline。下一轮 batch-aware M2/M5 任务记录在 [Issue #3](https://github.com/TruNcat3/kunlunxin-fft/issues/3)。
+batch pipeline。关闭的 [Issue #3](https://github.com/TruNcat3/kunlunxin-fft/issues/3) 已在
+`N=1024/2048, B=16/64` 上接入 batch-aware M2/M5/local-fused 候选，相对旧 incumbent 获得
+`2.2x--2.7x`；这验证了 batch 映射可以继续优化，但并不等同于完整跨 worker persistent 流水。
 
-下一页：[原始数据与复现](reproducibility.md)。
+下一页：[消融与交叉点](ablations.md)。

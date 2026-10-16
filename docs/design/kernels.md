@@ -7,10 +7,11 @@
 
 | 核心 | 当前实现 | 适用角色 | 备注 |
 |---|---|---|---|
-| `radix2-scalar` | M0/M1/M4 | global stage、fused tile、batch | 基础正确性闭包 |
-| `radix4-scalar` | M5 | global stage | 相邻阶段组合；奇数 logN 带 radix-2 tail |
-| `dense-dot-fft64` | M2 | matrix-resident local tile | host 预计算矩阵，`tl.dot(..., input_precision="ieee")` |
+| `radix2-scalar` | M0/M1/M4 | global stage、fused tile、spread/folded batch | 基础正确性闭包 |
+| `radix4-scalar` | M5 | 单变换与 batch global stage | 相邻阶段组合；奇数 logN 带 radix-2 tail |
+| `dense-dot-fft64` | M2 | 单变换与 batch matrix-resident local tile | host 预计算矩阵，`tl.dot(..., input_precision="ieee")` |
 | `composite-linear-map` | M3 | grouped tail | 多 stage group 的组合映射 |
+| vendor sub-transform adapter | A1P1 experimental | 框架分解后的物化子块 | host API 组合；不是 device-resident 单核，不进入默认 selector |
 
 ## P800 lowering 的现实约束
 
@@ -31,6 +32,8 @@ pointer form；M2 用 dense linear map 避开跨 stage gather，并使局部中�
 
 当前结果显示 M1 在小长度能减少启动主导成本，却在大长度受 barrier/store-load 链影响；M5 在
 `N=65536` 和 `1048576` 显著优于 M0；M2 在 `N=1024..4096` 的单变换 release 点胜出。这正说明
-核心和流都需要成为参数，而不是固定选择。
+核心和流都需要成为参数，而不是固定选择。Issue #3 进一步验证 batch M2/M5 与 tile/rows 搜索：
+focus winner 相对旧 M4 incumbent 提升 `2.2x--2.7x`。外部 adapter 只在 `N=2048,B=16`
+形成稳定正向 canary，说明外部核心也能进入 `P` 轴，但仍需逐 shape guard。
 
-下一页：[选择器](selector.md)。
+下一页：[性能模型](performance-model.md)。

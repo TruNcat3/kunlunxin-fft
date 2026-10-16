@@ -4,8 +4,8 @@ Kunlunxin-FFT 是一个面向昆仑芯平台的 FFT 算子库，也是
 [cuButterfly](https://github.com/TruNcat3/cuButterfly) 混合空间-时间数据流方法在 P800 上的
 迁移实例。它继承方法层的阶段/数据展开、局部驻留和计算核心分层，但针对 Triton/XPU 工具链
 重新实现 lowering、候选执行和硬件绑定选择。当前版本完成了可执行设备路径、M0--M5 候选、冻结
-selector、plan reuse、batch 路径、正确性门禁和正式 release matrix；完整 batch 驻留、自动校准
-和 persistent pipeline 仍在路线图中。
+selector、plan reuse、batch 局部核心、手动硬件 probe、结构成本模型、留出验证和正式 release
+matrix；安装期一键校准与跨 worker persistent pipeline 仍在路线图中。
 
 <div class="project-affiliation">
   <div class="project-affiliation__logo">
@@ -32,6 +32,18 @@ selector、plan reuse、batch 路径、正确性门禁和正式 release matrix�
 - 厂商基线不是整体被超越：六个主 matched shape 中只有 `N=2048, B=1` 的 selected path 更快；`N=16/32, B=1` 另作为小尺寸补充点记录。
 - 发布矩阵全部通过 NumPy complex128 参考检查；完整误差、设备和协议见[结果汇总](benchmarks/results.md)。
 - 本项目证明方法能够迁移并产生可复现收益，不声称已达到 P800 的全局最优。
+
+### Issue #3 验收增量
+
+本轮新增证据与正式 release 分层保存，不把实验性结果改写成发布 headline：
+
+| 证据层 | 结果 | 状态 |
+|---|---|---|
+| Batch focus | 四个 `N=1024/2048 × B=16/64` shape 相对旧 incumbent 提升 `2.2x--2.7x` | 通过 guard 的项已冻结 |
+| 模型留出 | top-3/full-space recall `6/6`；平均 top-1 regret `0.0816%` | 用于筛选，不替代实测 |
+| 外部核心组合 | `N=2048,B=16` 为 `2.87x` vendor；两个 `N=1024` 点为负 | experimental，不进 selector |
+
+详见[实验设计与结果汇总](benchmarks/results.md)和[批量与模型验证](benchmarks/batch-focus.md)。
 
 ## 从哪里开始
 

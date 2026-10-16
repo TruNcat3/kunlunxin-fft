@@ -38,8 +38,9 @@ legal_P800(C_ij) = lowering(C_ij, profile)
 ```
 
 只有通过 lowering 的 `C_ij` 才能进入正确性门禁和实测排序。当前字段完整性不代表所有轴都有
-生产 kernel：`Us/Ts` 仍未形成通用 lowering，`Ud/Td` 主要由 M4 batch 映射消费，跨组
-`boundary_residence` 目前只允许 GM，`pipeline` 只允许 `none`。
+生产 kernel：`Us/Ts` 仍未形成通用 lowering；`Ud/Td` 已由 M4 以及 batch matrix/radix-4/local-
+fused 路径消费，但通用 token-persistent lowering 仍未实现；跨组 `boundary_residence` 目前只允许
+GM，`pipeline` 只允许 `none`。
 
 这决定了消融口径：固定 radix-2 比较 M0/M1 是流组织实验；固定 global-stage 比较 M0/M5 是
 核心实验；M2 同时改变 dense-dot 核心和局部驻留，只能报告为联合效果。
@@ -68,7 +69,7 @@ legal_P800(C_ij) = lowering(C_ij, profile)
 ```text
 complex64 输入
    → planar SoA lowering
-   → M0/M1/M2/M3/M5 的局部阶段或核心
+   → M0--M5 的局部阶段或核心（含 batch matrix/radix-4 路径）
    → 必要的 GM group boundary
    → 自然顺序 complex64 输出
 ```
@@ -84,14 +85,15 @@ load/store 和 barrier；M5 保持 global-stage flow，只替换为 radix-4 核�
 |---|---|---|---|---|
 | M0 | `global-stage` | `radix2-scalar` | 每级一个 GM 边界 | 正确性 incumbent/fallback |
 | M1 | `fused-inplace` | `radix2-scalar` | tile 内融合早期 stages | 固定核心看 flow；大 N 受 barrier 影响 |
-| M2 | `matrix-resident` | `dense-dot-fft64` | 局部矩阵一次读写 | 核心与 residence 联合效果 |
+| M2 | `matrix-resident` | `dense-dot-fft64` | 单变换及 batch 局部矩阵组 | 核心与 residence 联合效果 |
 | M3 | `grouped-boundary` | `composite-linear-map` | tail stages 组成 group | 减少部分 group boundary |
 | M4 | `global-stage` | `radix2-scalar` | batch spread/folded | 数据轴组织，不是驻留 batch |
-| M5 | `global-stage` | `radix4-scalar` | 更换局部核心 | 固定 flow 的 core A/B |
+| M5 | `global-stage` | `radix4-scalar` | 单变换及 batch 更换局部核心 | 固定 flow 的 core A/B |
 
 当前正式 release 中，M1/M2/M5 在单变换代表点相对同 block M0 达到约 `1.23x--2.07x`；batch
-路径多数仍接近 M0。这是当前 lowering 覆盖的直接结果，不应被解释成混合数据流方法本身无效。
-逐点数据见[实验结果](../benchmarks/results.md)。
+路径多数仍接近 M0。后续 Issue #3 focus 已把 batch M2/M5 和参数化 local-fused 候选接入同一
+选择闭环，在 `N=1024/2048, B=16/64` 上相对旧 M4 incumbent 达到 `2.2x--2.7x`。两组结果属于
+不同证据层，不能混算平均值；逐点数据见[实验结果](../benchmarks/results.md)。
 
 ## P800 lowering 约束
 
@@ -101,7 +103,8 @@ M3 使用合法的 execution group。这个限制描述的是工具链 lowering 
 能力的永久判断，详见[P800 设备路径](../development/device-stack.md)。
 
 更换设备或软件栈时，必须重新验证设备、驱动、编译器、局部容量和候选合同。静态
-`config/device.json` 的 hash 只防止旧表静默命中，并不代替硬件探测。
+`config/device.json` 的 hash 只标识静态 profile；`scripts/hw_probe.py` 还会采集 live environment
+并将校准与 selector 绑定到 `env_hash`，不匹配时 fail closed。当前仍需手动启动该流程。
 
 ## P800 约束如何影响映射
 
@@ -126,11 +129,14 @@ M3 使用合法的 execution group。这个限制描述的是工具链 lowering 
 |---|---|
 | 单 transform 的局部融合/矩阵驻留 | 已实现并实测 |
 | radix-4 processing unit | 已实现并实测 |
-| batch spread/folded | 已实现，但仍是 global-stage radix-2 |
+| batch spread/folded | 已实现 M4 global-stage 基线 |
+| batch matrix/radix-4/local-fused | 已实现并实测；guard-clearing 的 M2 local-fused focus 项已写入冻结 selector |
+| 参数化性能模型与硬件 probe | 已实现手动 probe、环境绑定、bounded search 和 holdout 验证 |
+| external sub-transform 组合 | 已完成实验 canary；未进入冻结 selector |
 | 跨组片上边界驻留 | 未 lowering，当前为 GM |
-| 真正 `Td` worker token 遍历 | 未实现；folded 目前是索引组织 |
+| 通用 `Td` worker token 遍历 | 尚未形成 production lowering；packet canary 为负 |
 | producer/consumer persistent pipeline | 未实现 |
-| 自动硬件 probe、参数化性能模型 | 路线图中 |
+| 安装期一键 profile/重测/构表 | 未闭环；当前步骤需显式执行 |
 
 下一页：[计算核心与 lowering](kernels.md)；随后阅读[性能模型](performance-model.md)和
 [实验设计与结果](../benchmarks/results.md)。早期实现快照保存在[历史归档](../archive/legacy-architecture.md)。

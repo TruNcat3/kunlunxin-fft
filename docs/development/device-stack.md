@@ -40,4 +40,4 @@ Triton launch 必须处于已建立的 XPU context。早期路径在 context 缺
 可选 `py-spy`；不要用会匹配当前 shell 的 `pkill -f <script-name>`。已复盘案例见
 [2026-10-14 挂起事件](incidents/2026-10-14-p800-bench-hang.md)。
 
-下一页：[性能与故障诊断](profiling.md)。
+下一页：[验证与发布](validation-and-release.md)。
