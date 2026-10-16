@@ -379,12 +379,16 @@ def main() -> None:
             "tile": args.tile,
             "pooled": pooled_stats,
             "per_session_p50": {
-                name: {r["session_index"]: round(
-                    (r["cells"].get(name) or {}).get(
-                        "stats", {}) or {}.get("p50", float("nan")), 4)
-                    for r in sres}
+                name: {
+                    r["session_index"]: round(
+                        ((r["cells"].get(name) or {}).get("stats")
+                         or {}).get("p50", float("nan")), 4)
+                    for r in sres
+                    if (r["cells"].get(name) or {}).get("stats")
+                }
                 for name in CELL_NAMES
-                if any(name in r["cells"] for r in sres)
+                if any((r["cells"].get(name) or {}).get("stats")
+                       for r in sres)
             },
             "sessions": sessions_out,
             "guard": guard,
