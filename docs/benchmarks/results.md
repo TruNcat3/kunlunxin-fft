@@ -95,24 +95,29 @@ M4 fallback（对 M0 约 `1.0x`）。评审要求以干净提交重跑重点矩�
   external-subtransform**（host-API 子变换组合：框架持有分解、在物化子块上
   调用 `torch.fft.fft`），证明可组合性而非片上驻留单核。有界优化落地：
   stage1 融合 transpose+twiddle 单 GM pass、stage2 直接读 grid 视图（消除
-  flat2 拷贝）、gather 单次进缓存块。融合后 A1P1 显著提速——N2048B16
-  **0.2051 vs vendor 整变换 0.6600 ms（3.22×，同时约为 A0P0 的 1/7.2）**；
-  N1024B16 单轮 0.2212 vs 0.2420（1.09× 快）。有界 T×R 扫描（1024:
+  flat2 拷贝）、gather 单次进缓存块。融合后 A1P1 显著提速——**历史单进程
+  四格**（commit `5fa0613b`）N2048B16 0.2051 vs vendor 整变换 0.6600 ms
+  （3.22×）；N1024B16 单轮 0.2212 vs 0.2420（1.09× 快）——**该单进程翻转
+  不是最终跨进程结论**，见下方多进程 canary。有界 T×R 扫描（1024:
   16×64/32×32/64×16；2048: 32×64/64×32，不扩 N/B）显示 32×32 对 A1P1
   最优（0.2053@1024B64）。只报告、不晋升、不外推。
-- **P2 多进程复测（3 独立进程 session × 30 trial 交错 + 确认 session，卡6）**：
-  每 session 新起 spawn 进程（独立 Python 分配器/JIT 缓存/runtime 状态，
-  artifact 记录 `distinct_pids=true`），父与每个 worker 均做 freshness 门。
-  **N2048B16：A1P1 池化中位 0.2345 vs vendor 全变换 0.6591 ms（2.81×，
-  guard +65.1% 通过）**，逐 session 0.2518/0.2226/0.2228 + 确认 session
-  0.2512（guard 触发），A1P1 无离群样本（>p50+3MAD=0）。1024 shape 仍慢于
-  vendor（B16 −3.6%，B64 −33.3%）；A1P1 对 A0P0 全 shape 通过 2% guard
-  （+67.7~85.1%）。A0P0 经 `selector.select` env 门获取；两份 artifact
-  provenance 完整（commit/dirty=false/env 6b50bd316032c0fe）。
+- **P2 多进程复测（3 独立进程 session × 30 trial 交错 + 确认 session，卡6，
+  commit `94390586`）**：每 session 新起 spawn 进程（独立 Python 分配器/
+  JIT 缓存/runtime 状态，artifact 记录 `distinct_pids=true`），父与每个
+  worker 均做 freshness 门，合并前对全部 worker 的 provenance 契约做严格
+  相等校验（混合即中止）。**主表与 guard 均用 protocol-session 池化中位**
+  （确认 session 从不混入）：N2048B16 A1P1 **0.2298 vs vendor 0.6586 ms
+  （2.87×，guard +65.1% 通过）**，逐 session 0.2518/0.2226/0.2228 + 确认
+  session 0.2512（guard 触发后单列）；all-session 池化 0.2345/0.6592 仅作
+  诊断披露。A1P1 无离群样本。1024 shape 仍慢于 vendor（B16 −3.6%，
+  B64 −33.3%）——**N1024B16 单进程 1.09× 翻转在独立进程下不成立**；
+  A1P1 对 A0P0 全 shape 通过 2% guard（+67.7~85.1%）。A0P0 经
+  `selector.select` env 门获取；两份 artifact provenance 完整
+  （commit/dirty=false/env 6b50bd316032c0fe，卡族 scope）。
   该结论是 experimental canary——cost model 无 A1 family，本轮不晋升
   selector；是后续工作的数据点，不是冻结声明。
 - vendor 重探确认当前栈 `N≤2048` 可用、`N≥4096` unsupported；融合前 A0P0
-  路径上 vendor 仍快 `2.3–8.9x`（融合后 A1P1@N2048B16 反超，见上）。
+  路径上 vendor 仍快 `2.3–8.9x`（融合后 A1P1@N2048B16 多进程下反超，见上）。
 - 完整证据（provenance、5 问作答、holdout 明细、外部核 inventory、复现命令）
   见[批量聚焦报告](batch-focus.md)与[外部核清单](external-cores.md)。
 

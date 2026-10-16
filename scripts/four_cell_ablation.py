@@ -164,17 +164,17 @@ def main() -> None:
                     default=ROOT / "results" / "p000" / "four_cell.json")
     args = ap.parse_args()
 
-    import torch
-    import run_release_matrix as relm
-    from src.xpu import runner
+    # Freshness gate BEFORE any device-stack import or tensor/kernel
+    # work (review §2 / follow-up P2): the selector gate is pure
+    # Python (no torch); torch / runner / release-matrix imports are
+    # deferred until after the gate so an import can never initialize
+    # the runtime ahead of the check.
     from src.xpu.selector import (
         assert_current_environment,
         load_table,
         select,
     )
 
-    # Freshness gate BEFORE any tensor/kernel work (review §2): dirty
-    # tree and env mismatch both abort with zero launches.
     if git_dirty() and not args.allow_dirty:
         raise SystemExit(
             "tracked tree is dirty; commit first so the artifact "
@@ -182,6 +182,10 @@ def main() -> None:
             "non-publishable probe)")
     table = load_table()
     env_hash = assert_current_environment(table)  # raises on mismatch
+
+    import torch
+    import run_release_matrix as relm
+    from src.xpu import runner
 
     if not torch.cuda.is_available():
         raise SystemExit("XPU device required for the four-cell ablation")

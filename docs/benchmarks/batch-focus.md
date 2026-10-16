@@ -11,6 +11,11 @@
 - commit `70bd4718b38b` (both focus rounds and holdout:
   `dirty=False` — tracked tree identical to HEAD while
   measuring)
+- **three provenance scopes** (artifacts are not all from one
+  commit; each is clean and env-bound):
+  - focus + holdout: commit `70bd4718b38b` (historical release rounds)
+  - four-cell ablation: commit `5fa0613b12d9`, dirty False (single-process)
+  - multi-process canary: commit `94390586b07d`, dirty False (independent spawned processes)
 - env fingerprint `6b50bd316032c0fe` (driver 515.58, toolchain 'torch 2.9.0+cu129 + torch_xmlir (XPYTORCH XMLIR--bc1b1dc6f-dev+2026032411, XRE 5.13.0.0)' on the same card family as the frozen table)
 - frozen table `6b50bd316032c0fe` / profile `a78b86793c7142a0`
 - calibration bound to env `6b50bd316032c0fe` (profile hash `5803e9ba897d4294`)
@@ -122,8 +127,8 @@ space matters and the frozen space is the right axis set.
 
 - records scored: 210 (132 focus / 78 holdout; sources: results/p800/batch_focus_a/summary.json, results/p800/batch_focus_b/summary.json, results/p800/batch_holdout/summary.json)
 - promotion-decision agreement at the 2.0% guard, per focus round:
-- guard agreement `[summary.json]`: **100%** over 58 (challenger, incumbent) pairs — the same line the selector uses; one number per focus round, never pooled with holdout
-- guard agreement `[summary.json]`: **100%** over 58 (challenger, incumbent) pairs — the same line the selector uses; one number per focus round, never pooled with holdout
+- guard agreement `[batch_focus_a]`: **100%** over 58 (challenger, incumbent) pairs — the same line the selector uses; one number per focus round, never pooled with holdout
+- guard agreement `[batch_focus_b]`: **100%** over 58 (challenger, incumbent) pairs — the same line the selector uses; one number per focus round, never pooled with holdout
 - top-K hit (full-space holdout records only): 100% over 6 shapes
 - **full-space holdout recall: 100%** over 6 shapes; mean selection regret 0.0816% (space 9 points; holdout records only, m2 points deduplicated by structural parameters)
 - per-family MDAPE % over all scored records: `baseline_m0_rank1_loop` 19.3, `incumbent_m4_folded` 88.9, `m2_batch` 87.1, `m2_packet` 77.6, `m4_spread` 90.6, `m5_batch` 89.5
@@ -175,6 +180,8 @@ actually exposes:
 - runtime: torch 2.9.0+cu129, triton 3.0.0, xpytorch XMLIR--bc1b1dc6f-dev+2026032411, xre 5.13.0.0
 
 ### Four-cell ablation (A0/A1 flow × P0/P1 core)
+
+> **Historical single-process four-cell** (commit `5fa0613b`, one process, in-process timing layers). The final cross-process conclusion for A1P1 is the **multi-process canary below**, not this table: at N1024B16 this single-process round showed A1P1 0.2212 vs vendor 0.2420 (1.09× faster), but the independent-process canary measured 0.2570 vs 0.2482 (**3.6% slower**) — the canary is authoritative for cross-process claims.
 
 Timing layers (issue #3 P1-5 / review §3): **plan** =
 HybridPlan construction, **first** = the first execution call
@@ -279,11 +286,12 @@ single kernel.
   implementation than the fused path; the ratio cannot be
   attributed to IO alone.
 
-- **A1P1 vs the vendor whole transform** — at most focus
-  points the whole transform stays faster; at N1024B16_dit and N2048B16_dit A1P1 measured 0.2212 vs 0.2420 ms (**1.09× faster**); 0.2051 vs 0.6600 ms (**3.22× faster**). This is a single-round canary on one card: a potential
-  worth a bounded re-measure, not a frozen claim — nothing
-  here is promoted (guard/freshness rules apply to any
-  future candidate).
+- **A1P1 vs the vendor whole transform** — in this
+  single-process round at N1024B16_dit and N2048B16_dit A1P1 measured 0.2212 vs 0.2420 ms (**1.09× faster**); 0.2051 vs 0.6600 ms (**3.22× faster**). **These single-process flips are not the final
+  cross-process conclusion**: the multi-process canary
+  below supersedes them (N1024B16 did **not** hold up;
+  only N2048B16 is stable across independent processes).
+  Nothing here is promoted — experimental canary only.
 
 ## P2 hybrid canary (multi-process re-test)
 
@@ -302,15 +310,19 @@ each session is an independent spawned process (fresh Python allocator, JIT cach
 
 ### N1024B16_dit
 
+Main table = **protocol-session pooled** p50 (the guard
+basis). The confirmation session is never mixed into
+these medians; its numbers are listed below.
+
 | cell | p50 ms | MAD | p95 ms | max ms | outliers |
 |---|---|---|---|---|---|
 | A0P0 | 0.7954 | 0.0126 | 0.8238 | 0.8907 | 2 (0.8390, 0.8907) |
 | A1P0 | 2.0986 | 0.0152 | 2.1373 | 2.1520 | 1 (2.1520) |
-| A1P1 | 0.2570 | 0.0167 | 0.2778 | 0.2828 | 0 |
+| A1P1 | 0.2571 | 0.0167 | 0.2778 | 0.2828 | 0 |
 | vendor_full | 0.2482 | 0.0027 | 0.2524 | 0.2536 | 0 |
 
 Per-session p50 (ms) — a pooled median is never shown
-alone:
+alone; the confirmation session is labelled:
 
 | cell | s0 | s1 | s2 |
 |---|---|---|---|
@@ -319,19 +331,23 @@ alone:
 | A1P1 | 0.2340 | 0.2609 | 0.2675 |
 | vendor_full | 0.2465 | 0.2492 | 0.2481 |
 
-Guard (protocol-session pooled p50, 2% threshold): A1P1 vs A0P0 **+67.7% (pass)**; A1P1 vs vendor_full **-3.6% (fail)**.
+Guard (**protocol-session pooled p50 only**, 2% threshold — confirmation session excluded): A1P1 vs A0P0 **+67.7% (pass)**; A1P1 vs vendor_full **-3.6% (fail)**.
 
 ### N1024B64_dit
+
+Main table = **protocol-session pooled** p50 (the guard
+basis). The confirmation session is never mixed into
+these medians; its numbers are listed below.
 
 | cell | p50 ms | MAD | p95 ms | max ms | outliers |
 |---|---|---|---|---|---|
 | A0P0 | 2.2546 | 0.0416 | 2.3774 | 2.3990 | 4 (2.3812, 2.3926, 2.3938, 2.3990) |
-| A1P0 | 6.5675 | 0.0404 | 6.6728 | 6.8768 | 2 (6.7077, 6.8768) |
-| A1P1 | 0.3363 | 0.0081 | 0.3542 | 0.3579 | 0 |
+| A1P0 | 6.5674 | 0.0404 | 6.6728 | 6.8768 | 2 (6.7077, 6.8768) |
+| A1P1 | 0.3364 | 0.0081 | 0.3542 | 0.3579 | 0 |
 | vendor_full | 0.2522 | 0.0060 | 0.2624 | 0.2726 | 3 (0.2713, 0.2716, 0.2726) |
 
 Per-session p50 (ms) — a pooled median is never shown
-alone:
+alone; the confirmation session is labelled:
 
 | cell | s0 | s1 | s2 |
 |---|---|---|---|
@@ -340,28 +356,50 @@ alone:
 | A1P1 | 0.3453 | 0.3322 | 0.3337 |
 | vendor_full | 0.2522 | 0.2517 | 0.2532 |
 
-Guard (protocol-session pooled p50, 2% threshold): A1P1 vs A0P0 **+85.1% (pass)**; A1P1 vs vendor_full **-33.3% (fail)**.
+Guard (**protocol-session pooled p50 only**, 2% threshold — confirmation session excluded): A1P1 vs A0P0 **+85.1% (pass)**; A1P1 vs vendor_full **-33.3% (fail)**.
 
 ### N2048B16_dit
 
+Main table = **protocol-session pooled** p50 (the guard
+basis). The confirmation session is never mixed into
+these medians; its numbers are listed below.
+
 | cell | p50 ms | MAD | p95 ms | max ms | outliers |
 |---|---|---|---|---|---|
-| A0P0 | 1.5064 | 0.0118 | 1.5418 | 1.6051 | 7 (1.5418, 1.5421, 1.5537, 1.5664, ...) |
-| A1P0 | 3.1494 | 0.0241 | 3.2148 | 3.2382 | 4 (3.2249, 3.2310, 3.2313, 3.2382) |
-| A1P1 | 0.2345 | 0.0144 | 0.2663 | 0.2747 | 0 |
-| vendor_full | 0.6591 | 0.0036 | 0.6673 | 0.6762 | 4 (0.6706, 0.6712, 0.6717, 0.6762) |
+| A0P0 | 1.5036 | 0.0105 | 1.5414 | 1.6051 | 7 (1.5354, 1.5363, 1.5414, 1.5418, ...) |
+| A1P0 | 3.1490 | 0.0244 | 3.2099 | 3.2382 | 2 (3.2310, 3.2382) |
+| A1P1 | 0.2298 | 0.0126 | 0.2661 | 0.2747 | 3 (0.2700, 0.2700, 0.2747) |
+| vendor_full | 0.6586 | 0.0036 | 0.6662 | 0.6717 | 2 (0.6706, 0.6717) |
+
+Confirmation session (added after the protocol guard
+passed here; excluded from the table above):
+
+- A0P0 p50 1.5169 ms
+- A1P0 p50 3.1531 ms
+- A1P1 p50 0.2512 ms
+- vendor_full p50 0.6605 ms
+
+All-session pooled (protocol + confirmation,
+diagnostic only — never the guard basis):
+
+| cell | p50 ms |
+|---|---|
+| A0P0 | 1.5064 |
+| A1P0 | 3.1494 |
+| A1P1 | 0.2345 |
+| vendor_full | 0.6592 |
 
 Per-session p50 (ms) — a pooled median is never shown
-alone:
+alone; the confirmation session is labelled:
 
-| cell | s0 | s1 | s2 | s3 |
+| cell | s0 | s1 | s2 | s3 (conf) |
 |---|---|---|---|---|
 | A0P0 | 1.5064 | 1.4994 | 1.5020 | 1.5169 |
 | A1P0 | 3.1499 | 3.1565 | 3.1345 | 3.1531 |
 | A1P1 | 0.2518 | 0.2226 | 0.2228 | 0.2512 |
 | vendor_full | 0.6578 | 0.6586 | 0.6592 | 0.6605 |
 
-Guard (protocol-session pooled p50, 2% threshold): A1P1 vs A0P0 **+84.7% (pass)**; A1P1 vs vendor_full **+65.1% (pass)**.
+Guard (**protocol-session pooled p50 only**, 2% threshold — confirmation session excluded): A1P1 vs A0P0 **+84.7% (pass)**; A1P1 vs vendor_full **+65.1% (pass)**.
 
 ### Diagnostic reading (review §3 rules)
 
@@ -383,8 +421,8 @@ future work, not a frozen claim.
 
 ## What the evidence does not prove
 
-- these are single-card, in-process timings: no multi-card scaling claim, no cross-driver-version claim (the env fingerprint gates reuse to this stack)
-- guard agreement is measured, not proven, on the holdout; a different shape family could disagree
+- single-card, single software stack: the four-cell is a single-process measurement, the canary is multi-process; no multi-card scaling claim, no cross-driver-version claim (the env fingerprint gates reuse to this card *family* and stack)
+- guard agreement is measured on the focus rounds; the holdout is used only for selection validation (top-K / recall / regret), never for guard agreement — a different shape family could still disagree
 - the vendor baseline is the runtime's `torch.fft` lowering; Kunlunxin does not publish kernel sources, so internal vendor structure stays opaque (see the inventory)
 
 ## Frozen selector vs experimental

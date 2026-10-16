@@ -106,3 +106,32 @@ def test_repo_calibration_verifies_live_environment():
         pytest.skip("live environment not probeable on this host")
     profile = load(verify_env=True)  # must match THIS host
     assert profile.get("env_hash")
+
+
+def test_env_scope_is_card_family_not_physical_card():
+    # Review follow-up P2: the fingerprint has no stable card UUID
+    # (XPU properties expose none; xpu-smi Bus-Id is slot-dependent).
+    # Calibration scope is therefore the card *family* — same-model
+    # cards on the same stack share one env_hash by design.
+    from src.xpu.envcheck import SCOPE, _REQUIRED
+
+    assert SCOPE == "card-family"
+    # No identity field that could be mistaken for a physical card.
+    forbidden = ("uuid", "serial", "pci", "bus", "slot", "mac", "guid")
+    for key in _REQUIRED:
+        assert not any(f in key.lower() for f in forbidden), key
+
+
+def test_same_model_cards_share_env_hash_by_design():
+    # Two same-model family fingerprints (identical required fields)
+    # must hash equal: this is the documented card-family contract.
+    from src.xpu.envcheck import env_hash
+
+    base = {k: f"v-{k}" for k in (
+        "driver", "torch", "triton", "xpytorch", "xre",
+        "device_model", "multiprocessor_count", "max_shared_mem")}
+    other_card_same_model = dict(base)
+    assert env_hash(base) == env_hash(other_card_same_model)
+    # A different model is a different family: hash must differ.
+    diff_model = dict(base, device_model="other-model")
+    assert env_hash(base) != env_hash(diff_model)

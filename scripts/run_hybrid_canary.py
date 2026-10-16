@@ -103,6 +103,39 @@ def _provenance(table: dict, env_hash: str, argv: list[str]) -> dict:
     }
 
 
+# Fields every worker must share with the parent before its samples
+# may be merged into a publishable artifact (review §P1: mixed
+# provenance must be rejected, not merely flagged).
+_PROVENANCE_CONTRACT = (
+    "commit", "dirty", "table_env_hash", "live_env_hash", "profile_hash",
+    "device", "runtime",
+)
+
+
+def _provenance_contract(p: dict) -> dict:
+    """Comparable subset of a worker/parent provenance record."""
+    return {k: p.get(k) for k in _PROVENANCE_CONTRACT}
+
+
+def _validate_worker_provenance(reference: dict, worker: dict,
+                                where: str = "worker") -> None:
+    """Abort on any provenance-contract mismatch (fail closed).
+
+    A worker started after a table/code/environment change would
+    otherwise contaminate the pooled merge; ``all_sessions_same_commit``
+    is a diagnostic, never a permission to publish mixed data.
+    """
+    ref = _provenance_contract(reference)
+    got = _provenance_contract(worker)
+    if got == ref:
+        return
+    diffs = [k for k in _PROVENANCE_CONTRACT if got.get(k) != ref.get(k)]
+    raise RuntimeError(
+        f"{where} provenance mismatch on {', '.join(diffs)}: "
+        f"reference={ref!r} worker={got!r} — refusing to merge "
+        "mixed-provenance sessions into a publishable artifact")
+
+
 def _cells_for(n: int, batch: int, tile: int, seed: int, table: dict,
                env_hash: str):
     """Fresh input + fresh HybridPlans (cold caches) via the live
@@ -283,8 +316,7 @@ def main() -> None:
         for job, r in zip(result_jobs, results):
             if (job["n"], job["batch"]) != (n, batch):
                 continue
-            if r["provenance"]["commit"] != results[0]["provenance"]["commit"]:
-                continue
+            # Provenance already validated above; no commit-skip.
             for name, c in r["cells"].items():
                 pooled.setdefault(name, []).extend(c.get("samples", []))
         med = {k: summarize_samples(v).get("p50")
@@ -316,24 +348,43 @@ def main() -> None:
     assert len(result_jobs) == len(results), (
         f"job/result count mismatch: {len(result_jobs)} vs "
         f"{len(results)}")
+    # Strict pre-merge gate: every worker's full provenance contract
+    # must equal the parent's reference (commit, dirty, env/profile
+    # hashes, device, runtime). Mismatch aborts before any pooled
+    # statistic is computed — a publishable artifact is never written
+    # from mixed provenance (review P1).
+    reference = results[0]["provenance"]
+    for i, res in enumerate(results):
+        _validate_worker_provenance(
+            reference, res["provenance"],
+            where=f"session {res.get('session_index', i)} "
+                  f"(pid {res.get('pid')})")
     for job, res in zip(result_jobs, results):
         results_by_shape[(job["n"], job["batch"])].append(res)
 
-    shapes_out = []
-    for (n, batch), sres in results_by_shape.items():
-        pooled = {}
-        for r in sres:
-            for name, c in r["cells"].items():
-                pooled.setdefault(name, []).extend(c.get("samples", []))
-        pooled_stats = {
+    def _pooled_stats(by_cell: dict) -> dict:
+        return {
             name: {k: (round(v, 4) if isinstance(v, float) else v)
                    for k, v in summarize_samples(s).items()
                    if k != "outlier_values"}
             | {"outlier_values": [round(v, 4) for v in
                                   summarize_samples(s).get(
                                       "outlier_values", [])]}
-            for name, s in pooled.items()
+            for name, s in by_cell.items()
         }
+
+    shapes_out = []
+    for (n, batch), sres in results_by_shape.items():
+        pooled = {}          # all sessions (protocol + confirmation)
+        proto_only = {}      # protocol sessions only (guard basis)
+        for r in sres:
+            for name, c in r["cells"].items():
+                pooled.setdefault(name, []).extend(c.get("samples", []))
+                if r["role"] == "protocol":
+                    proto_only.setdefault(name, []).extend(
+                        c.get("samples", []))
+        all_session_stats = _pooled_stats(pooled)
+        protocol_stats = _pooled_stats(proto_only)
         sessions_out = []
         for r in sres:
             cells_out = {}
@@ -361,16 +412,9 @@ def main() -> None:
                 "provenance": r["provenance"],
                 "cells": cells_out,
             })
-        # Guard from pooled protocol-session medians only.
-        proto_pool = {}
-        for r in sres:
-            if r["role"] != "protocol":
-                continue
-            for name, c in r["cells"].items():
-                proto_pool.setdefault(name, []).extend(
-                    c.get("samples", []))
-        med = {k: summarize_samples(v).get("p50")
-               for k, v in proto_pool.items()}
+        # Guard from protocol-session pooled medians only (never the
+        # confirmation session; never the all-session pool).
+        med = {k: v.get("p50") for k, v in protocol_stats.items()}
         a0, ap1, av = med.get("A0P0"), med.get("A1P1"), med.get(
             "vendor_full")
         guard = {}
@@ -384,7 +428,8 @@ def main() -> None:
         shapes_out.append({
             "N": n, "batch": batch, "direction": "dit",
             "tile": args.tile,
-            "pooled": pooled_stats,
+            "protocol_pooled": protocol_stats,
+            "all_session_pooled": all_session_stats,
             "per_session_p50": {
                 name: {
                     r["session_index"]: round(
@@ -401,13 +446,16 @@ def main() -> None:
             "guard": guard,
         })
 
+    # The strict gate above guarantees a single provenance; these are
+    # now invariants, not post-hoc diagnostics.
     commits = {r["provenance"]["commit"] for r in results}
-    single_commit = len(commits) == 1
+    assert len(commits) == 1, "strict provenance gate should guarantee this"
     result = {
         "kind": "issue-3-hybrid-canary",
-        "schema": 2,
+        "schema": 3,
         "commit": results[0]["provenance"]["commit"],
-        "all_sessions_same_commit": single_commit,
+        "all_sessions_same_commit": True,
+        "provenance_gate": "strict-equal-contract",
         "dirty": any(r["provenance"]["dirty"] for r in results),
         "table_env_hash": table.get("env_hash"),
         "live_env_hash": env_hash,

@@ -9,6 +9,17 @@ shared memory). Anything missing or unreadable makes the whole fingerprint
 **unknown** (:func:`collect` returns ``None``): callers must fail closed
 (selector abstains to M0, calibration refuses reuse) instead of guessing.
 
+**Scope: card family, not a particular physical card.** The fingerprint
+identifies a *model* (device_model, MP count, shared memory) plus the
+software stack (driver, torch/triton/xmlir versions). No stable card
+UUID/serial is exposed by this runtime (XPU device properties carry no
+serial; the ``xpu-smi`` Bus-Id is slot-dependent and therefore not a
+card identity). Two same-model P800 cards on the same software stack
+thus share one ``env_hash`` **by design**: calibration is valid across
+the card family. Pinning to one physical card would require a runtime
+identity API this stack does not provide; adding a slot-dependent PCI
+address would silently break reuse when cards are moved.
+
 Results are cached per process — the fingerprint cannot change while a
 run is alive.
 """
@@ -25,6 +36,10 @@ from functools import lru_cache
 # Keys that MUST be present for a fingerprint to be usable at all.
 _REQUIRED = ("driver", "torch", "triton", "xpytorch", "xre",
              "device_model", "multiprocessor_count", "max_shared_mem")
+
+# Explicit scope marker recorded in every fingerprint blob so the
+# card-family contract is machine-readable, not just a docstring.
+SCOPE = "card-family"
 
 
 def _driver_version() -> str | None:
