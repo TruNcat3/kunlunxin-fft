@@ -73,7 +73,7 @@ def _versions():
     except Exception:  # noqa: BLE001
         rev = "unknown"
     try:
-        dirty = bool(relm._git("status", "--porcelain"))
+        dirty = bool(relm._git("status", "--porcelain", "--untracked-files=no"))
     except Exception:  # noqa: BLE001
         dirty = None
     from src.xpu.config import DeviceProfile

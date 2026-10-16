@@ -723,7 +723,10 @@ def _manifest(seed, warmup, trials, sessions, shapes=None,
         "protocol_id": protocol,
         "full_space": bool(full_space),
         "commit": relm._git("rev-parse", "HEAD"),
-        "dirty": bool(relm._git("status", "--porcelain")),
+        # dirty = tracked-tree drift only: fresh untracked result
+        # artifacts cannot change the code a run executes.
+        "dirty": bool(relm._git("status", "--porcelain",
+                                "--untracked-files=no")),
         "device": p.device,
         "driver": p.driver,
         "device_index": os.environ.get("CUDA_VISIBLE_DEVICES", ""),

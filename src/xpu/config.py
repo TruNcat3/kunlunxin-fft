@@ -270,10 +270,14 @@ def git_commit() -> str:
 
 
 def git_dirty() -> bool:
-    """True when the working tree has uncommitted changes."""
+    """True when *tracked* files drift from HEAD.
+
+    Untracked files are ignored on purpose: fresh result artifacts are
+    expected run output and cannot change the code a run executes.
+    """
     try:
         out = subprocess.run(
-            ["git", "status", "--porcelain"],
+            ["git", "status", "--porcelain", "--untracked-files=no"],
             cwd=_ROOT,
             capture_output=True,
             text=True,

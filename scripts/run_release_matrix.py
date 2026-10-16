@@ -119,7 +119,7 @@ def _manifest(seed, warmup, trials):
         pass
     return {
         "commit": _git("rev-parse", "HEAD"),
-        "dirty": bool(_git("status", "--porcelain")),
+        "dirty": bool(_git("status", "--porcelain", "--untracked-files=no")),
         "device": p.device,
         "driver": p.driver,
         "device_index": os.environ.get("CUDA_VISIBLE_DEVICES", ""),

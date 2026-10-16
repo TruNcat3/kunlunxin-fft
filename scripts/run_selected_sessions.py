@@ -70,7 +70,7 @@ def _manifest(table_hash_note=None):
     p = DeviceProfile.load()
     return {
         "commit": _git("rev-parse", "HEAD"),
-        "dirty": bool(_git("status", "--porcelain")),
+        "dirty": bool(_git("status", "--porcelain", "--untracked-files=no")),
         "device": p.device,
         "profile_hash": p.hash(),
         "driver": os.environ.get("CUDA_VISIBLE_DEVICES", ""),
