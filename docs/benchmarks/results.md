@@ -64,27 +64,37 @@ spread/folded。450 条 long rows 全部通过阈值，最坏误差 `1.126129e-5
 - M5 radix-4：固定 global-stage flow 时，DIT 在 `N<=1024` 约 `1.03x`，`N>=4096` 约
   `1.69x`，说明计算核心偏好随尺寸变化。
 
-## Round E：批量聚焦（issue #3）
+## Round E：批量聚焦（issue #3，clean-commit 重跑）
 
 正式 release matrix 中四个重点 shape（N=1024/2048 × B=16/64，双向）在聚焦前选中
-M4 fallback（对 M0 约 `1.0x`）。Round E 对 batch-aware M2/M5 lowering、2% 晋升
-guard、执行元数据、硬件探针与校准、结构化成本模型的有界搜索做了闭包，两轮各
-3 个独立 session × 30 次 session 内随机交错 trial（cell 内为 DIT / DIF）：
+M4 fallback（对 M0 约 `1.0x`）。评审要求以干净提交重跑重点矩阵：两轮独立 focus
++ 一轮全空间 holdout 均在 commit `70bd471`（`dirty=False`，环境指纹
+`6b50bd316032c0fe` 绑定）下测得，各 3 session × 30 trial：
 
-| N | B | selected（batch M2，tile=128） | 稳态 incumbent | 提速 | vendor 仍领先 |
+| N | B | focus A 最优（tile=128 家族） | 稳态 incumbent | 提速 | vendor 仍领先 |
 |---:|---:|---:|---:|---:|---:|
-| 1024 | 16 | 0.710 / 0.731 | 1.761 / 1.685 | **2.48x / 2.30x** | 2.8–2.9x |
-| 1024 | 64 | 2.268 / 2.324 | 6.092 / 5.903 | **2.69x / 2.54x** | 8.7–8.9x |
-| 2048 | 16 | 1.569 / 1.583 | 3.492 / 3.406 | **2.23x / 2.15x** | 2.4x |
-| 2048 | 64 | 5.009 / 5.051 | 12.344 / 11.940 | **2.46x / 2.36x** | 7.5x |
+| 1024 | 16 | 0.695–0.714 | 1.69–1.76 | **2.2–2.5x** | 2.3–2.9x |
+| 1024 | 64 | 2.25–2.31 | 5.99–6.16 | **2.6–2.7x** | 8.5–8.9x |
+| 2048 | 16 | 1.55–1.57 | 3.41–3.51 | **2.2x** | 2.3–2.4x |
+| 2048 | 64 | 4.98–5.04 | 11.9–12.4 | **2.4–2.5x** | 7.5x |
 
-- 对 M0 host loop 同行提升 `4.7–12.1x`；对稳态 M4 incumbent `2.15–2.69x`，八个
-  点全部以 ≥2% 通过 guard，且两轮独立运行赢家描述符 8/8 一致。
-- 消融把收益拆开：batch lowering（flow）`1.98–4.61x`、radix-4 core `1.75–2.20x`、
-  local-matrix（flow+unit 联合）`1.99–2.17x`、成本模型参数筛选 `1.17–1.29x`。
-- **仍然没有全面胜出**：vendor 重探（本轮重新探测，非沿用旧结论）确认当前栈
-  `N≤2048` 可用、`N≥4096` 返回 unsupported；四个 shape 上 vendor 仍快 `2.4–8.9x`。
-- 完整证据（5 问作答、P2 Td=2 canary 负结果、成本模型留出验证、复现命令）见
-  [批量聚焦报告](batch-focus.md)。
+- **赢家稳定性（评审要求的诚实口径）**：两轮精确同名赢家一致 **2/8**，但
+  tile=128 家族一致 **8/8**、统计上 5/8 落在 2σ 内——rows 参数是 <1% 近平局，
+  家族结论可复现；表内只晋升过 2% guard 的赢家，incumbent 保留为 fallback。
+- 2% 正式 guard 下晋升决策一致率 **100%**（130 对 challenger/incumbent）；
+  全空间 holdout（9 点枚举 3 shape）模型 top-3 命中实测最优 **6/6**，
+  top-1 选择 regret **0.00–0.22%**（均值 0.21%）。
+- 消融把收益拆开（旧轮数据，flow/unit 轴结论不变）：batch lowering
+  `1.98–4.61x`、radix-4 core `1.75–2.20x`、local-matrix `1.99–2.17x`。
+- **P2 Td canary 维持负结果**：`m2_packet_td{1,2}` 相对 `m2_batch` 为
+  `1.09x` 更慢（分母 = 当前本地核），不晋升。
+- **外部核四格消融（§4-§5）**：A0P1 按构造 abstain（融合程序边界即整核）；
+  分解流 × triton 本地核（A1P0）比融合路径慢 **4–8x**（框架 IO 主导，证实
+  评审假设）；分解流 × vendor 分块核（A1P1）在 B=16 反超 A0P0（0.30–0.32 vs
+  0.75/1.48），但仍不敌 vendor 整变换基线；该 canary 只报告、不晋升。
+- vendor 重探确认当前栈 `N≤2048` 可用、`N≥4096` unsupported；四个 shape 上
+  vendor 仍快 `2.3–8.9x`。
+- 完整证据（provenance、5 问作答、holdout 明细、外部核 inventory、复现命令）
+  见[批量聚焦报告](batch-focus.md)与[外部核清单](external-cores.md)。
 
 下一页：[测量协议](methodology.md)。

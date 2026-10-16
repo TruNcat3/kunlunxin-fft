@@ -47,7 +47,8 @@ def _focus_sources():
         return []
     t = json.loads(TABLE.read_text())
     return [ROOT / s for s in t.get("sources", ())
-            if "batch_gate" in s or "batch_release" in s]
+            if any(tag in s for tag in ("batch_gate", "batch_release",
+                                        "batch_focus"))]
 
 
 def test_table_rebuild_is_deterministic(tmp_path):

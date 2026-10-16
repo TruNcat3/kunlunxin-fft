@@ -51,6 +51,7 @@ nav:
       - 原始数据与复现: benchmarks/reproducibility.md
       - 相关工作与基线: benchmarks/related-work.md
       - "批量聚焦报告（issue #3）": benchmarks/batch-focus.md
+      - "外部核清单（issue #3）": benchmarks/external-cores.md
   - 开发指南:
       - 工程结构: development/repository-layout.md
       - 性能与故障诊断: development/profiling.md
