@@ -73,6 +73,28 @@ CUDA_VISIBLE_DEVICES=6 python3 scripts/bootstrap_profile.py \
 **只有显式 `--promote` 才会**用原子 `os.replace` 发布到 `config/selector_table.json`，
 否则生产表字节不变。
 
+## WP2 统一语义发布矩阵
+
+```bash
+CUDA_VISIBLE_DEVICES=6 python3 scripts/run_semantic_matrix.py \
+  --sessions 3 --trials 30 --warmup 5 --scope all --snapshot \
+  --release-id <id> --out results/p800/semantic_matrix
+```
+
+同一份 manifest 驱动 raw（`raw_session*.jsonl`）、summary、指标与不可变快照。每个
+case × semantic（c2c forward/inverse、r2c、c2r）记录四类 contender：M0/M4 incumbent、
+production selector、bounded measured oracle、vendor（不支持/报错原样保留，不进
+speedup）。计时分列 plan_creation / plan-reuse steady / one_shot / e2e 四层，绝不
+把 API wall 写成 kernel time。指标：win/tie/loss（2% 阈值）、几何均值、最差 speedup、
+selector regret（selector/oracle−1）、相对 incumbent 的 2% guard 结果。
+
+`--snapshot` 生成 `results/p800/releases/<release-id>/`（manifest、
+environment、gzip 后的 `raw_session*.jsonl.gz`（解压后与工作目录 raw 逐字节
+一致，manifest 以未压缩 rows 计 `result_sha256`）、`summary.json`、
+`summary.csv`、repro 命令、失败分类）；已存在的 release-id 拒绝覆盖，快照
+manifest 过 `validate_manifest(strict=True)`。工作目录的
+`raw_session*.jsonl` 为可再生产物，不入库。
+
 ## 重建已归档 frozen table
 
 ```bash

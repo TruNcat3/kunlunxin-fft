@@ -25,6 +25,10 @@ site/
 .vscode/
 
 # local benchmark scratch (published results live in results/p800/)
+# semantic-matrix working sessions: canonical evidence is the gz'd raw
+# in results/p800/releases/<release-id>/
+results/p800/semantic_matrix/raw_session*.jsonl
+results/local-profile-probe/
 *.log
 bench_progress.json
 *.progress.json

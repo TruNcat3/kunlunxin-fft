@@ -1,0 +1,207 @@
+"""WP2 semantic-matrix aggregation + snapshot contract (host-only).
+
+Issue #6 PR-D: win/tie/loss, geomean, selector regret, vendor-error
+preservation, manifest contract and snapshot immutability — all pure
+host logic over synthetic rows.
+"""
+
+import json
+import sys
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "scripts"))
+
+import run_semantic_matrix as sm  # noqa: E402
+from src.xpu.manifest_contract import validate_manifest  # noqa: E402
+
+
+def _row(label, candidate, tier, api_ms=None, status="ok", **kw):
+    return {
+        "session": kw.get("session", 0),
+        "label": label, "trial": kw.get("trial", 0),
+        "candidate": candidate, "tier": tier,
+        "api_ms": api_ms, "correct": status == "ok",
+        "err": kw.get("err", 1e-8), "status": status,
+        "protocol_id": sm.PROTOCOL_ID,
+        "profile_hash": "p" * 16,
+        "timed_scope": sm.TIMING_SCOPE,
+        "reason": kw.get("reason"),
+        "params": {"selection_source": kw.get("selection_source",
+                                              "table")},
+    }
+
+
+def _write_raw(tmp_path, rows, sessions=1):
+    for s in range(sessions):
+        path = tmp_path / f"raw_session{s}.jsonl"
+        with open(path, "w") as f:
+            for r in rows:
+                if r["session"] == s:
+                    f.write(json.dumps(r) + "\n")
+    return tmp_path
+
+
+def _cases():
+    return [(64, 1), (1024, 16)]
+
+
+def _sem_rows(label, sel, ven, inc, oracle, vendor_status="ok"):
+    rows = []
+    for cand, ms in (("selector", sel), ("incumbent", inc),
+                     ("vendor", ven), ("oracle:m0_dit", oracle)):
+        if cand == "vendor" and vendor_status != "ok":
+            rows.append(_row(label, cand, "correctness", None,
+                             status=vendor_status,
+                             reason="XDNN_UNIMPLEMENTED"))
+            continue
+        for i in range(3):
+            rows.append(_row(label, cand, "steady", ms, trial=i))
+    return rows
+
+
+def test_aggregate_win_tie_loss_and_metrics(tmp_path):
+    rows = []
+    # forward: selector beats vendor by 3x -> win
+    rows += _sem_rows("N64B1:c2c-forward", 0.3, 0.9, 1.2, 0.28)
+    # inverse: near parity -> tie
+    rows += _sem_rows("N64B1:c2c-inverse", 0.50, 0.50, 0.8, 0.45)
+    # r2c: selector slower -> loss
+    rows += _sem_rows("N64B1:r2c", 1.0, 0.5, 1.5, 0.6)
+    # c2r: vendor unsupported -> excluded from geomean
+    rows += _sem_rows("N1024B16:c2r", 0.4, None, 0.9, 0.35,
+                      vendor_status="vendor-unsupported")
+    _write_raw(tmp_path, rows)
+    summary = sm._aggregate(tmp_path, _cases(), 3, 1, 1)
+    m = summary["metrics"]
+    assert m["win"] == 1
+    assert m["tie"] == 1
+    assert m["loss"] == 1
+    assert m["vendor_supported_cases"] == 3  # c2r excluded
+    import math
+    expect = math.exp((math.log(3.0) + math.log(1.0)
+                       + math.log(0.5)) / 3)
+    assert abs(m["geomean_speedup_vs_vendor"] - expect) < 1e-9
+    assert abs(m["worst_speedup_vs_vendor"] - 0.5) < 1e-9
+    # regret: sel/oracle-1 per case
+    reg = [c["selector_regret"] for c in summary["cases"]
+           if c["semantic"] == "c2c-forward"]
+    assert abs(reg[0] - (0.3 / 0.28 - 1)) < 1e-9
+    # vendor failure preserved with original reason
+    assert any(f["kind"] == "vendor-unsupported"
+               and "XDNN" in f["reason"]
+               for f in summary["failures"])
+
+
+def test_guard_flag_vs_incumbent(tmp_path):
+    rows = []
+    # selector beats incumbent by >2% (guard pass) on forward
+    rows += _sem_rows("N64B1:c2c-forward", 0.90, 2.0, 1.0, 0.88)
+    # selector loses to incumbent on inverse (guard fail)
+    rows += _sem_rows("N64B1:c2c-inverse", 1.05, 2.0, 1.0, 0.9)
+    _write_raw(tmp_path, rows)
+    summary = sm._aggregate(tmp_path, _cases(), 3, 1, 1)
+    by = {c["label"]: c for c in summary["cases"]}
+    assert by["N64B1:c2c-forward"]["guard_pass_2pct"] is True
+    assert by["N64B1:c2c-inverse"]["guard_pass_2pct"] is False
+
+
+def test_tiers_never_conflated(tmp_path):
+    rows = _sem_rows("N64B1:c2c-forward", 0.3, 0.9, 1.2, 0.28)
+    rows.append(_row("N64B1:c2c-forward", "selector:one_shot",
+                     "one_shot", 0.8))
+    rows.append(_row("N64B1:c2c-forward", "selector:e2e", "e2e", 1.5))
+    rows.append(_row("N64B1:c2c-forward", "selector:plan_creation",
+                     "plan_creation", 0.05))
+    _write_raw(tmp_path, rows)
+    summary = sm._aggregate(tmp_path, _cases(), 3, 1, 1)
+    # steady selector median must ignore one_shot/e2e rows
+    by = {c["label"]: c for c in summary["cases"]}
+    assert by["N64B1:c2c-forward"]["selector_ms"] == 0.3
+
+
+def test_manifest_fields_validate(tmp_path):
+    man = {
+        "commit": "a" * 40, "dirty": False, "device": "d",
+        "driver": "515.58", "profile_hash": "p" * 16,
+        "env_hash": "e" * 16, "toolchain": "python",
+        "protocol_id": sm.PROTOCOL_ID,
+        "timing_scope": sm.TIMING_SCOPE,
+        "selection_semantics": "correctness-first",
+        "warmup": 5, "trials": 30, "sessions": 3, "seed_base": 1234,
+        "candidates": ["incumbent", "selector", "oracle:*", "vendor"],
+        "shapes": ["N64B1:c2c-forward"], "error_threshold": 1e-4,
+        "repro_command": "python scripts/run_semantic_matrix.py",
+        "gm_bytes_kind": "analytical estimate only",
+        "kernel_time_status": "not collected",
+        "source_hash": "b" * 40,
+    }
+    assert validate_manifest(man, strict=False) == []
+
+
+def test_snapshot_refuses_overwrite(tmp_path, monkeypatch):
+    monkeypatch.setattr(sm, "ROOT", tmp_path)
+    # ROOT is used as snap parent: results/p800/releases under ROOT
+    target = tmp_path / "results" / "p800" / "releases" / "rid1"
+    target.mkdir(parents=True)
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    with pytest.raises(SystemExit, match="immutable"):
+        sm._write_snapshot(out_dir, "rid1", {}, {}, None, [])
+
+
+def test_semantic_direction_mapping():
+    assert sm._semantic_of("c2c-forward") == ("c2c", "forward")
+    assert sm._semantic_of("c2c-inverse") == ("c2c", "inverse")
+    assert sm._semantic_of("r2c") == ("r2c", "forward")
+    assert sm._semantic_of("c2r") == ("c2r", "inverse")
+
+
+def test_oracle_plan_names_bounded():
+    plans = sm._oracle_plans(64, 1, "dit", "c2c-forward", block=1024)
+    names = [p.params["oracle_name"] for p in plans]
+    assert names == ["m0_dit", "m0_dif", "m1_fused_t64", "m2_dit_t64",
+                     "m2_dif_t64", "m5_r4_dit"]
+    plans = sm._oracle_plans(64, 16, "dit", "c2c-inverse", block=1024)
+    names = [p.params["oracle_name"] for p in plans]
+    assert "m4_spread" in names and "m1_fused_t64" not in names
+    # semantics carried on every oracle plan
+    for p in plans:
+        assert p.transform_type == "c2c"
+        assert p.transform_direction == "inverse"
+
+
+def test_snapshot_manifest_passes_strict_contract(tmp_path, monkeypatch):
+    monkeypatch.setattr(sm, "ROOT", tmp_path)
+    out = tmp_path / "out"
+    out.mkdir()
+    with open(out / "raw_session0.jsonl", "w") as f:
+        f.write(json.dumps(_row("N64B1:c2c-forward", "selector",
+                                "steady", 0.1)) + "\n")
+    man = {
+        "commit": "a" * 40, "dirty": False, "device": "d",
+        "driver": "515.58", "profile_hash": "p" * 16,
+        "env_hash": "e" * 16, "toolchain": "python",
+        "protocol_id": sm.PROTOCOL_ID,
+        "timing_scope": sm.TIMING_SCOPE,
+        "selection_semantics": "correctness-first",
+        "warmup": 5, "trials": 30, "sessions": 1, "seed_base": 1234,
+        "candidates": ["incumbent", "selector", "oracle:*", "vendor"],
+        "shapes": ["N64B1:c2c-forward"], "error_threshold": 1e-4,
+        "repro_command": "python scripts/run_semantic_matrix.py",
+        "gm_bytes_kind": "analytical estimate only",
+        "kernel_time_status": "not collected",
+        "source_hash": "b" * 40,
+    }
+    snap = sm._write_snapshot(out, "rid2", man, {}, None, ["N64B1"])
+    stamped = json.loads((snap / "manifest.json").read_text())
+    assert validate_manifest(stamped, strict=True) == []
+    assert stamped["result_sha256"] == sm._rows_sha256(out)
+    # snapshot raw is gzip'd but byte-identical after decompression
+    import gzip as _gz
+    with _gz.open(snap / "raw_session0.jsonl.gz", "rb") as f:
+        assert f.read() == (out / "raw_session0.jsonl").read_bytes()
+    assert len(stamped["result_sha256"]) == 64
