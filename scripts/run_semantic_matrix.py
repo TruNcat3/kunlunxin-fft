@@ -37,10 +37,11 @@ from __future__ import annotations
 import argparse
 import gzip
 import hashlib
+import os
+import random
 import hashlib
 import json
 import math
-import multiprocessing as mp
 import os
 import random
 import subprocess
@@ -86,6 +87,13 @@ def _pct(xs, q):
 def _git(*args):
     return subprocess.check_output(
         ["git", *args], cwd=ROOT, text=True).strip()
+
+
+def _mad(xs):
+    m = _median(xs)
+    if m is None:
+        return None
+    return _median([abs(x - m) for x in xs])
 
 
 def _err_vs_np(got, ref_np):
@@ -441,9 +449,16 @@ def run_child(payload):
     from src.xpu.selector import load_table
     table = load_table(str(ROOT / "config" / "selector_table.json"))
     raw_path = Path(out_dir) / f"raw_session{session}.jsonl"
+    # per-session seeded interleaving of case order (and semantic
+    # order): no session measures the grid in the same sequence
+    order = list(cases)
+    rnd = random.Random(seed + session * 10007)
+    rnd.shuffle(order)
+    sems = list(SEMANTICS)
+    rnd.shuffle(sems)
     with open(raw_path, "w") as raw_f:
-        for n, b in cases:
-            for semantic in SEMANTICS:
+        for n, b in order:
+            for semantic in sems:
                 rows = []
                 try:
                     run_case(session, n, b, semantic, trials, warmup,
@@ -500,10 +515,12 @@ def _aggregate(out_dir, cases, trials, warmup, sessions):
         for semantic in SEMANTICS:
             label = f"{case_label}:{semantic}"
             med = {}
+            mad = {}
             for (lab, cand, tier), xs in steady.items():
                 if lab == label and cand.startswith(
                         ("incumbent", "selector", "oracle:", "vendor")):
                     med[cand] = _median(xs)
+                    mad[cand] = _mad(xs)
             oracle_keys = [k for k in med if k.startswith("oracle:")]
             oracle = min((med[k] for k in oracle_keys), default=None)
             oracle_name = (min(oracle_keys, key=lambda k: med[k])
@@ -516,6 +533,12 @@ def _aggregate(out_dir, cases, trials, warmup, sessions):
                 "semantic": semantic,
                 "selector_ms": sel, "incumbent_ms": inc,
                 "vendor_ms": ven, "oracle_ms": oracle,
+                "selector_mad_ms": mad.get("selector"),
+                "incumbent_mad_ms": mad.get("incumbent"),
+                "vendor_mad_ms": mad.get("vendor"),
+                "oracle_mad_ms": (
+                    min((mad[k] for k in oracle_keys), default=None)
+                    if oracle_keys else None),
                 "oracle_candidate": oracle_name,
                 "selector_regret": (
                     (sel / oracle - 1.0)
@@ -534,12 +557,12 @@ def _aggregate(out_dir, cases, trials, warmup, sessions):
                 "selector_source": meta.get(
                     (label, "selector", TIER_STEADY), {}
                 ).get("params", {}).get("selection_source"),
-                "sessions_with_data": len([
-                    r for r in raw_rows
+                "sessions_with_data": len({
+                    r["session"] for r in raw_rows
                     if r["label"] == label
                     and r["candidate"] == "selector"
                     and r.get("tier") == TIER_STEADY
-                    and r.get("status") == "ok"]),
+                    and r.get("status") == "ok"}),
             }
             entry["guard_pass_2pct"] = (
                 bool(entry["guard_vs_incumbent"] is not None
@@ -581,16 +604,58 @@ def _aggregate(out_dir, cases, trials, warmup, sessions):
     (Path(out_dir) / "summary.json").write_text(
         json.dumps(summary, indent=2) + "\n")
     cols = ["label", "semantic", "N", "batch", "selector_ms",
-            "incumbent_ms", "oracle_ms", "oracle_candidate",
-            "vendor_ms", "vendor_status", "speedup_vs_vendor",
+            "selector_mad_ms", "incumbent_ms", "oracle_ms",
+            "oracle_candidate", "vendor_ms", "vendor_mad_ms",
+            "vendor_status", "speedup_vs_vendor",
             "selector_regret", "guard_pass_2pct",
-            "selector_source"]
+            "selector_source", "sessions_with_data"]
     with open(Path(out_dir) / "summary.csv", "w") as f:
         f.write(",".join(cols) + "\n")
         for c in cases_out:
             f.write(",".join(
                 str(c.get(k)) for k in cols) + "\n")
+    _write_figures(out_dir, summary)
     return summary
+
+
+def _write_figures(out_dir, summary):
+    """speedup-vs-vendor figure driven by the same summary/manifest."""
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ImportError:
+        return None
+    import numpy as np
+    sems = list(SEMANTICS)
+    fig, axes = plt.subplots(len(sems), 1, figsize=(13, 2.6 * len(sems)))
+    for ax, sem in zip(np.atleast_1d(axes), sems):
+        cs = [c for c in summary["cases"] if c["semantic"] == sem]
+        sp = [(c["speedup_vs_vendor"]
+               if c["speedup_vs_vendor"] else float("nan"))
+              for c in cs]
+        colors = ["#2a7" if (s or 0) >= 1.02 else
+                  ("#c72" if (s or 0) < 0.98 else "#888")
+                  for s in sp]
+        ax.bar(range(len(cs)), sp, color=colors, width=0.85)
+        ax.axhline(1.0, color="k", lw=0.8, ls="--")
+        ax.set_yscale("log")
+        ax.set_ylabel(f"{sem}\nspeedup vs vendor")
+        ax.set_xticks(range(len(cs)))
+        ax.set_xticklabels([c["label"].split(":")[0] for c in cs],
+                           rotation=90, fontsize=6)
+        ax.tick_params(axis="y", labelsize=7)
+    fig.suptitle(
+        f"semantic matrix {summary['protocol_id']}: "
+        f"win/tie/loss="
+        f"{summary['metrics']['win']}/"
+        f"{summary['metrics']['tie']}/"
+        f"{summary['metrics']['loss']}")
+    fig.tight_layout(rect=(0, 0, 1, 0.97))
+    out = Path(out_dir) / "speedup_vs_vendor.png"
+    fig.savefig(out, dpi=140)
+    plt.close(fig)
+    return out
 
 
 def _rows_sha256(out_dir):
@@ -622,7 +687,8 @@ def _write_snapshot(out_dir, release_id, manifest, env, args, cases):
         # as the canonical evidence artifact
         with gzip.open(snap / (name.name + ".gz"), "wb") as f:
             f.write(name.read_bytes())
-    for name in ("summary.json", "summary.csv", "server_report.md"):
+    for name in ("summary.json", "summary.csv",
+                 "speedup_vs_vendor.png", "server_report.md"):
         src = Path(out_dir) / name
         if src.is_file():
             (snap / name).write_bytes(src.read_bytes())
@@ -647,6 +713,8 @@ def main():
     ap.add_argument("--release-id", default=None)
     ap.add_argument("--aggregate-only", action="store_true",
                     help="reuse existing raw sessions (no measuring)")
+    ap.add_argument("--session", type=int, default=None,
+                    help=argparse.SUPPRESS)
     args = ap.parse_args()
 
     if args.scope == "all":
@@ -655,6 +723,17 @@ def main():
         cases = SCOPES[args.scope]
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    if args.session is not None:
+        # isolated session process: freshly exec'd interpreter, no
+        # shared mp Pool (pool teardown deadlocks against the device
+        # runtime's listener threads); os._exit skips interpreter
+        # atexit teardown where the runtime can also hang
+        path = run_child((args.session, cases, args.trials, args.warmup,
+                          args.seed, str(out_dir), args.e2e_trials,
+                          args.one_shot_trials))
+        print(f"session done: {path}", flush=True)
+        os._exit(0)
 
     from src.xpu.config import DeviceProfile, build_manifest, git_commit
     from src.xpu.envcheck import current_env_hash, collect
@@ -692,16 +771,21 @@ def main():
         json.dumps(man, indent=2, sort_keys=True) + "\n")
 
     if not args.aggregate_only:
-        payloads = [(s, cases, args.trials, args.warmup, args.seed,
-                     str(out_dir), args.e2e_trials, args.one_shot_trials)
-                    for s in range(args.sessions)]
-        ctx = mp.get_context("spawn")
-        # Sequential, each in its own freshly spawned process: session
-        # independence without contending for one device.
-        for payload in payloads:
-            with ctx.Pool(1) as pool:
-                for path in pool.imap_unordered(run_child, [payload]):
-                    print(f"session done: {path}", flush=True)
+        # Sequential, each in its own freshly exec'd process (never
+        # concurrent on one device): session independence without
+        # contending for timing.
+        child = [sys.executable, str(Path(__file__).resolve()),
+                 "--session", "SESSION", "--scope", args.scope,
+                 "--trials", str(args.trials),
+                 "--warmup", str(args.warmup),
+                 "--seed", str(args.seed),
+                 "--e2e-trials", str(args.e2e_trials),
+                 "--one-shot-trials", str(args.one_shot_trials),
+                 "--out", str(out_dir)]
+        for s in range(args.sessions):
+            cmd = [str(s) if x == "SESSION" else x for x in child]
+            subprocess.run(cmd, check=True, timeout=7200)
+            print(f"session done: raw_session{s}.jsonl", flush=True)
 
     summary = _aggregate(out_dir, cases, args.trials, args.warmup,
                          args.sessions)

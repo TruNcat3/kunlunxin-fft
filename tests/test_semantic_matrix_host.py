@@ -205,3 +205,23 @@ def test_snapshot_manifest_passes_strict_contract(tmp_path, monkeypatch):
     with _gz.open(snap / "raw_session0.jsonl.gz", "rb") as f:
         assert f.read() == (out / "raw_session0.jsonl").read_bytes()
     assert len(stamped["result_sha256"]) == 64
+
+
+def test_dispersion_sessions_and_figure(tmp_path):
+    rows = _sem_rows("N64B1:c2c-forward", 0.3, 0.9, 1.2, 0.28)
+    rows += [_row("N64B1:c2c-forward", "selector", "steady", 0.4,
+                  trial=3, session=1)]
+    rows += [_row("N64B1:c2c-forward", "selector", "steady", 0.5,
+                  trial=3, session=2)]
+    _write_raw(tmp_path, rows, sessions=3)
+    summary = sm._aggregate(tmp_path, _cases(), 3, 1, 3)
+    c = [x for x in summary["cases"]
+         if x["label"] == "N64B1:c2c-forward"][0]
+    # MAD reported per contender (session0 selector: [0.3]*3)
+    assert c["selector_mad_ms"] is not None
+    assert c["vendor_mad_ms"] is not None
+    # sessions_with_data counts distinct sessions, not trial rows
+    assert c["sessions_with_data"] == 3
+    # figure driven by the same summary
+    fig = tmp_path / "speedup_vs_vendor.png"
+    assert fig.is_file() and fig.stat().st_size > 1000

@@ -1,1 +1,1 @@
-scripts/run_semantic_matrix.py --sessions 3 --trials 30 --warmup 5 --scope all --aggregate-only --snapshot --release-id 20261017-wp2-semantic-matrix --out results/p800/semantic_matrix
+scripts/run_semantic_matrix.py --sessions 3 --trials 30 --warmup 5 --scope all --snapshot --release-id 20261017-wp2-semantic-matrix --out results/p800/semantic_matrix

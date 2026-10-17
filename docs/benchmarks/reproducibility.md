@@ -81,12 +81,19 @@ CUDA_VISIBLE_DEVICES=6 python3 scripts/run_semantic_matrix.py \
   --release-id <id> --out results/p800/semantic_matrix
 ```
 
-同一份 manifest 驱动 raw（`raw_session*.jsonl`）、summary、指标与不可变快照。每个
+同一份 manifest 驱动 raw（`raw_session*.jsonl`）、summary（每 case 含
+median + MAD 离散度 + `sessions_with_data` 独立 session 数 + 失败状态）、
+`summary.csv` 表格、`speedup_vs_vendor.png` 图与不可变快照。每个
 case × semantic（c2c forward/inverse、r2c、c2r）记录四类 contender：M0/M4 incumbent、
 production selector、bounded measured oracle、vendor（不支持/报错原样保留，不进
 speedup）。计时分列 plan_creation / plan-reuse steady / one_shot / e2e 四层，绝不
 把 API wall 写成 kernel time。指标：win/tie/loss（2% 阈值）、几何均值、最差 speedup、
 selector regret（selector/oracle−1）、相对 incumbent 的 2% guard 结果。
+
+session 模型：每个 session 由父进程 `subprocess` **顺序** exec 一个全新解释器
+（`--session N`，结束后 `os._exit`），case/semantic 顺序按 session 种子随机交错；
+同一设备绝不并发两个 session（并发会同时抬高所有 contender 的表观时间，污染整个矩阵）。
+`multiprocessing.Pool` 会在池拆除时与设备 runtime 的监听线程死锁，不使用。
 
 `--snapshot` 生成 `results/p800/releases/<release-id>/`（manifest、
 environment、gzip 后的 `raw_session*.jsonl.gz`（解压后与工作目录 raw 逐字节
