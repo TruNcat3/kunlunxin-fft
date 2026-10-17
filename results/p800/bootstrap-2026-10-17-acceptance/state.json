@@ -1,0 +1,9 @@
+{
+  "completed": [
+    "probe",
+    "check",
+    "calibrate",
+    "build",
+    "verify"
+  ]
+}

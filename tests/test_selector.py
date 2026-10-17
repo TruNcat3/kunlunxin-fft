@@ -19,9 +19,32 @@ from src.xpu.config import ConfigError, DeviceProfile  # noqa: E402
 from src.xpu.selector import GUARD_PCT, load_table, select  # noqa: E402
 
 TABLE = ROOT / "config" / "selector_table.json"
-CONFIRMS = [ROOT / "results" / "p800" / "confirm_b1024.json",
-            ROOT / "results" / "p800" / "confirm_b256.json"]
-BATCH_CONFIRM = ROOT / "results" / "p800" / "confirm_batch.json"
+LEGACY_CONFIRMS = [ROOT / "results" / "p800" / "confirm_b1024.json",
+                   ROOT / "results" / "p800" / "confirm_b256.json"]
+LEGACY_BATCH_CONFIRM = ROOT / "results" / "p800" / "confirm_batch.json"
+
+
+def _confirm_sources():
+    """Confirmation runs recorded in the committed table's sources.
+
+    The table must be rebuildable from exactly the runs it was built
+    from (bootstrap acceptance runs live under their own output dir);
+    fall back to the legacy top-level paths for pre-bootstrap tables.
+    """
+    if not TABLE.exists():
+        return list(LEGACY_CONFIRMS), LEGACY_BATCH_CONFIRM
+    t = json.loads(TABLE.read_text())
+    conf, batch = [], None
+    for s in t.get("sources", ()):
+        name = Path(s).name
+        if name == "confirm_batch.json":
+            batch = ROOT / s
+        elif (name.startswith("confirm_") and name.endswith(".json")
+              and not name.endswith(".progress.json")):
+            conf.append(ROOT / s)
+    if not conf:
+        return list(LEGACY_CONFIRMS), LEGACY_BATCH_CONFIRM
+    return conf, batch or LEGACY_BATCH_CONFIRM
 
 
 def test_selector_module_does_not_import_torch():
@@ -54,7 +77,8 @@ def _focus_sources():
 def test_table_rebuild_is_deterministic(tmp_path):
     """Rebuilding from the committed confirmation + focus runs must
     reproduce the committed table (no hand edits)."""
-    if not TABLE.exists() or not all(p.exists() for p in CONFIRMS):
+    confirms, batch_confirm = _confirm_sources()
+    if not TABLE.exists() or not all(p.exists() for p in confirms):
         pytest.skip("confirmation artifacts not present")
     focus = [p for p in _focus_sources() if p.exists()]
     if focus != _focus_sources():
@@ -63,9 +87,9 @@ def test_table_rebuild_is_deterministic(tmp_path):
     # relative paths keep table["sources"] stable (the rebuild must match
     # the committed file byte-for-byte in content, not depend on abs paths)
     cmd = [sys.executable, "scripts/build_selector_table.py",
-           *[str(p.relative_to(ROOT)) for p in CONFIRMS], "--out", str(out)]
-    if BATCH_CONFIRM.exists():
-        cmd += ["--batch", str(BATCH_CONFIRM.relative_to(ROOT))]
+           *[str(p.relative_to(ROOT)) for p in confirms], "--out", str(out)]
+    if batch_confirm.exists():
+        cmd += ["--batch", str(batch_confirm.relative_to(ROOT))]
     if focus:
         cmd += ["--focus", *[str(p.relative_to(ROOT)) for p in focus]]
     subprocess.run(cmd, cwd=ROOT, check=True)
