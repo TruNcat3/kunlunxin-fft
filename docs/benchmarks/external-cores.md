@@ -94,4 +94,28 @@ exists on this machine" — that is not the case here: the sub-block
 invocation is legal (public torch API), measurable, and the report says
 exactly what it costs.
 
+## 5. 从 canary 到 exact-shape 晋升（composition table）
+
+`config/external_cores.json` 中 `a1p1_materialized_subtransform` 的 `selector_status`
+现在记录两段事实：canary 结论与**精确 shape 晋升**。晋升不改
+`config/selector_table.json`，而是写入独立的 `config/composition_table.json`，由
+`scripts/promote_composition.py` 执行。契约（运行时与晋升时各校验一遍）：
+
+- **精确 key**：`N × batch × direction=dit × precision=fp32`，当前仅 `2048×16`；
+  非 c2c 或非该 shape 一律走原 selector 路径（fail-closed，不是通配扩展）；
+- **2% incumbent guard**：A1P1 对 A0P0 的提升从 evidence 的 protocol-session
+  pooled p50 盖章，load 时按同一数字重算（误差 ≤1e-6）；负点（`N=1024,B=16/64`）
+  拒绝晋升并原样保留为证据；
+- **session 独立性**：≥3 session 且含 `role=confirmation` 独立确认、不同 pid、
+  同一 commit、`all_sessions_same_commit`；
+- **正确性**：evidence `err_max ≤ 1e-4`，abstain 拒绝；
+- **绑定**：evidence `live_env_hash`/`profile_hash` 与晋升时 live 环境一致；
+- **capability 注册**：`contract_id` 必须在本文件的 registry 中存在；
+- **防篡改**：表带 `result_sha256`（entries 规范化 JSON 求哈希），坏表在 load 时
+  抛 `ConfigError`（loud，不静默降级）。
+
+归因不升格：entry 的 `executed=run_hybrid`、`flow_realization=decomposition-composition`、
+`processing_unit` 含 composition —— 这是 host-API 组合（框架分解 + vendor 子块整变换
+API），**不是**片上驻留单核，也不代表 vendor 内核 counter。
+
 下一页：[工程结构](../development/repository-layout.md)。

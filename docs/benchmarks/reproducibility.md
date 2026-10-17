@@ -102,6 +102,33 @@ environment、gzip 后的 `raw_session*.jsonl.gz`（解压后与工作目录 raw
 manifest 过 `validate_manifest(strict=True)`。工作目录的
 `raw_session*.jsonl` 为可再生产物，不入库。
 
+## 组合表晋升与失败 cell 诊断（issue #6 PR-E）
+
+```bash
+# 1) 独立进程 canary：3 protocol session + 自动 confirmation session
+CUDA_VISIBLE_DEVICES=6 python3 scripts/run_hybrid_canary.py \
+  --shapes 1024x16,1024x64,2048x16 --sessions 3 --trials 30 --warmup 5 \
+  --out results/p800/composition_confirm.json
+
+# 2) 证据 -> 原子晋升（复验 guard/confirmation/pid/commit/env 绑定；
+#    负点拒绝；写 config/composition_table.json）
+CUDA_VISIBLE_DEVICES=6 python3 scripts/promote_composition.py \
+  --evidence results/p800/composition_confirm.json --shape 2048x16
+
+# 3) 失败 cell 有界诊断（自动挑最差 K 个可操作 cell，或 --cells 显式指定）
+CUDA_VISIBLE_DEVICES=6 python3 scripts/diagnose_failing_cells.py --top 4
+```
+
+晋升规则与 fail-closed 语义见
+[外部核与组合表](external-cores.md#5-canary-exact-shape-composition-table)。
+诊断输出 `results/p800/diagnostics/<date>/{verdicts.json,report.md}`：每级 verdict
+记录触发它的数字与证据类别（`measured` / `measured-artifact` / `summary-derived` /
+`analytic-model`），ladder 顺序固定（correctness → external-capability →
+entry-dispatch → sync/handoff → worker-waves → flow-not-selected →
+processing-unit-bound → mixed）；dispatch probe 只对 c2c-forward 做（real-compat 与
+epilogue prep 是真实工作，不计入 dispatch），ledger 是解析模型（bench 公式）且明标
+`estimate`，两者都**不是**硬件性能计数器。
+
 ## 重建已归档 frozen table
 
 ```bash

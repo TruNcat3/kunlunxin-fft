@@ -32,15 +32,23 @@ radix-8、向量化复数乘或其他局部 FFT 核心可以加入 processing-un
 lowering contract。核心优化和流优化不互斥；联合最优可以用于部署，研究归因仍需固定一轴做 A/B。
 
 外部核组合（host-API subtransform composition：框架持有分解、在 materialized 子块上调用
-vendor 整变换 API，四格消融 A1P1）当前是 **experimental canary**。**P2 已实现**：
+vendor 整变换 API，四格消融 A1P1）已完成**精确 shape 晋升**（issue #6 PR-E）：仅
+`N=2048,B=16` 在独立确认 session 下对 A0P0 incumbent 过 2% guard（protocol-session
+pooled p50：A1P1 `0.2477 ms` vs A0P0 `1.5076 ms`，+83.6%），证据
+`results/p800/composition_confirm.json` 经 `scripts/promote_composition.py` 原子写入独立的
+`config/composition_table.json`（绑定 capability contract `a1p1_materialized_subtransform`、
+env/profile hash、evidence sha256、entries `result_sha256`）。运行时选择 fail-closed：仅
+c2c、仅该 exact shape、profile/env 精确匹配，否则走原 selector 路径；`N=1024,B=16/64`
+负点保留为证据、拒绝晋升。**P2 已实现**：
 HybridPlan 缓存 twiddle/staging buffer（无 per-call arange/outer/cos）、调用/物化账本
 （`plan_ledger`，sub-transform 形状/核调用数/分析 GM 字节）、T×R 有界因子扫描
 （1024: 16×64/32×32/64×16；2048: 32×64/64×32，无 N/B 扩张）、`config/external_cores.json`
 capability registry、3 session × 30 trial 交错复测脚本 `scripts/run_hybrid_canary.py`。
-它不是片上驻留单核，也不嵌入单 kernel。Issue #3 的独立进程复测得到：`N=2048,B=16`
+它不是片上驻留单核，也不嵌入单 kernel（entry 归因 `executed=run_hybrid`、
+`selection_source=composition`，绝不冒充 resident kernel）。Issue #3 的独立进程复测得到：`N=2048,B=16`
 为 `0.2298 ms`，相对 vendor `0.6586 ms` 为 `2.87x`；`N=1024,B=16/64` 仍分别落后约
-`3.6%/33.3%`。因此该路径证明“架构编排可以组合外部核心”，但尚不满足跨 shape 的 production
-晋升条件，仍不进入 selector。
+`3.6%/33.3%`。因此该路径证明“架构编排可以组合外部核心”，只在满足 2% guard 的 exact shape 进入
+composition 表（当前 2048×16；不进 `config/selector_table.json`），其余 shape 仍不进入 selector。
 
 ## 已完成的迁移验收
 
