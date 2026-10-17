@@ -36,3 +36,7 @@ bench_progress.json
 # development iterations of the WP0 full-chain run (the accepted
 # evidence lives in results/p800/bootstrap-<acceptance-id>/)
 results/p800/bootstrap-2026-10-17/
+# PR-G chain: runtime scratch of the committed evidence dir
+results/p800/bootstrap-2026-10-17-prg/.staging/*.progress.json
+results/p800/bootstrap-2026-10-17-prg/logs/
+results/p800/prg-postpromote-stress/*.progress.json

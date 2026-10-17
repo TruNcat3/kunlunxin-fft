@@ -79,15 +79,28 @@ def _focus_sources():
                                         "batch_focus"))]
 
 
+def _matrix_sources():
+    """Semantic-matrix run dirs recorded in the committed table
+    (issue #8 PR-G); empty for pre-matrix tables."""
+    if not TABLE.exists():
+        return []
+    t = json.loads(TABLE.read_text())
+    return [ROOT / s for s in t.get("sources", ())
+            if Path(s).name.startswith("matrix_")]
+
+
 def test_table_rebuild_is_deterministic(tmp_path):
-    """Rebuilding from the committed confirmation + focus runs must
-    reproduce the committed table (no hand edits)."""
+    """Rebuilding from the committed confirmation + focus + matrix runs
+    must reproduce the committed table (no hand edits)."""
     confirms, batch_confirm = _confirm_sources()
     if not TABLE.exists() or not all(p.exists() for p in confirms):
         pytest.skip("confirmation artifacts not present")
     focus = [p for p in _focus_sources() if p.exists()]
     if focus != _focus_sources():
         pytest.skip("focus run artifacts not present")
+    matrix = [p for p in _matrix_sources() if p.exists()]
+    if matrix != _matrix_sources():
+        pytest.skip("matrix run artifacts not present")
     out = tmp_path / "selector_table.json"
     # relative paths keep table["sources"] stable (the rebuild must match
     # the committed file byte-for-byte in content, not depend on abs paths)
@@ -97,6 +110,9 @@ def test_table_rebuild_is_deterministic(tmp_path):
         cmd += ["--batch", str(batch_confirm.relative_to(ROOT))]
     if focus:
         cmd += ["--focus", *[str(p.relative_to(ROOT)) for p in focus]]
+    if matrix:
+        cmd += ["--matrix-run",
+                *[str(p.relative_to(ROOT)) for p in matrix]]
     subprocess.run(cmd, cwd=ROOT, check=True)
     assert json.loads(out.read_text()) == json.loads(TABLE.read_text())
 
