@@ -136,10 +136,20 @@ def main() -> None:
            != ev.get("commit") for s in sessions):
         _die("session provenance commit != evidence commit")
 
-    pooled = cell.get("pooled", {})
+    # guard basis in run_hybrid_canary = raw protocol-session pooled
+    # medians (confirmation session excluded, see run_hybrid_canary.py)
+    pooled = (cell.get("protocol_pooled")
+              or cell.get("pooled")
+              or {})
+    if not pooled:
+        _die("cell has no protocol_pooled stats")
     for name in ("A1P1", "A0P0", "vendor_full"):
         if name not in pooled or "p50" not in pooled[name]:
             _die(f"evidence missing pooled stats for {name}")
+    stamped = cell.get("guard", {})
+    if not stamped.get("A1P1_beats_A0P0_by_2pct"):
+        _die("evidence's own guard says A1P1 < A0P0 by <2% "
+             "(negative point, kept as-is, not promoted)")
     err_max = float(ev.get("err_max", ERR_MAX + 1))
     if err_max > ERR_MAX:
         _die(f"evidence err_max {err_max} > {ERR_MAX}")
