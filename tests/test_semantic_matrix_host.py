@@ -225,3 +225,38 @@ def test_dispersion_sessions_and_figure(tmp_path):
     # figure driven by the same summary
     fig = tmp_path / "speedup_vs_vendor.png"
     assert fig.is_file() and fig.stat().st_size > 1000
+
+
+def test_oracle_plan_attribution_is_single_sourced():
+    """issue #8: matrix winner rows must describe the lowering that ran
+    (builder entries bind to this attribution, never re-derive it)."""
+    assert sm._attribution("fft_dit") == (
+        "baseline-global-stage", "global-stage", "radix2-scalar")
+    assert sm._attribution("fft_dit_batch", {"variant": "spread"}) == (
+        "batch-spread", "global-stage", "radix2-scalar")
+    assert sm._attribution("fft_dit_batch", {"variant": "folded"}) == (
+        "batch-folded", "global-stage", "radix2-scalar")
+    assert sm._attribution("fft_dit_matrix_batch",
+                           {"tile": 64, "rows": 8}) == (
+        "local-fused-tile", "matrix-resident", "dense-dot-fft64")
+    assert sm._attribution("fft_dit_radix4_batch") == (
+        "baseline-global-stage", "global-stage", "radix4-scalar")
+    assert sm._attribution("fft_dit_fused", {"tile": 64}) == (
+        "local-fused-tile", "fused-inplace", "radix2-scalar")
+    # unknown executor never guesses attribution (fail closed upstream)
+    assert sm._attribution("run_hybrid") == (None, None, None)
+
+
+def test_oracle_plans_carry_attribution_and_executed():
+    plans = sm._oracle_plans(1024, 256, "dit", "c2c-forward", block=1024)
+    assert plans
+    for plan in plans:
+        assert plan.flow_id and plan.flow_realization and plan.processing_unit
+        assert plan.executed
+        assert plan.params["oracle_name"]
+    names = {p.params["oracle_name"] for p in plans}
+    assert names == {"m0_dit", "m4_spread", "m4_folded", "m2_dit_t64",
+                     "m2_dif_t64", "m5_r4_dit"}
+    flows = {p.flow_id for p in plans}
+    assert flows <= {"batch-spread", "batch-folded",
+                     "local-fused-tile", "baseline-global-stage"}

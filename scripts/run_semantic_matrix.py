@@ -211,6 +211,29 @@ def _entry_plan(direction, n, b, semantic, profile_hash, table):
                     norm=_norm_of(semantic))
 
 
+def _attribution(executed, params=None):
+    """Flow/unit attribution for one measured plan (single source).
+
+    The entry recorded in a promoted table must describe the lowering
+    that actually ran; matrix oracle plans therefore carry their
+    attribution from here (the same flow ids/unit names the bench
+    builder and the schema-v2 table use), never re-derived downstream.
+    """
+    variant = (params or {}).get("variant") or "folded"
+    if executed in ("fft_dit_batch", "fft_dif_batch"):
+        return f"batch-{variant}", "global-stage", "radix2-scalar"
+    if executed in ("fft_dit_matrix", "fft_dif_matrix",
+                    "fft_dit_matrix_batch", "fft_dif_matrix_batch"):
+        return "local-fused-tile", "matrix-resident", "dense-dot-fft64"
+    if executed == "fft_dit_fused":
+        return "local-fused-tile", "fused-inplace", "radix2-scalar"
+    if executed in ("fft_dit_radix4", "fft_dit_radix4_batch"):
+        return "baseline-global-stage", "global-stage", "radix4-scalar"
+    if executed in ("fft_dit", "fft_dif"):
+        return "baseline-global-stage", "global-stage", "radix2-scalar"
+    return None, None, None
+
+
 def _oracle_plans(n, b, direction, semantic, block):
     """Bounded measured candidate set, each as an executable plan."""
     from src.xpu.entry import ExecutionPlan, REAL_COMPAT_MARK
@@ -226,8 +249,10 @@ def _oracle_plans(n, b, direction, semantic, block):
     plans = []
 
     def add(name, executed, params=None, blk=None):
+        flow, real, unit = _attribution(executed, params)
         plans.append(ExecutionPlan(
             **common, executed=executed, block=blk or block,
+            flow_id=flow, flow_realization=real, processing_unit=unit,
             params={**(params or {}), "oracle_name": name, **compat}))
 
     if b == 1:
@@ -304,6 +329,7 @@ def _row(session, case_label, semantic, contender, tier, trial, **kw):
         # builder binds an entry to the measured block, never to a
         # re-derived default)
         "block": kw.get("block"),
+        "executed": kw.get("executed"),
         "api_ms": kw.get("api_ms"),
         "correct": kw.get("correct"),
         "err": kw.get("err"),
@@ -388,6 +414,7 @@ def run_case(session, n, b, semantic, trials, warmup, seed, table,
                 session, case_label, semantic, name, TIER_STEADY, i,
                 api_ms=ms, correct=True, err=errs.get(name),
                 block=plan.block if plan else None,
+                executed=plan.executed if plan else "vendor-torch-fft",
                 flow_id=plan.flow_id if plan else "vendor",
                 flow_realization=(plan.flow_realization if plan
                                   else "global-stage"),
