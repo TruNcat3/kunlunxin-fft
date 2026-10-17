@@ -250,13 +250,24 @@ def test_norm_scale_matches_torch_fft_semantics():
 
 
 @pytest.mark.parametrize("kwargs", [
-    dict(transform_type="r2c"),
-    dict(transform_type="c2r"),
+    dict(transform_type="stft"),
+    dict(transform_type="dct"),
     dict(transform_direction="sideways"),
     dict(norm="l2"),
 ])
 def test_plan_rejects_unsupported_transform_semantics(kwargs):
     with pytest.raises(ValueError):
+        plan_fft("dit", 16, profile_hash="0" * 16,
+                 table={"entries": []}, **kwargs)
+
+
+@pytest.mark.parametrize("kwargs", [
+    dict(transform_type="r2c", transform_direction="inverse"),
+    dict(transform_type="c2r", transform_direction="forward"),
+])
+def test_real_transforms_are_direction_locked(kwargs):
+    with pytest.raises(ValueError, match="forward transform|inverse "
+                                         "transform"):
         plan_fft("dit", 16, profile_hash="0" * 16,
                  table={"entries": []}, **kwargs)
 
@@ -267,7 +278,7 @@ def test_plan_rejects_inverse_before_table_query():
         def __getitem__(self, key):
             raise AssertionError("table queried before validation")
 
-    for bad in (dict(transform_type="r2c"), dict(norm="madeup"),
+    for bad in (dict(transform_type="stft"), dict(norm="madeup"),
                 dict(transform_direction="x")):
         with pytest.raises(ValueError):
             plan_fft("dit", 16, table=_Boom(), **bad)
@@ -304,3 +315,57 @@ def test_plan_executes_table_winner_inverse_reports_same_lowering():
     assert plan.executed == fwd.executed
     assert plan.params == fwd.params
     assert plan.norm == "ortho"
+
+
+# ---------------- R2C/C2R compatibility path (issue #6 PR-C) ----------------
+
+
+def test_plan_r2c_c2r_marked_and_direction_locked():
+    if not TABLE.exists():
+        pytest.skip("selector table not built")
+    from src.xpu.entry import REAL_COMPAT_MARK
+    table = load_table(str(TABLE))
+    prof = DeviceProfile.load().hash()
+    r2c = plan_fft("dit", 1024, profile_hash=prof, table=table,
+                   transform_type="r2c", norm="backward")
+    assert r2c.transform_type == "r2c"
+    assert r2c.transform_direction == "forward"
+    assert r2c.params.get("real_compat") == REAL_COMPAT_MARK
+    c2r = plan_fft("dif", 1024, profile_hash=prof, table=table,
+                   transform_type="c2r", norm="ortho")
+    assert c2r.transform_type == "c2r"
+    assert c2r.transform_direction == "inverse"
+    assert c2r.params.get("real_compat") == REAL_COMPAT_MARK
+    # same complex core as the corresponding C2C plan
+    fwd = plan_fft("dit", 1024, profile_hash=prof, table=table)
+    assert r2c.executed == fwd.executed
+
+
+def test_plan_input_contracts_per_transform():
+    c2c = ExecutionPlan(n=64, batch=1, direction="dit", precision="fp32",
+                        selection_source="abstain", reason="t",
+                        fallback=True, executed="fft_dit")
+    _check_plan_input(c2c, (64,), "complex64")
+    with pytest.raises(TypeError):
+        _check_plan_input(c2c, (64,), "float32")
+    r2c = ExecutionPlan(**{**c2c.__dict__, "transform_type": "r2c"})
+    _check_plan_input(r2c, (64,), "float32")
+    with pytest.raises(TypeError):
+        _check_plan_input(r2c, (64,), "complex64")
+    c2r = ExecutionPlan(**{**c2c.__dict__, "transform_type": "c2r"})
+    _check_plan_input(c2r, (33,), "complex64")  # N=64 half = 33
+    with pytest.raises(ValueError):
+        _check_plan_input(c2r, (64,), "complex64")
+    with pytest.raises(TypeError):
+        _check_plan_input(c2r, (33,), "float32")
+
+
+def test_r2c_abstain_plan_still_marks_compat():
+    if not TABLE.exists():
+        pytest.skip("selector table not built")
+    from src.xpu.entry import REAL_COMPAT_MARK
+    table = load_table(str(TABLE))
+    plan = plan_fft("dit", 3000, profile_hash=None, table=table,
+                    transform_type="r2c")
+    assert plan.fallback is True
+    assert plan.params.get("real_compat") == REAL_COMPAT_MARK

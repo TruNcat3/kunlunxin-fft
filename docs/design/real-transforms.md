@@ -10,7 +10,7 @@ Ascend-FFT 文档将 R2C/C2R 单独列为设计专题，因为实数变换的频
 |---|---|
 | forward C2C | 已验证，`torch.complex64` |
 | inverse C2C | 已发布（共轭技巧复用 forward lowering + epilogue scale），见变换契约 |
-| R2C/C2R | 未发布 |
+| R2C/C2R | 已发布为 **compatibility path**（打包 C2C 核心 + 显式半谱装配/裁剪，计入计时，plan 标记 `real_compat`）；专用 real-FFT 核心未发布 |
 | normalization | `none`/`forward`/`backward`/`ortho`（`backward` 默认，与 torch.fft 一致） |
 | 多维/任意 stride | 未发布 |
 

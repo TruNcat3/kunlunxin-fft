@@ -32,7 +32,9 @@ print(plan)
 - `block` 与 `params`：lowering 参数；
 - `fallback`、`reason`、`selection_source`：为什么选择或回退；
 - `transform_type`、`transform_direction`、`norm`：变换语义键（默认
-  `c2c` / `forward` / `backward`，与历史 forward 无缩放行为逐位一致）。
+  `c2c` / `forward` / `backward`，与历史 forward 无缩放行为逐位一致）；
+  `transform_type="r2c"/"c2r"` 为实数兼容路径，`params["real_compat"]`
+  显式标记，方向分别锁定 forward/inverse。
 
 inverse 示例（复用 forward incumbent，executor 做共轭 + epilogue scale）：
 
