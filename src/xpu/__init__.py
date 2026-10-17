@@ -21,9 +21,13 @@ from .config import (  # noqa: F401
     git_dirty,
 )
 from .entry import (  # noqa: F401
+    SUPPORTED_NORMS,
+    SUPPORTED_TRANSFORMS,
+    SUPPORTED_TRANSFORM_DIRECTIONS,
     ExecutionPlan,
     ExecutionReport,
     execute_fft_plan,
+    norm_scale,
     plan_fft,
 )
 from .selector import Selection, load_table, select  # noqa: F401
@@ -85,11 +89,15 @@ __all__ = [
     "Manifest",
     "SizeMatrix",
     "Selection",
+    "SUPPORTED_NORMS",
+    "SUPPORTED_TRANSFORMS",
+    "SUPPORTED_TRANSFORM_DIRECTIONS",
     "build_manifest",
     "execute_fft_plan",
     "git_commit",
     "git_dirty",
     "load_table",
+    "norm_scale",
     "plan_fft",
     "select",
     # torch-dependent

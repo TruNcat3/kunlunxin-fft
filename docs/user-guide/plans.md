@@ -30,11 +30,27 @@ print(plan)
 - `executed`：实际 runner 入口；
 - `flow_realization` 与 `processing_unit`：流组织和计算核心；
 - `block` 与 `params`：lowering 参数；
-- `fallback`、`reason`、`selection_source`：为什么选择或回退。
+- `fallback`、`reason`、`selection_source`：为什么选择或回退；
+- `transform_type`、`transform_direction`、`norm`：变换语义键（默认
+  `c2c` / `forward` / `backward`，与历史 forward 无缩放行为逐位一致）。
+
+inverse 示例（复用 forward incumbent，executor 做共轭 + epilogue scale）：
+
+```python
+plan = plan_fft(
+    "dit", 2048, batch=1,
+    profile_hash=DeviceProfile.load().hash(),
+    table=table,
+    transform_direction="inverse",
+    norm="ortho",
+)
+y = execute_fft_plan(plan, x)
+```
 
 ## 闭包与回退
 
-表键为 `(device/profile, precision, direction, N, batch)`。以下情况不会猜测候选：
+表键为 `(device/profile, precision, direction, N, batch)`；inverse C2C 沿用同一 forward
+表（见变换契约）。以下情况不会猜测候选：
 
 - `profile_hash` 缺失或不匹配；
 - shape 不在已测冻结表；

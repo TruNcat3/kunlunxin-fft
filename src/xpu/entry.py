@@ -3,8 +3,11 @@
 Contract (plan section 5/P2, review exit criteria):
 
 1. validate input/profile — only the currently supported semantics
-   (``direction in {dit,dif}``, ``precision=fp32``, complex64 XPU tensor)
-   are accepted; anything else raises before any table query or launch;
+   (``direction in {dit,dif}``, ``transform_type=c2c``,
+   ``transform_direction in {forward,inverse}``, ``norm in
+   {none,forward,backward,ortho}``, ``precision=fp32``, complex64 XPU
+   tensor) are accepted; anything else raises before any table query or
+   launch;
 2. query the frozen table (:mod:`.selector`);
 3. validate the lowering contract (runner-side validation);
 4. execute the selected M0/M1/M2/M3/M5/M4 implementation;
@@ -25,10 +28,19 @@ profile mismatch, or an undispatchable combination executes ``fft_dit``
 / ``fft_dif`` (batch>1: the M4 stage flow, conservative ``folded``
 variant) at the table entry's incumbent block when known, else the
 library default.
+
+Inverse C2C (issue #6 WP1) reuses the forward lowerings: the plan runs
+the same selected flow on the conjugated input, conjugates the output,
+and applies the norm's epilogue scale — no parallel architecture, same
+selector table (conjugate-trick lowerings share the candidate
+structure, so the forward incumbent ordering carries over). Norm
+semantics match ``torch.fft``/``numpy.fft`` exactly (``backward`` is
+the default: unscaled forward, ``1/N`` inverse).
 """
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 from .selector import Selection, load_table, select
@@ -36,7 +48,34 @@ from .selector import Selection, load_table, select
 DEFAULT_BLOCK = 1024
 SUPPORTED_DIRECTIONS = ("dit", "dif")
 SUPPORTED_PRECISIONS = ("fp32",)
+SUPPORTED_TRANSFORMS = ("c2c",)
+SUPPORTED_TRANSFORM_DIRECTIONS = ("forward", "inverse")
+SUPPORTED_NORMS = ("none", "forward", "backward", "ortho")
 _SUPPORTED_DTYPES = {"fp32": "complex64"}
+
+
+def norm_scale(n: int, transform_direction: str, norm: str) -> float:
+    """Epilogue scale for one (direction, norm) pair — torch.fft semantics.
+
+    ================== ============ ============
+    norm               forward      inverse
+    ================== ============ ============
+    ``none``           1            1
+    ``forward``        1/N          1
+    ``backward``       1            1/N
+    ``ortho``          1/sqrt(N)    1/sqrt(N)
+    ================== ============ ============
+    """
+    if transform_direction not in SUPPORTED_TRANSFORM_DIRECTIONS:
+        raise ValueError(f"bad transform_direction {transform_direction!r}")
+    if norm not in SUPPORTED_NORMS:
+        raise ValueError(f"bad norm {norm!r}")
+    if norm == "ortho":
+        return 1.0 / math.sqrt(n)
+    if (norm == "forward" and transform_direction == "forward") or (
+            norm == "backward" and transform_direction == "inverse"):
+        return 1.0 / n
+    return 1.0
 
 
 @dataclass(frozen=True)
@@ -56,6 +95,10 @@ class ExecutionPlan:
     flow_realization: str | None = None
     processing_unit: str | None = None
     params: dict = field(default_factory=dict)
+    # WP1 semantic key: transform_type / direction / normalization.
+    transform_type: str = "c2c"
+    transform_direction: str = "forward"
+    norm: str = "backward"
 
     def as_report(self) -> "ExecutionReport":
         return ExecutionReport(**self.__dict__)
@@ -66,17 +109,32 @@ class ExecutionReport(ExecutionPlan):
     """ExecutionPlan plus the observation that the plan was carried out."""
 
 
-def _validate_semantics(direction: str, precision: str) -> None:
+def _validate_semantics(direction: str, precision: str,
+                        transform_type: str = "c2c",
+                        transform_direction: str = "forward",
+                        norm: str = "backward") -> None:
     """Reject unsupported semantics before any table query or launch."""
     if direction not in SUPPORTED_DIRECTIONS:
         raise ValueError(
             f"unsupported direction {direction!r}; this round supports "
-            f"{SUPPORTED_DIRECTIONS} only (forward C2C). inverse/r2c/c2r "
+            f"{SUPPORTED_DIRECTIONS} only (forward/inverse C2C). r2c/c2r "
             "are roadmap and must not fall back to a different transform")
     if precision not in SUPPORTED_PRECISIONS:
         raise ValueError(
             f"unsupported precision {precision!r}; this round supports "
             f"{SUPPORTED_PRECISIONS} only")
+    if transform_type not in SUPPORTED_TRANSFORMS:
+        raise ValueError(
+            f"unsupported transform_type {transform_type!r}; this round "
+            f"supports {SUPPORTED_TRANSFORMS} only (C2C forward+inverse); "
+            "r2c/c2r must not fall back to a different transform")
+    if transform_direction not in SUPPORTED_TRANSFORM_DIRECTIONS:
+        raise ValueError(
+            f"unsupported transform_direction {transform_direction!r}; "
+            f"supports {SUPPORTED_TRANSFORM_DIRECTIONS}")
+    if norm not in SUPPORTED_NORMS:
+        raise ValueError(
+            f"unsupported norm {norm!r}; supports {SUPPORTED_NORMS}")
 
 
 def _m0_name(direction: str, batch: int) -> str:
@@ -86,7 +144,9 @@ def _m0_name(direction: str, batch: int) -> str:
 
 
 def _m0_plan(n, batch, direction, precision, reason, fallback,
-             block=DEFAULT_BLOCK) -> ExecutionPlan:
+             block=DEFAULT_BLOCK, transform_type: str = "c2c",
+             transform_direction: str = "forward",
+             norm: str = "backward") -> ExecutionPlan:
     return ExecutionPlan(
         n=n, batch=batch, direction=direction, precision=precision,
         selection_source="abstain" if fallback else "table",
@@ -94,6 +154,8 @@ def _m0_plan(n, batch, direction, precision, reason, fallback,
         block=block, flow_id="baseline-global-stage",
         flow_realization="global-stage", processing_unit="radix2-scalar",
         params=({"variant": "folded", "batch": batch} if batch > 1 else {}),
+        transform_type=transform_type,
+        transform_direction=transform_direction, norm=norm,
     )
 
 
@@ -141,38 +203,62 @@ def _entry_block(table: dict, sel: Selection) -> int:
 def plan_fft(direction: str, n: int, batch: int = 1, precision: str = "fp32",
              profile_hash: str | None = None,
              table: dict | None = None,
-             env_hash: str | None = "auto") -> ExecutionPlan:
+             env_hash: str | None = "auto",
+             transform_type: str = "c2c",
+             transform_direction: str = "forward",
+             norm: str = "backward") -> ExecutionPlan:
     """Resolve the frozen table onto a concrete plan (host-only, no torch).
 
-    Unsupported direction/precision raise ``ValueError`` before the table
-    query — they must never fall back onto a different transform.
-    ``profile_hash=None`` abstains to M0; an undispatchable table entry
-    (e.g. a hypothetical batched M1) falls back to M0 with the reason.
-    ``env_hash`` (default ``"auto"``) re-verifies that a table bound to an
-    environment fingerprint is being used on that same device/runtime/
-    compiler stack; unknown or stale environment falls back to M0.
+    The semantic key is (transform_type, direction, normalization):
+    ``transform_type`` is ``"c2c"`` this round (r2c/c2r raise),
+    ``direction`` is the decomposition (``dit``/``dif``),
+    ``transform_direction`` is ``"forward"``/``"inverse"``, and ``norm``
+    is one of :data:`SUPPORTED_NORMS` (``"backward"`` default, matching
+    torch.fft). Defaults reproduce the historical forward, unscaled
+    behaviour bit-for-bit.
+
+    Unsupported direction/precision/transform/norm raise ``ValueError``
+    before the table query — they must never fall back onto a different
+    transform. ``profile_hash=None`` abstains to M0; an undispatchable
+    table entry (e.g. a hypothetical batched M1) falls back to M0 with
+    the reason. ``env_hash`` (default ``"auto"``) re-verifies that a
+    table bound to an environment fingerprint is being used on that same
+    device/runtime/compiler stack; unknown or stale environment falls
+    back to M0.
+
+    Inverse C2C reuses the forward incumbent from the table: conjugate-
+    trick lowerings share candidate structure, so the measured ordering
+    carries over; the plan records the semantics and the executor wraps
+    the forward lowering (conjugate in/out + epilogue scale).
     """
-    _validate_semantics(direction, precision)
+    _validate_semantics(direction, precision, transform_type,
+                        transform_direction, norm)
     table = table if table is not None else load_table()
     sel = select(direction, n, batch=batch, precision=precision,
                  profile_hash=profile_hash, table=table,
                  env_hash=env_hash)
     if not sel.selected:
         return _m0_plan(n, batch, direction, precision, sel.reason, True,
-                        block=_entry_block(table, sel))
+                        block=_entry_block(table, sel),
+                        transform_type=transform_type,
+                        transform_direction=transform_direction, norm=norm)
     name = _dispatch(sel)
     if name is None:
         return _m0_plan(
             n, batch, direction, precision,
             f"no lowering for {sel.flow_realization}/{sel.processing_unit} "
             f"direction={direction} batch={batch}; M0 fallback",
-            True, block=_entry_block(table, sel))
+            True, block=_entry_block(table, sel),
+            transform_type=transform_type,
+            transform_direction=transform_direction, norm=norm)
     return ExecutionPlan(
         n=n, batch=batch, direction=direction, precision=precision,
         selection_source="table", reason=sel.reason, fallback=False,
         executed=name, block=sel.block, flow_id=sel.flow_id,
         flow_realization=sel.flow_realization,
         processing_unit=sel.processing_unit, params=dict(sel.params or {}),
+        transform_type=transform_type,
+        transform_direction=transform_direction, norm=norm,
     )
 
 
@@ -244,15 +330,40 @@ def execute_fft_plan(plan: ExecutionPlan, x):
     if not isinstance(x, torch.Tensor):
         raise TypeError(f"x must be a torch.Tensor, got {type(x).__name__}")
     _check_plan_input(plan, tuple(x.shape), str(x.dtype).split(".")[-1])
+    if plan.transform_type not in SUPPORTED_TRANSFORMS:
+        raise ValueError(
+            f"plan transform_type {plan.transform_type!r} not supported")
+    if plan.transform_direction not in SUPPORTED_TRANSFORM_DIRECTIONS:
+        raise ValueError(
+            f"plan transform_direction {plan.transform_direction!r} "
+            "not supported")
+    if plan.norm not in SUPPORTED_NORMS:
+        raise ValueError(f"plan norm {plan.norm!r} not supported")
     module = __import__("src.xpu.runner", fromlist=[plan.executed])
     fn = getattr(module, plan.executed)
-    return _invoke(fn, x, plan.direction, plan.block or DEFAULT_BLOCK,
-                   plan.params)
+    # Explicit conjugation (not a conj-view): the XPU kernels split
+    # real/imag views, so materialize the conjugate for the inverse.
+    if plan.transform_direction == "inverse":
+        x = torch.complex(x.real, -x.imag)
+    y = _invoke(fn, x, plan.direction, plan.block or DEFAULT_BLOCK,
+                plan.params)
+    scale = norm_scale(plan.n, plan.transform_direction, plan.norm)
+    # Scale the split components: complex64 * python float is NOT
+    # IMPLEMENTED in this vendor stack (torch_xmlir mul), while the
+    # float path is. Conjugation fuses with the inverse scale here.
+    if plan.transform_direction == "inverse":
+        return torch.complex(y.real * scale, -y.imag * scale)
+    if scale != 1.0:
+        return torch.complex(y.real * scale, y.imag * scale)
+    return y
 
 
 def run_fft(x, direction: str, *, batch: int | None = None,
             precision: str = "fp32", profile_hash: str | None = None,
-            table: dict | None = None):
+            table: dict | None = None,
+            transform_type: str = "c2c",
+            transform_direction: str = "forward",
+            norm: str = "backward"):
     """One-shot convenience: plan + execute; return ``(y, ExecutionReport)``.
 
     Unsupported direction/precision/dtype raise before any query. A rank-2
@@ -263,7 +374,8 @@ def run_fft(x, direction: str, *, batch: int | None = None,
     """
     import torch  # local import: entry stays host-importable for planning
 
-    _validate_semantics(direction, precision)
+    _validate_semantics(direction, precision, transform_type,
+                        transform_direction, norm)
     want_dtype = getattr(torch, _SUPPORTED_DTYPES[precision])
     if not isinstance(x, torch.Tensor):
         raise TypeError(f"x must be a torch.Tensor, got {type(x).__name__}")
@@ -286,7 +398,9 @@ def run_fft(x, direction: str, *, batch: int | None = None,
         raise ValueError(f"batch={batch} does not match effective batch {b}")
 
     plan = plan_fft(direction, n, batch=b, precision=precision,
-                    profile_hash=profile_hash, table=table)
+                    profile_hash=profile_hash, table=table,
+                    transform_type=transform_type,
+                    transform_direction=transform_direction, norm=norm)
     y = execute_fft_plan(plan, x)
     if squeezed:
         y = y.unsqueeze(0)

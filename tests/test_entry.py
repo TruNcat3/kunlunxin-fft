@@ -18,6 +18,7 @@ from src.xpu.config import DeviceProfile  # noqa: E402
 from src.xpu.entry import plan_fft  # noqa: E402
 from src.xpu.entry import _dispatch  # noqa: E402
 from src.xpu.entry import _check_plan_input  # noqa: E402
+from src.xpu.entry import norm_scale  # noqa: E402
 from src.xpu.entry import ExecutionPlan  # noqa: E402
 from src.xpu.selector import Selection, load_table  # noqa: E402
 
@@ -220,3 +221,86 @@ def test_plan_input_rejects_wrong_batch_or_rank():
 def test_plan_input_rejects_wrong_dtype():
     with pytest.raises(TypeError, match="complex64"):
         _check_plan_input(_plan(16, 1), (16,), "float32")
+
+
+# ---------------- WP1 inverse C2C + normalization (issue #6 PR-B) ----------
+
+
+def test_plan_defaults_keep_forward_unscaled_semantics():
+    if not TABLE.exists():
+        pytest.skip("selector table not built")
+    table = load_table(str(TABLE))
+    plan = plan_fft("dit", 1024, profile_hash="0" * 16, table=table)
+    assert plan.transform_type == "c2c"
+    assert plan.transform_direction == "forward"
+    assert plan.norm == "backward"
+    assert plan.as_report().transform_direction == "forward"
+
+
+def test_norm_scale_matches_torch_fft_semantics():
+    n = 16
+    assert norm_scale(n, "forward", "none") == 1.0
+    assert norm_scale(n, "forward", "forward") == 1.0 / n
+    assert norm_scale(n, "forward", "backward") == 1.0
+    assert norm_scale(n, "inverse", "none") == 1.0
+    assert norm_scale(n, "inverse", "forward") == 1.0
+    assert norm_scale(n, "inverse", "backward") == 1.0 / n
+    for d in ("forward", "inverse"):
+        assert norm_scale(n, d, "ortho") == 1.0 / (n ** 0.5)
+
+
+@pytest.mark.parametrize("kwargs", [
+    dict(transform_type="r2c"),
+    dict(transform_type="c2r"),
+    dict(transform_direction="sideways"),
+    dict(norm="l2"),
+])
+def test_plan_rejects_unsupported_transform_semantics(kwargs):
+    with pytest.raises(ValueError):
+        plan_fft("dit", 16, profile_hash="0" * 16,
+                 table={"entries": []}, **kwargs)
+
+
+def test_plan_rejects_inverse_before_table_query():
+    """A raising table proves validation happens before any query."""
+    class _Boom:
+        def __getitem__(self, key):
+            raise AssertionError("table queried before validation")
+
+    for bad in (dict(transform_type="r2c"), dict(norm="madeup"),
+                dict(transform_direction="x")):
+        with pytest.raises(ValueError):
+            plan_fft("dit", 16, table=_Boom(), **bad)
+
+
+def test_plan_inverse_carries_semantics_on_abstain_and_table():
+    if not TABLE.exists():
+        pytest.skip("selector table not built")
+    table = load_table(str(TABLE))
+    abstain = plan_fft("dit", 1024, profile_hash=None, table=table,
+                       transform_direction="inverse", norm="ortho")
+    assert abstain.transform_direction == "inverse"
+    assert abstain.norm == "ortho"
+    assert abstain.fallback is True
+    prof = DeviceProfile.load().hash()
+    winner = plan_fft("dit", 1024, profile_hash=prof, table=table,
+                      transform_direction="inverse", norm="backward")
+    fwd = plan_fft("dit", 1024, profile_hash=prof, table=table)
+    # conjugate-trick lowerings reuse the forward incumbent
+    assert winner.executed == fwd.executed
+    assert winner.block == fwd.block
+    assert winner.transform_direction == "inverse"
+    assert winner.fallback == fwd.fallback
+
+
+def test_plan_executes_table_winner_inverse_reports_same_lowering():
+    if not TABLE.exists():
+        pytest.skip("no production table")
+    table = load_table(str(TABLE))
+    prof = DeviceProfile.load().hash()
+    plan = plan_fft("dif", 2048, batch=16, profile_hash=prof, table=table,
+                    transform_direction="inverse", norm="ortho")
+    fwd = plan_fft("dif", 2048, batch=16, profile_hash=prof, table=table)
+    assert plan.executed == fwd.executed
+    assert plan.params == fwd.params
+    assert plan.norm == "ortho"

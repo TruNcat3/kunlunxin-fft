@@ -1,17 +1,17 @@
 # 实数变换边界
 
 Ascend-FFT 文档将 R2C/C2R 单独列为设计专题，因为实数变换的频谱半存储、Hermitian 约束和输出
-布局会改变数据流。Kunlunxin-FFT 目前只发布 FP32 forward C2C；本页用于明确边界，避免把未来
-能力误读为当前接口。
+布局会改变数据流。Kunlunxin-FFT 已发布 FP32 C2C forward + inverse（四种 normalization）；
+本页用于明确实数变换的剩余边界，避免把未来能力误读为当前接口。
 
 ## 当前状态
 
 | 能力 | 状态 |
 |---|---|
 | forward C2C | 已验证，`torch.complex64` |
-| inverse C2C | 未发布 |
+| inverse C2C | 已发布（共轭技巧复用 forward lowering + epilogue scale），见变换契约 |
 | R2C/C2R | 未发布 |
-| normalization | 当前固定为 none |
+| normalization | `none`/`forward`/`backward`/`ortho`（`backward` 默认，与 torch.fft 一致） |
 | 多维/任意 stride | 未发布 |
 
 实数变换不能只把输入 dtype 替换成 float：它需要独立的频谱长度、共轭对称边界、Nyquist 点和
