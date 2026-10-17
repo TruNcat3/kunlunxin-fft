@@ -64,11 +64,12 @@ def _die(msg: str) -> None:
 
 
 def _find_cell(evidence: dict, n: int, batch: int) -> dict:
-    for cell in evidence.get("cells", []):
+    cells = evidence.get("cells") or evidence.get("shapes") or []
+    for cell in cells:
         if cell.get("N") == n and cell.get("batch") == batch:
             return cell
     _die(f"evidence has no cell N={n} batch={batch} "
-         f"(cells: {[(c.get('N'), c.get('batch')) for c in evidence.get('cells', [])]})")
+         f"(cells: {[(c.get('N'), c.get('batch')) for c in cells]})")
 
 
 def main() -> None:
