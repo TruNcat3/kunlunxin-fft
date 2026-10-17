@@ -444,18 +444,24 @@ def execute_fft_plan(plan: ExecutionPlan, x):
     """
     import torch  # local import: entry stays host-importable for planning
 
-    if not isinstance(x, torch.Tensor):
-        raise TypeError(f"x must be a torch.Tensor, got {type(x).__name__}")
-    _check_plan_input(plan, tuple(x.shape), str(x.dtype).split(".")[-1])
-    if plan.transform_type not in SUPPORTED_TRANSFORMS:
-        raise ValueError(
-            f"plan transform_type {plan.transform_type!r} not supported")
-    if plan.transform_direction not in SUPPORTED_TRANSFORM_DIRECTIONS:
-        raise ValueError(
-            f"plan transform_direction {plan.transform_direction!r} "
-            "not supported")
-    if plan.norm not in SUPPORTED_NORMS:
-        raise ValueError(f"plan norm {plan.norm!r} not supported")
+    from .ledger import phase  # local: keeps entry host-importable
+
+    with phase("plan-validate"):
+        if not isinstance(x, torch.Tensor):
+            raise TypeError(
+                f"x must be a torch.Tensor, got {type(x).__name__}")
+        _check_plan_input(plan, tuple(x.shape),
+                          str(x.dtype).split(".")[-1])
+        if plan.transform_type not in SUPPORTED_TRANSFORMS:
+            raise ValueError(
+                f"plan transform_type {plan.transform_type!r} "
+                "not supported")
+        if plan.transform_direction not in SUPPORTED_TRANSFORM_DIRECTIONS:
+            raise ValueError(
+                f"plan transform_direction {plan.transform_direction!r} "
+                "not supported")
+        if plan.norm not in SUPPORTED_NORMS:
+            raise ValueError(f"plan norm {plan.norm!r} not supported")
     if plan.params.get("flow_kind") == "composition":
         # Composition path: framework decomposition owns the flow,
         # the vendor core runs only on materialized sub-blocks
@@ -468,60 +474,78 @@ def execute_fft_plan(plan: ExecutionPlan, x):
                 f"got {plan.transform_type!r}")
         z = x
         if plan.transform_direction == "inverse":
-            z = torch.complex(z.real, -z.imag)
-        y = _invoke_composition(plan, z)
-        return _scale_complex(
-            y, norm_scale(plan.n, plan.transform_direction, plan.norm),
-            conjugate=plan.transform_direction == "inverse")
+            with phase("inverse-conj"):
+                z = torch.complex(z.real, -z.imag)
+        with phase("composition-core"):
+            y = _invoke_composition(plan, z)
+        with phase("epilogue-scale"):
+            return _scale_complex(
+                y, norm_scale(plan.n, plan.transform_direction, plan.norm),
+                conjugate=plan.transform_direction == "inverse")
     module = __import__("src.xpu.runner", fromlist=[plan.executed])
     fn = getattr(module, plan.executed)
     # Real compatibility path: all packing / Hermitian reconstruction /
     # half-spectrum cropping happens HERE, inside the timed execution —
     # never hidden outside the measurement (plan.params["real_compat"]).
     if plan.transform_type == "r2c":
-        z = torch.complex(x, torch.zeros_like(x))
-        y = _scale_complex(
-            _invoke(fn, z, plan.direction, plan.block or DEFAULT_BLOCK,
-                    plan.params),
-            norm_scale(plan.n, "forward", plan.norm),
-            conjugate=False)
-        return y[..., : plan.n // 2 + 1].contiguous()
+        with phase("real-input-pack"):
+            z = torch.complex(x, torch.zeros_like(x))
+        with phase("core-invoke"):
+            y = _invoke(fn, z, plan.direction, plan.block or DEFAULT_BLOCK,
+                        plan.params)
+        with phase("epilogue-scale"):
+            y = _scale_complex(
+                y, norm_scale(plan.n, "forward", plan.norm),
+                conjugate=False)
+        with phase("half-spectrum-crop"):
+            return y[..., : plan.n // 2 + 1].contiguous()
     if plan.transform_type == "c2r":
-        full = _hermitian_reconstruct(x, plan.n)
-        y = _scale_complex(
-            _invoke(fn, torch.complex(full.real, -full.imag),
-                    plan.direction, plan.block or DEFAULT_BLOCK,
-                    plan.params),
-            norm_scale(plan.n, "inverse", plan.norm),
-            conjugate=True)
-        return y.real.contiguous()
+        with phase("hermitian-rebuild"):
+            full = _hermitian_reconstruct(x, plan.n)
+        with phase("inverse-conj"):
+            zc = torch.complex(full.real, -full.imag)
+        with phase("core-invoke"):
+            y = _invoke(fn, zc, plan.direction, plan.block or DEFAULT_BLOCK,
+                        plan.params)
+        with phase("epilogue-scale"):
+            y = _scale_complex(
+                y, norm_scale(plan.n, "inverse", plan.norm),
+                conjugate=True)
+        with phase("real-output-cast"):
+            return y.real.contiguous()
     # Explicit conjugation (not a conj-view): the XPU kernels split
     # real/imag views, so materialize the conjugate for the inverse.
     if plan.transform_direction == "inverse":
-        x = torch.complex(x.real, -x.imag)
-    y = _invoke(fn, x, plan.direction, plan.block or DEFAULT_BLOCK,
-                plan.params)
-    return _scale_complex(
-        y, norm_scale(plan.n, plan.transform_direction, plan.norm),
-        conjugate=plan.transform_direction == "inverse")
+        with phase("inverse-conj"):
+            x = torch.complex(x.real, -x.imag)
+    with phase("core-invoke"):
+        y = _invoke(fn, x, plan.direction, plan.block or DEFAULT_BLOCK,
+                    plan.params)
+    with phase("epilogue-scale"):
+        return _scale_complex(
+            y, norm_scale(plan.n, plan.transform_direction, plan.norm),
+            conjugate=plan.transform_direction == "inverse")
 
 
 def _invoke_composition(plan: ExecutionPlan, x):
     """Run the composition flow for a plan (plan-reuse caches the
     HybridPlan: twiddle/staging buffers live as long as the cache)."""
     from .adapter_hybrid import plan_hybrid, run_hybrid
+    from .ledger import phase
 
     key = id(plan)
     hp = _HYBRID_CACHE.get(key)
     if hp is None:
-        hp = plan_hybrid(plan.n, plan.batch,
-                         tile=int(plan.params["tile"]),
-                         core=plan.params["core"])
+        with phase("composition-prepare"):
+            hp = plan_hybrid(plan.n, plan.batch,
+                             tile=int(plan.params["tile"]),
+                             core=plan.params["core"])
         _HYBRID_CACHE[key] = hp
     squeeze = x.dim() == 1
     if squeeze:
         x = x.unsqueeze(0)
-    y = run_hybrid(x, hp)
+    with phase("composition-run"):
+        y = run_hybrid(x, hp)
     return y[0] if squeeze else y
 
 

@@ -230,6 +230,14 @@ def main() -> None:
     man["kernel_time_status"] = (
         "not collected: this stack exposes reliable sync API wall time; "
         "device/kernel timers unavailable")
+    # Remaining REQUIRED_MANIFEST_KEYS (manifest_contract): confirm
+    # rounds timed one flow at a time with explicit synchronize around
+    # each api wall sample (see the timing loop below).
+    man["protocol_id"] = (
+        "bench-confirm:interleaved-correctness-first:single-process")
+    man["timing_scope"] = "api wall time (dispatch+alloc+layout+sync), ms"
+    man["error_threshold"] = 1e-4
+    man["repro_command"] = f"python3 {' '.join(sys.argv)}"
     print(f"manifest: commit={man['commit'][:8]} dirty={man['dirty']} "
           f"profile={man['profile_hash']} device={man['device']} "
           f"env={man.get('env_hash')}")

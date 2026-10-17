@@ -32,3 +32,7 @@ results/local-profile-probe/
 *.log
 bench_progress.json
 *.progress.json
+
+# development iterations of the WP0 full-chain run (the accepted
+# evidence lives in results/p800/bootstrap-<acceptance-id>/)
+results/p800/bootstrap-2026-10-17/

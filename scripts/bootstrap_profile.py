@@ -95,9 +95,14 @@ def calibrate_commands(out: Path, device: str) -> list[list[str]]:
          "--flows", "m0,m4,vendor",
          "--trials", "30", "--warmup", "10",
          "--json", str(out / "confirm_batch.json")],
-        [py, "scripts/run_batch_release.py", "--out", str(focus_a)],
-        [py, "scripts/run_batch_release.py", "--out", str(focus_b)],
-        [py, "scripts/run_batch_release.py",
+        # staging is this run's scratch: a --resume re-enters the
+        # calibrate stage and must replace finished runs instead of
+        # failing on run_batch_release's no-overwrite guard
+        [py, "scripts/run_batch_release.py", "--overwrite",
+         "--out", str(focus_a)],
+        [py, "scripts/run_batch_release.py", "--overwrite",
+         "--out", str(focus_b)],
+        [py, "scripts/run_batch_release.py", "--overwrite",
          "--shapes", "1024x16,1024x64,2048x16", "--full-space",
          "--out", str(holdout)],
     ]
@@ -162,7 +167,11 @@ def stamp_result_hashes(out: Path) -> list[str]:
     targets: list[Path] = list(out.glob("batch_*/summary.json"))
     if (out / "summary.json").is_file():
         targets.append(out / "summary.json")
-    targets += list(out.glob("confirm_*.json"))
+    # *.progress.json are bench resume checkpoints (pid/last_completed),
+    # not result artifacts — the confirm_*.json glob would catch them
+    # and fail "no manifest to stamp" (found by the WP0 full-chain run).
+    targets += [q for q in out.glob("confirm_*.json")
+                if not q.name.endswith(".progress.json")]
     for path in targets:
         try:
             payload = json.loads(path.read_text())
@@ -206,7 +215,8 @@ def verify_bundle(out: Path, env_hash: str | None,
     failures: list[str] = []
     # 1. Strict manifest contract on every staged run output.
     outputs = sorted(out.glob("batch_*")) + sorted(
-        p for p in out.glob("confirm_*.json"))
+        p for p in out.glob("confirm_*.json")
+        if not p.name.endswith(".progress.json"))
     if not outputs:
         failures.append("verify: no staged benchmark outputs found")
     for target in outputs:
