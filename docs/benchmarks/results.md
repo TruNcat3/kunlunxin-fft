@@ -43,6 +43,48 @@
 profile-mismatch 是独立负对照：`0.990x` M0 闭包，不能作为方法收益或 vendor 胜出点。one-shot
 plan 开销 N=16/32 分别约 `0.016/0.012 ms`，也不并入 plan-reuse speedup。
 
+## Issue #6 semantic matrix v2
+
+这是当前主线最新的统一语义快照，原始文件与不可变 provenance 位于
+[`results/p800/releases/20261017-wp2-semantic-matrix-v2`](https://github.com/TruNcat3/kunlunxin-fft/tree/master/results/p800/releases/20261017-wp2-semantic-matrix-v2)。
+它与上面的正式 release matrix 使用不同 commit、候选集合和语义范围，**不能与 Issue #3 或
+release matrix 混合平均**。计时是同一 P800 栈上的同步 API wall time；该软件栈没有可靠的独立
+device-kernel timer，因此这里不把 API wall time 写成 kernel time。
+
+| 项目 | 快照结果 |
+|---|---:|
+| 语义 cell 总数 | 144 |
+| vendor-supported cell | 120 |
+| vendor unsupported cell | 24（原始三 session 中保留为 72 条 unsupported 记录） |
+| selector 相对 vendor | 7 胜 / 0 平 / 113 负 |
+| 几何平均 `selector/vendor` | `0.0986x` |
+| 最差 `selector/vendor` | `0.0165x` |
+| selector 平均 regret（相对本快照 oracle 集合） | `0.4704` |
+
+该矩阵覆盖 `c2c-forward`、`c2c-inverse`、`r2c`、`c2r`，并使用三进程交错、correctness-first、
+2% incumbent guard 和 bounded measured oracle。`N>=4096` 的 vendor unsupported 只能说明当前
+xpytorch/xdnn 版本拒绝这些调用，不能转换成 Kunlunxin-FFT 的性能胜出。
+
+### 一个 shape 的语义分解
+
+`N=2048,B=16` 的 selector/vendor API wall time 如下；同一 shape 的不同语义不能互相外推：
+
+| semantic | selector ms | vendor ms | selector/vendor |
+|---|---:|---:|---:|
+| C2C forward（composition） | 0.3076 | 0.6643 | **2.160x** |
+| C2C inverse（复用 forward lowering） | 0.4414 | 0.6659 | **1.509x** |
+| R2C compatibility | 1.5664 | 0.6125 | 0.391x |
+| C2R compatibility | 2.0947 | 0.6685 | 0.319x |
+
+另有独立确认后的 exact-shape composition evidence：`N=2048,B=16,c2c,dit` 的 A1P1
+`0.2477 ms`，A0P0 production incumbent `1.5076 ms`，相对 incumbent 通过 `+83.6%` guard，
+并写入 `config/composition_table.json`。这项证据是 materialized host-API sub-transform
+composition，不是 resident single-kernel；它不替代上表，也不扩大 selector 的 shape 范围。
+
+**正确结论：** Issue #6 完成了语义/API/正确性/选择闭环的扩展，但广泛语义的性能仍明显落后
+vendor；只有 C2C forward/inverse 的一个 shape 形成正证据。后续应优先优化 compatibility
+路径和 candidate/selector 覆盖，而不是把 `7/120` 表述为全面领先。
+
 ## 宽尺度 Phase 3 研究矩阵
 
 Phase 3 覆盖 18 个长度 `2^3..2^20`、M0/M1/M2/M3/M5，以及 M4 的 B=1/4/16/64

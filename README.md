@@ -1,6 +1,6 @@
 # Kunlunxin-FFT
 
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-research--only%20non--commercial-orange.svg)](LICENSE)
 [![Citation](https://img.shields.io/badge/citation-CFF-orange.svg)](CITATION.cff)
 [![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-2F80ED.svg)](https://truncat3.github.io/kunlunxin-fft/)
 [![Hardware](https://img.shields.io/badge/tested-Kunlunxin%20P800-8A2BE2.svg)](docs/reference/support.md)
@@ -8,8 +8,8 @@
 **Kunlunxin-FFT 是一个面向昆仑芯平台的 FFT 算子库，也是
 [cuButterfly](https://github.com/TruNcat3/cuButterfly) 混合空间-时间数据流方法的迁移实例。**
 它把阶段/数据展开、局部驻留、边界组织和计算核心选择拆成可组合的设计轴，再根据硬件 profile
-选择可执行实现；当前 P800 版本提供 forward C2C、单变换与 batch 路径、M0--M5 候选、冻结
-selector 和保守 fallback。
+选择可执行实现；当前 P800 版本提供 C2C forward/inverse、R2C/C2R compatibility path、单
+变换与 batch 路径、M0--M5 候选、冻结 selector 和保守 fallback。
 
 <p align="center">
   <a href="https://www.ustc.edu.cn/">
@@ -30,6 +30,11 @@ selector 和保守 fallback。
 - 这些数字来自单张 P800 OAM、FP32 complex64、forward C2C、API wall time、3 个独立进程
   session；不代表其他软件栈、硬件或未测语义。
 
+Issue #6 又增加了一份独立的语义矩阵快照（不能与上面的 release matrix 混合平均）：144 个
+`N × B × semantic` cell 中，当前 vendor 栈支持 120 个，selector 相对 vendor 为 **7 胜、
+113 负**，几何平均 speedup 为 `0.0986x`。这份结果确认 inverse/R2C/C2R 的接口、正确性和
+fail-closed 选择语义已经贯通，而不是宣称这些兼容路径已经达到厂商性能。详见[语义矩阵](docs/benchmarks/results.md#issue-6-semantic-matrix-v2)。
+
 完整逐点数据、负点和计时边界见[实验结果](docs/benchmarks/results.md)与
 [测量协议](docs/benchmarks/methodology.md)。按实验目的继续阅读[C2C 性能](docs/benchmarks/c2c.md)、
 [端到端口径](docs/benchmarks/end-to-end.md)和[规模切片](docs/benchmarks/scale.md)。
@@ -43,10 +48,10 @@ Issue #3 已完成并关闭。该轮证据不改写上面的冻结 release 快�
 |---|---|---|
 | Batch 局部核心 | `N=1024/2048, B=16/64` 相对旧 M4 incumbent 提升 `2.2x--2.7x` | M2/M5 参与比较；通过 2% guard 的 M2 local-fused 项进入冻结 selector |
 | 模型筛选 | full-space holdout top-3 命中 `6/6`；top-1 regret `0.00%--0.22%`，均值 `0.0816%` | 模型只筛选候选，最终仍由实测决定 |
-| 外部核心组合 | `N=2048, B=16` 的 A1P1 为 `0.2298 ms`，vendor 为 `0.6586 ms`，即 `2.87x` | 仅 experimental canary；`N=1024` 两点仍落后，不进入 selector |
+| 外部核心组合 | Issue #3 多进程 canary：`N=2048, B=16` 的 A1P1 为 `0.2298 ms`，vendor 为 `0.6586 ms`，即 `2.87x` | Issue #6 仅将独立确认后的 `N=2048,B=16,c2c,dit` 写入 exact-shape composition table；`N=1024` 两点仍落后 |
 
-完整协议、稳定性和负结果见[批量与模型验证](docs/benchmarks/batch-focus.md)。三类数字必须分开
-阅读：冻结 release、已晋升的 focus selector 项、未晋升的 experimental canary。
+完整协议、稳定性和负结果见[批量与模型验证](docs/benchmarks/batch-focus.md)。四类数字必须分开
+阅读：冻结 release、Issue #6 语义矩阵、已晋升的 exact-shape composition 项、未晋升的 experimental canary。
 
 ## 快速开始
 
@@ -110,7 +115,7 @@ Kunlunxin-FFT 保留这套方法层抽象，但所有 kernel、布局和 lowerin
 | 单变换局部融合/核心选择 | 已完成首轮优化，代表点相对 M0 为 `1.23x--2.07x` |
 | Batch 高效局部核心 | 已接入 matrix/radix-4/local-fused 候选；focus 点相对旧 incumbent 为 `2.2x--2.7x` |
 | 硬件 profile/成本模型 | 手动 probe、环境 fail-closed、结构模型、bounded search 与 holdout 已实现；安装期一键自动化仍在路线图中 |
-| 外部计算核心组合 | 已完成 materialized sub-transform canary；只在 `N=2048,B=16` 形成稳定正证据，仍属实验路径 |
+| 外部计算核心组合 | 已完成 materialized sub-transform canary；只有 `N=2048,B=16,c2c,dit` 进入独立 composition table，仍不是 resident kernel |
 | 跨 worker persistent pipeline | 路线图中，不是当前发布路径 |
 
 新增实现应先阅读[增加设计点](docs/development/adding-design-points.md)和[测试策略](docs/testing.md)，
@@ -130,16 +135,20 @@ Kunlunxin-FFT 保留这套方法层抽象，但所有 kernel、布局和 lowerin
 
 ## 支持边界
 
-当前已验证接口是 1D、二次幂长度、FP32/complex64、forward C2C。DIT 与 DIF 是同一 forward
-FFT 的两种分解，不是正/逆变换。inverse、R2C/C2R、非二次幂、多维、其他精度、稳定 C ABI 和
-用户 stream 接口仍在路线图中。内部 kernel 使用 planar 实虚分离 lowering，但公开 Python 输入
-是 `torch.complex64` tensor。
+当前已验证接口是 1D、二次幂长度、FP32/complex64 的 C2C forward/inverse；R2C/C2R 首轮为
+复用 C2C 的 compatibility path，并不代表专用 real-FFT 核心。`norm` 与 `torch.fft` 对齐，
+语义矩阵覆盖已列出的 `N=64..65536`、batch 和四种语义，但广泛 vendor 性能仍未收敛。DIT 与
+DIF 是 forward FFT 的阶段组织，不是 API 方向。非二次幂、多维、其他精度、稳定 C ABI 和用户
+stream 接口仍在路线图中。内部 kernel 使用 planar 实虚分离 lowering，但公开 Python 输入是
+`torch.complex64` tensor。
 
 ## 引用与许可
 
-软件采用 [Apache-2.0](LICENSE)，允许修改和再发布，并须遵守许可证中的通知要求。引用本实现和
-P800 实验时请引用 Kunlunxin-FFT；引用混合空间-时间数据流方法时请同时引用 cuButterfly。机器可读
-信息见 [CITATION.cff](CITATION.cff)，作者与机构信息见[项目与作者](docs/about.md)。
+软件采用 [Research-Only Non-Commercial License (RONC-1.0)](LICENSE)。许可证允许非商业研究、
+教学、评估和个人用途下的修改与再发布，明确禁止商业使用；商业许可需另行书面授权。第三方组件
+仍适用其原许可证。引用本实现和 P800 实验时请引用 Kunlunxin-FFT；引用混合空间-时间数据流方法
+时请同时引用 cuButterfly。机器可读信息见 [CITATION.cff](CITATION.cff)，作者与机构信息见
+[项目与作者](docs/about.md)。
 
 ```bibtex
 @software{wang2026kunlunxinfft,

@@ -1,7 +1,10 @@
-# External processing-unit inventory — issue #3 review (P800)
+# External processing-unit inventory — issue #3/#6 review (P800)
 
 What high-performance FFT/transform cores are actually reachable from
-this machine and repository, classified per the review's taxonomy.
+this machine and repository, classified per the review's taxonomy. The
+inventory is independent from the semantic-matrix performance snapshot:
+the latter measures API semantics, while this page explains which core
+can legally be composed and what the composition does *not* prove.
 Every claim here is from a probe command recorded below; nothing is
 inferred from marketing material.
 
@@ -117,5 +120,10 @@ exactly what it costs.
 归因不升格：entry 的 `executed=run_hybrid`、`flow_realization=decomposition-composition`、
 `processing_unit` 含 composition —— 这是 host-API 组合（框架分解 + vendor 子块整变换
 API），**不是**片上驻留单核，也不代表 vendor 内核 counter。
+
+Issue #6 semantic-matrix-v2 的 `N=2048,B=16` 记录进一步区分了四个公开语义：C2C forward
+selector `0.3076 ms` 对 vendor `0.6643 ms`，C2C inverse `0.4414/0.6659 ms`，而 R2C/C2R
+compatibility path 为 `1.5664/0.6125 ms` 和 `2.0947/0.6685 ms`。这些是同一 shape 的
+语义对照，不是 composition table 的晋升证据，也不能把 C2C 的正点外推到 real path。
 
 下一页：[工程结构](../development/repository-layout.md)。
