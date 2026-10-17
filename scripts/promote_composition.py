@@ -36,7 +36,7 @@ sys.path.insert(0, str(ROOT))
 
 from src.xpu.composition import (  # noqa: E402
     KIND, TABLE_PATH, guard_pct_of, table_violations)
-from src.xpu.config import DeviceProfile  # noqa: E402
+from src.xpu.config import DeviceProfile, git_dirty  # noqa: E402
 from src.xpu.envcheck import current_env_hash  # noqa: E402
 from src.xpu.manifest_contract import rows_sha256  # noqa: E402
 
@@ -93,7 +93,8 @@ def main() -> None:
     with open(ev_path) as f:
         ev = json.load(f)
 
-    dirty = _git("status", "--porcelain")
+    # untracked results are expected run output (config.git_dirty)
+    dirty = git_dirty()
     if dirty and not args.allow_dirty:
         _die("working tree dirty (commit first, or --allow-dirty); "
              "promotion evidence must bind a known commit")
