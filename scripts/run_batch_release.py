@@ -450,7 +450,7 @@ def _vendor_call(x):
     return torch.fft.fft(x, dim=-1)
 
 
-def _canary_candidates(x, n, batch, direction, block):
+def _canary_candidates(x, n, batch, direction, block, profile_hash):
     from src.xpu import runner
     out = {}
     for p in (1, 2):
@@ -458,8 +458,10 @@ def _canary_candidates(x, n, batch, direction, block):
         out[name] = (
             (lambda _p=p: runner.fft_dit_matrix_packet_batch(
                 x, block=block, tile=TILE, rows=ROWS, packets=_p)),
-            dict(_row_meta(name, n, batch, block, direction, "local",
+            dict(_row_meta(name, n, batch, block, direction, profile_hash,
                            PROTOCOL_ID),
+                 notes=("P2 Td probe bypasses plan reuse; profile stamped "
+                        "for provenance"),
                  selection_source="p2-canary",
                  executed="fft_dit_matrix_packet_batch", block=block,
                  flow_id="local-fused-tile",
@@ -506,7 +508,8 @@ def run_shape(session, n, batch, direction, trials, seed, table, raw,
     # The Td=2 packet canary is DIT-only this round (no DIF interleave);
     # holdout runs enumerate the m2 space and skip the packet canary.
     if not full_space and (n, batch) == CANARY_SHAPE and direction == "dit":
-        cands.update(_canary_candidates(x, n, batch, direction, inc_block))
+        cands.update(_canary_candidates(x, n, batch, direction, inc_block,
+                                        ph))
 
     # plan creation cost (diagnostic; not part of interleaved timing)
     from src.xpu.entry import plan_fft

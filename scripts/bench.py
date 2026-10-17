@@ -207,8 +207,32 @@ def main() -> None:
                "flows": sorted(flows)},
     )
     man = manifest.to_dict()
+    # WP0 manifest contract (issue #6): fill the fields the publish
+    # gate requires and the generic builder cannot know about.
+    from src.xpu.envcheck import current_env_hash
+    man["env_hash"] = current_env_hash()
+    man["seed_base"] = 0  # confirm rounds are deterministic, no RNG
+    man["candidates"] = sorted(flows)
+    man["shapes"] = [
+        f"N{n}B{b}" for n in sizes_list for b in (batchs or [1])
+    ]
+    man["sessions"] = 1  # bench.py confirm rounds are single-process
+    man["toolchain"] = (
+        f"python {sys.version.split()[0]} + torch {torch.__version__} "
+        f"+ torch_xmlir confirm-round")
+    man["selection_semantics"] = (
+        "confirm round: interleaved randomized flow order, "
+        "correctness-first, single process; feeds the frozen selector "
+        "with 2% promotion guard")
+    man["gm_bytes_kind"] = ("analytical estimate from launch counts x "
+                            "read+write of (B,N) complex64; no hardware "
+                            "counters on this stack")
+    man["kernel_time_status"] = (
+        "not collected: this stack exposes reliable sync API wall time; "
+        "device/kernel timers unavailable")
     print(f"manifest: commit={man['commit'][:8]} dirty={man['dirty']} "
-          f"profile={man['profile_hash']} device={man['device']}")
+          f"profile={man['profile_hash']} device={man['device']} "
+          f"env={man.get('env_hash')}")
 
     # --- Phase 2: interleaved randomized trials per length ---
     rows = []

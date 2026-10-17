@@ -45,8 +45,33 @@ CUDA_VISIBLE_DEVICES=6 python3 scripts/bench.py \
   --csv-long results/runs/local/bench.csv
 ```
 
-参数名当前是 `--batchs`。新 `bench.py` manifest 尚未自动包含 table builder 强制要求的
-`timing_scope` 和 `protocol_id`，所以新 JSON 不能在未经协议修复/审查时直接晋升为发布 selector。
+参数名当前是 `--batchs`。新 `bench.py` 运行会自动补齐 WP0 契约要求的
+`env_hash` / `toolchain` / `sessions` / `candidates` / `shapes` 等字段，但归档的
+`confirm_*.json`（契约前产物）仍缺这些字段——它们可以继续作为历史证据引用，
+但不能直接晋升为发布 selector。
+
+## 安装期一键 bootstrap（WP0）
+
+```bash
+CUDA_VISIBLE_DEVICES=6 python3 scripts/bootstrap_profile.py \
+  --device 6 --output results/local-profile \
+  --calibrate --verify --promote
+```
+
+阶段化流水（每阶段日志在 `<output>/logs/`，状态在 `<output>/state.json`）：
+
+1. `probe` — `hw_probe.py` 生成独立 calibration（profile/env hash）；
+2. `check` — `smoke.py` + `test_correctness.py` 门；
+3. `calibrate` — confirm / focus / holdout 代表性测量轮（需 `--calibrate`），
+   完成后给每个 staged manifest 盖 `source_hash` / `result_sha256`；
+4. `build` — `validate_cost_model.py` + `build_selector_table.py`（含
+   `--verify-live-env`）；
+5. `verify` — `manifest_contract` 严格校验（缺字段/重复 trial/缺 case
+   汇总报告）+ selector smoke + 环境失配 fail-closed（需 `--verify`）。
+
+全程先写 `<output>/.staging/`；失败保留 staging 供 `--resume` 跳过已完成阶段。
+**只有显式 `--promote` 才会**用原子 `os.replace` 发布到 `config/selector_table.json`，
+否则生产表字节不变。
 
 ## 重建已归档 frozen table
 
