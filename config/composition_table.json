@@ -1,0 +1,45 @@
+{
+  "contract_id": "a1p1_materialized_subtransform",
+  "created_at": "2026-10-17T14:57:29+0800",
+  "dirty": false,
+  "entries": [
+    {
+      "N": 2048,
+      "batch": 16,
+      "candidate_ms": 0.2477,
+      "contract_id": "a1p1_materialized_subtransform",
+      "core": "vendor",
+      "direction": "dit",
+      "evidence": {
+        "artifact": "results/p800/composition_confirm.json",
+        "artifact_sha256": "3a687d7a9072cfe19593c188f79dcd5bf3e560041e67157ef8086477844abcf2",
+        "commit": "bed3ca2066957030f7644183a656373c39a7b93c",
+        "confirmation_session": true,
+        "err_max": 0.0001,
+        "mad_ms": 0.0066,
+        "p50_ms": 0.2477,
+        "p95_ms": 0.2597,
+        "sessions": 4,
+        "trials": 30
+      },
+      "flow_id": "hybrid-A1P1",
+      "flow_realization": "decomposition-composition",
+      "guard_pass": true,
+      "guard_pct": 83.569912443619,
+      "incumbent_flow": "A0P0-production",
+      "incumbent_ms": 1.5076,
+      "precision": "fp32",
+      "processing_unit": "vendor-subfft-host-composition",
+      "reason": "exact-shape composition: A1P1 0.2477ms vs production A0P0 1.5076ms (+83.6%), vendor_full 0.6588ms (+62.4% vendor delta recorded, not a gate)",
+      "tile": 64
+    }
+  ],
+  "env_hash": "6b50bd316032c0fe",
+  "guard_pct": 2.0,
+  "kind": "composition-promotion",
+  "precision": "fp32",
+  "profile_hash": "a78b86793c7142a0",
+  "result_sha256": "ac5554706822581a1409eae2516eb60f02129af128ca98b05e4583050d7f91d1",
+  "schema_version": 1,
+  "source_hash": "b22ac876817623e99243b388c72f547e518465e7"
+}

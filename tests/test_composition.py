@@ -66,9 +66,10 @@ def _valid_table():
 
 
 def test_absent_table_fails_closed(tmp_path, monkeypatch):
-    monkeypatch.setattr(comp, "TABLE_PATH",
-                        str(tmp_path / "missing.json"))
-    assert comp.load_composition_table() is None
+    missing = tmp_path / "missing.json"
+    assert comp.load_composition_table(path=missing) is None
+    monkeypatch.setattr(comp, "load_composition_table",
+                        lambda path=missing: None)
     assert comp.composition_select("dit", 2048, 16,
                                    profile_hash="p" * 16,
                                    env_hash="e" * 16) is None
