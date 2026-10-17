@@ -30,6 +30,7 @@ from .entry import (  # noqa: F401
     norm_scale,
     plan_fft,
 )
+from .composition import composition_select, load_composition_table  # noqa: F401
 from .selector import Selection, load_table, select  # noqa: F401
 
 # Torch-dependent symbols, resolved lazily on first attribute access.
@@ -93,9 +94,11 @@ __all__ = [
     "SUPPORTED_TRANSFORMS",
     "SUPPORTED_TRANSFORM_DIRECTIONS",
     "build_manifest",
+    "composition_select",
     "execute_fft_plan",
     "git_commit",
     "git_dirty",
+    "load_composition_table",
     "load_table",
     "norm_scale",
     "plan_fft",

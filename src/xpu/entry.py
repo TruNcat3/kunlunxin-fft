@@ -55,6 +55,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
+from .composition import composition_select
 from .selector import Selection, load_table, select
 
 DEFAULT_BLOCK = 1024
@@ -99,7 +100,7 @@ class ExecutionPlan:
     batch: int
     direction: str
     precision: str
-    selection_source: str        # "table" | "abstain" | "baseline-control"
+    selection_source: str  # "table" | "abstain" | "composition"
     reason: str
     fallback: bool               # True when M0 runs instead of a table winner
     executed: str                # runner function name actually used
@@ -214,6 +215,46 @@ def _dispatch(sel: Selection) -> str | None:
     return None
 
 
+# HybridPlan instances are cached per ExecutionPlan (frozen plan ->
+# dict cannot hold them and stay JSON-safe). Strong refs keep ids
+# stable; the registry stays small (one entry per promoted plan).
+_HYBRID_CACHE: dict = {}
+
+
+def _composition_plan(comp: dict, n: int, batch: int, direction: str,
+                      precision: str, transform_direction: str,
+                      norm: str) -> ExecutionPlan:
+    """Exact-shape promoted composition entry -> ExecutionPlan.
+
+    Attribution stays honest: ``executed`` names the composition
+    runner, ``flow_realization``/``processing_unit`` say composition
+    (host API on materialized sub-blocks), never resident kernel.
+    """
+    ev = comp["evidence"]
+    reason = (
+        f"composition {comp['flow_id']} (exact shape, "
+        f"{comp['guard_pct']:.1f}% >= {2.0}% guard vs "
+        f"{comp.get('incumbent_flow', 'incumbent')}; "
+        f"p50={ev['p50_ms']:.4f}ms over {ev['sessions']} sessions "
+        f"+ confirmation, err_max={ev['err_max']:g}): {comp['reason']}")
+    return ExecutionPlan(
+        n=n, batch=batch, direction=direction, precision=precision,
+        selection_source="composition", reason=reason, fallback=False,
+        executed="run_hybrid", block=None,
+        flow_id=comp["flow_id"],
+        flow_realization=comp["flow_realization"],
+        processing_unit=comp["processing_unit"],
+        params={"flow_kind": "composition",
+                "tile": comp["tile"], "core": comp["core"],
+                "contract_id": comp.get("contract_id")
+                or comp.get("_contract_id"),
+                "composition_guard_pct": comp["guard_pct"],
+                "evidence_artifact": ev["artifact"]},
+        transform_type="c2c",
+        transform_direction=transform_direction, norm=norm,
+    )
+
+
 def _with_compat(plan: ExecutionPlan, compat: dict) -> ExecutionPlan:
     """Return ``plan`` with the real-compat marker merged into params."""
     params = dict(plan.params or {})
@@ -270,6 +311,18 @@ def plan_fft(direction: str, n: int, batch: int = 1, precision: str = "fp32",
                                else "forward")
     _validate_semantics(direction, precision, transform_type,
                         transform_direction, norm)
+    # Exact-shape promoted composition (PR-E) outranks the butterfly
+    # table for its one shape; c2c only — the real-compat path keeps
+    # the butterfly lowering. Fail closed to the butterfly path.
+    if transform_type == "c2c":
+        comp = composition_select(direction, n, batch=batch,
+                                  precision=precision,
+                                  profile_hash=profile_hash,
+                                  env_hash=env_hash)
+        if comp is not None:
+            return _composition_plan(comp, n, batch, direction,
+                                     precision, transform_direction,
+                                     norm)
     table = table if table is not None else load_table()
     sel = select(direction, n, batch=batch, precision=precision,
                  profile_hash=profile_hash, table=table,
@@ -403,6 +456,23 @@ def execute_fft_plan(plan: ExecutionPlan, x):
             "not supported")
     if plan.norm not in SUPPORTED_NORMS:
         raise ValueError(f"plan norm {plan.norm!r} not supported")
+    if plan.params.get("flow_kind") == "composition":
+        # Composition path: framework decomposition owns the flow,
+        # the vendor core runs only on materialized sub-blocks
+        # (adapter_hybrid). c2c only; the conjugate/scale epilogue is
+        # shared with the butterfly path so norm/inverse contracts
+        # hold unchanged.
+        if plan.transform_type != "c2c":
+            raise ValueError(
+                "composition plans support transform_type='c2c' only, "
+                f"got {plan.transform_type!r}")
+        z = x
+        if plan.transform_direction == "inverse":
+            z = torch.complex(z.real, -z.imag)
+        y = _invoke_composition(plan, z)
+        return _scale_complex(
+            y, norm_scale(plan.n, plan.transform_direction, plan.norm),
+            conjugate=plan.transform_direction == "inverse")
     module = __import__("src.xpu.runner", fromlist=[plan.executed])
     fn = getattr(module, plan.executed)
     # Real compatibility path: all packing / Hermitian reconstruction /
@@ -434,6 +504,25 @@ def execute_fft_plan(plan: ExecutionPlan, x):
     return _scale_complex(
         y, norm_scale(plan.n, plan.transform_direction, plan.norm),
         conjugate=plan.transform_direction == "inverse")
+
+
+def _invoke_composition(plan: ExecutionPlan, x):
+    """Run the composition flow for a plan (plan-reuse caches the
+    HybridPlan: twiddle/staging buffers live as long as the cache)."""
+    from .adapter_hybrid import plan_hybrid, run_hybrid
+
+    key = id(plan)
+    hp = _HYBRID_CACHE.get(key)
+    if hp is None:
+        hp = plan_hybrid(plan.n, plan.batch,
+                         tile=int(plan.params["tile"]),
+                         core=plan.params["core"])
+        _HYBRID_CACHE[key] = hp
+    squeeze = x.dim() == 1
+    if squeeze:
+        x = x.unsqueeze(0)
+    y = run_hybrid(x, hp)
+    return y[0] if squeeze else y
 
 
 def _scale_complex(y, scale: float, conjugate: bool):
