@@ -69,6 +69,13 @@ SCOPES = {
              (1024, 256), (2048, 256)],   # OFDM + radar workload proxies
     "large": [(4096, 1), (4096, 16), (16384, 1), (16384, 16),
               (65536, 1), (65536, 16)],
+    # issue #8 PR-G step 2: shapes owning the fixed-domain abstain cells
+    # whose v2 bounded oracle measured clearly faster (regret >= 0.10,
+    # i.e. oracle >= 1.10x the incumbent fallback), plus N2048B256 as
+    # background evidence (same 2x-class gap, no gate).  Holdout rows in
+    # this scope are confirmation evidence only -- never fitting input.
+    "regret": [(64, 1), (512, 64), (2048, 4), (1024, 256), (2048, 256),
+               (16384, 1), (16384, 16)],
 }
 
 
