@@ -1,6 +1,6 @@
 # Kunlunxin-FFT
 
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-research--only%20non--commercial-orange.svg)](LICENSE)
 [![Citation](https://img.shields.io/badge/citation-CFF-orange.svg)](CITATION.cff)
 [![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-2F80ED.svg)](https://truncat3.github.io/kunlunxin-fft/)
 [![Hardware](https://img.shields.io/badge/tested-Kunlunxin%20P800-8A2BE2.svg)](docs/reference/support.md)
@@ -144,9 +144,11 @@ stream 接口仍在路线图中。内部 kernel 使用 planar 实虚分离 lower
 
 ## 引用与许可
 
-软件采用 [Apache-2.0](LICENSE)，允许修改和再发布，并须遵守许可证中的通知要求。引用本实现和
-P800 实验时请引用 Kunlunxin-FFT；引用混合空间-时间数据流方法时请同时引用 cuButterfly。机器可读
-信息见 [CITATION.cff](CITATION.cff)，作者与机构信息见[项目与作者](docs/about.md)。
+软件采用 [Research-Only Non-Commercial License (RONC-1.0)](LICENSE)。许可证允许非商业研究、
+教学、评估和个人用途下的修改与再发布，明确禁止商业使用；商业许可需另行书面授权。第三方组件
+仍适用其原许可证。引用本实现和 P800 实验时请引用 Kunlunxin-FFT；引用混合空间-时间数据流方法
+时请同时引用 cuButterfly。机器可读信息见 [CITATION.cff](CITATION.cff)，作者与机构信息见
+[项目与作者](docs/about.md)。
 
 ```bibtex
 @software{wang2026kunlunxinfft,
