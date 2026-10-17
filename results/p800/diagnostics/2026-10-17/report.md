@@ -1,0 +1,72 @@
+# WP3 failure-cell diagnostics (bounded)
+
+- generated: 2026-10-17T07:26:09.796923+00:00
+- source summary: results/p800/releases/20261017-wp2-semantic-matrix-v2/summary.json
+- commit: 54260cf9f2dfda5dc830f749c2debf4101d59d48
+- protocol: semantic-matrix-v1:plan-reuse:interleave:correctness-first
+- labels are ladder verdicts; every rung carries the number that fired it and its evidence kind (measured / measured-artifact / summary-derived / analytic-model). No counter below is a resident-kernel or hardware performance counter; host/API timings are labelled as such.
+
+## N1024B256:r2c — worker-waves-tail
+
+- classification: `loses` (0.016505668231397413)
+  - correctness: no — wrong-value failure
+  - external-capability(vendor): no — vendor rejected shape; no local action
+  - entry-dispatch-overhead: no — entry-core share None > 0.1
+  - sync-handoff-jitter: no — selector p95/p50 1.015326721603556 > 1.15
+  - worker-waves-tail: **fired** — speedup worst/best batch 0.03645075392303274 < 0.7
+  - flow-not-selected: **fired** — selector/best-oracle 2.0805583229228577 > 1.1
+  - processing-unit-bound: no — near-oracle (2.0805583229228577) yet selector/vendor 60.5852478058283 > 1.2: candidate set exhausted
+- flow_sensitivity: {"available": true, "best": "oracle:m2_dit_t64", "best_ms": 11.495906976051629, "candidates": {"oracle:m0_dit": 23.894764948636293, "oracle:m2_dif_t64": 11.603774968534708, "oracle:m2_dit_t64": 11.495906976051629, "oracle:m4_folded": 23.87259597890079, "oracle:m4_spread": 29.288330930285156, "oracle:m5_r4_dit": 20.75466199312359}, "kind": "measured-artifact (release raw rows)", "regret_vs_best": 2.0805583229228577, "selector_ms": 23.917904938571155, "spread_rel": 1.5477181566707923, "unit_fixed": "triton local row core (oracle:* candidates)"}
+- unit_sensitivity: {"available": true, "composition_entry": null, "incumbent_ms": 23.919534985907376, "kind": "measured-artifact (summary medians)", "selector_ms": 23.917904938571155, "selector_over_vendor": 60.5852478058283, "selector_source": "abstain", "vendor_ms": 0.3947810037061572}
+- batch_scaling: {"available": true, "best_B": 1, "kind": "summary-derived", "ratio_worst_over_best": 0.03645075392303274, "speedup_by_batch": {"1": 0.4528210381121281, "16": 0.2461061954160885, "256": 0.016505668231397413, "4": 0.1924914221222713, "64": 0.08693977331282869}, "worst_B": 256}
+- ledger: {"available": true, "estimate": true, "gm_bytes": 25165824, "kind": "analytic-model (run_batch_release m2 formula)", "launches": 6}
+- dispatch_probe: {"available": true, "dispatch": {"applicable": false, "why": "dispatch probe bounded to c2c-forward (real-compat/epilogue prep excluded)"}, "dispatch_share": null, "first_call_ms": 3786.861415952444, "incumbent_p50": 23.72828999068588, "kind": "measured (fresh, this process)", "p95_over_p50": 1.015326721603556, "plan_creation_ms": 0.05886661820113659, "selector_mad": 0.09916792623698711, "selector_p50": 23.83823797572404, "selector_p95": 24.20360001269728, "trials": 30, "vendor_p50": 0.3889820072799921}
+
+## N1024B256:c2r — worker-waves-tail
+
+- classification: `loses` (0.019533655428172706)
+  - correctness: no — wrong-value failure
+  - external-capability(vendor): no — vendor rejected shape; no local action
+  - entry-dispatch-overhead: no — entry-core share None > 0.1
+  - sync-handoff-jitter: no — selector p95/p50 1.019938077756913 > 1.15
+  - worker-waves-tail: **fired** — speedup worst/best batch 0.06891923692759656 < 0.7
+  - flow-not-selected: **fired** — selector/best-oracle 2.0295722157769376 > 1.1
+  - processing-unit-bound: no — near-oracle (2.0295722157769376) yet selector/vendor 51.193695090870456 > 1.2: candidate set exhausted
+- flow_sensitivity: {"available": true, "best": "oracle:m2_dit_t64", "best_ms": 11.966436984948814, "candidates": {"oracle:m0_dit": 24.243407999165356, "oracle:m2_dif_t64": 12.088524992577732, "oracle:m2_dit_t64": 11.966436984948814, "oracle:m4_folded": 24.269797024317086, "oracle:m4_spread": 30.01720504835248, "oracle:m5_r4_dit": 21.13729401025921}, "kind": "measured-artifact (release raw rows)", "regret_vs_best": 2.0295722157769376, "selector_ms": 24.286748026497662, "spread_rel": 1.5084496818984316, "unit_fixed": "triton local row core (oracle:* candidates)"}
+- unit_sensitivity: {"available": true, "composition_entry": null, "incumbent_ms": 24.28027696441859, "kind": "measured-artifact (summary medians)", "selector_ms": 24.286748026497662, "selector_over_vendor": 51.193695090870456, "selector_source": "abstain", "vendor_ms": 0.4744089674204588}
+- batch_scaling: {"available": true, "best_B": 1, "kind": "summary-derived", "ratio_worst_over_best": 0.06891923692759656, "speedup_by_batch": {"1": 0.2834282023275139, "16": 0.17373253556014281, "256": 0.019533655428172706, "4": 0.15278848477177803, "64": 0.08596686395667455}, "worst_B": 256}
+- ledger: {"available": true, "estimate": true, "gm_bytes": 25165824, "kind": "analytic-model (run_batch_release m2 formula)", "launches": 6}
+- dispatch_probe: {"available": true, "dispatch": {"applicable": false, "why": "dispatch probe bounded to c2c-forward (real-compat/epilogue prep excluded)"}, "dispatch_share": null, "first_call_ms": 24.904305930249393, "incumbent_p50": 23.872258025221527, "kind": "measured (fresh, this process)", "p95_over_p50": 1.019938077756913, "plan_creation_ms": 0.0694784102961421, "selector_mad": 0.15532691031694412, "selector_p50": 23.88540795072913, "selector_p95": 24.361637071706355, "trials": 30, "vendor_p50": 0.46697992365807295}
+
+## N1024B256:c2c-inverse — worker-waves-tail
+
+- classification: `loses` (0.022081932448191868)
+  - correctness: no — wrong-value failure
+  - external-capability(vendor): no — vendor rejected shape; no local action
+  - entry-dispatch-overhead: no — entry-core share None > 0.1
+  - sync-handoff-jitter: no — selector p95/p50 1.0145277978706382 > 1.15
+  - worker-waves-tail: **fired** — speedup worst/best batch 0.04556759908867309 < 0.7
+  - flow-not-selected: **fired** — selector/best-oracle 2.1685027094627145 > 1.1
+  - processing-unit-bound: no — near-oracle (2.1685027094627145) yet selector/vendor 45.28589163770777 > 1.2: candidate set exhausted
+- flow_sensitivity: {"available": true, "best": "oracle:m2_dit_t64", "best_ms": 10.843101073987782, "candidates": {"oracle:m0_dit": 23.43794598709792, "oracle:m2_dif_t64": 10.993567993864417, "oracle:m2_dit_t64": 10.843101073987782, "oracle:m4_folded": 23.480294039472938, "oracle:m4_spread": 28.802611981518567, "oracle:m5_r4_dit": 20.38372994866222}, "kind": "measured-artifact (release raw rows)", "regret_vs_best": 2.1685027094627145, "selector_ms": 23.513294057920575, "spread_rel": 1.6563076176256457, "unit_fixed": "triton local row core (oracle:* candidates)"}
+- unit_sensitivity: {"available": true, "composition_entry": null, "incumbent_ms": 23.43298599589616, "kind": "measured-artifact (summary medians)", "selector_ms": 23.513294057920575, "selector_over_vendor": 45.28589163770777, "selector_source": "abstain", "vendor_ms": 0.5192189710214734}
+- batch_scaling: {"available": true, "best_B": 1, "kind": "summary-derived", "ratio_worst_over_best": 0.04556759908867309, "speedup_by_batch": {"1": 0.48459723333724763, "16": 0.32343539330333587, "256": 0.022081932448191868, "4": 0.2575083007822392, "64": 0.11167257590953407}, "worst_B": 256}
+- ledger: {"available": true, "estimate": true, "gm_bytes": 25165824, "kind": "analytic-model (run_batch_release m2 formula)", "launches": 6}
+- dispatch_probe: {"available": true, "dispatch": {"applicable": false, "why": "dispatch probe bounded to c2c-forward (real-compat/epilogue prep excluded)"}, "dispatch_share": null, "first_call_ms": 23.712150985375047, "incumbent_p50": 23.38514698203653, "kind": "measured (fresh, this process)", "p95_over_p50": 1.0145277978706382, "plan_creation_ms": 0.20241579040884972, "selector_mad": 0.11519796680659056, "selector_p50": 23.469015955924988, "selector_p95": 23.80996907595545, "trials": 30, "vendor_p50": 0.5123490700498223}
+
+## N1024B256:c2c-forward — worker-waves-tail
+
+- classification: `loses` (0.022179087745247655)
+  - correctness: no — wrong-value failure
+  - external-capability(vendor): no — vendor rejected shape; no local action
+  - entry-dispatch-overhead: no — entry-core share -0.0031718101998133956 > 0.1
+  - sync-handoff-jitter: no — selector p95/p50 1.0157859703486307 > 1.15
+  - worker-waves-tail: **fired** — speedup worst/best batch 0.03315527374190656 < 0.7
+  - flow-not-selected: **fired** — selector/best-oracle 2.178065912338954 > 1.1
+  - processing-unit-bound: no — near-oracle (2.178065912338954) yet selector/vendor 45.087517191245674 > 1.2: candidate set exhausted
+- flow_sensitivity: {"available": true, "best": "oracle:m2_dit_t64", "best_ms": 10.734334005974233, "candidates": {"oracle:m0_dit": 23.38172704912722, "oracle:m2_dif_t64": 10.910690063610673, "oracle:m2_dit_t64": 10.734334005974233, "oracle:m4_folded": 23.335556965321302, "oracle:m4_spread": 28.68625393602997, "oracle:m5_r4_dit": 20.280161988921463}, "kind": "measured-artifact (release raw rows)", "regret_vs_best": 2.178065912338954, "selector_ms": 23.380086990073323, "spread_rel": 1.672383207012613, "unit_fixed": "triton local row core (oracle:* candidates)"}
+- unit_sensitivity: {"available": true, "composition_entry": null, "incumbent_ms": 23.339277016930282, "kind": "measured-artifact (summary medians)", "selector_ms": 23.380086990073323, "selector_over_vendor": 45.087517191245674, "selector_source": "abstain", "vendor_ms": 0.5185490008443594}
+- batch_scaling: {"available": true, "best_B": 1, "kind": "summary-derived", "ratio_worst_over_best": 0.03315527374190656, "speedup_by_batch": {"1": 0.6689459999002942, "16": 0.33790962716379197, "256": 0.022179087745247655, "4": 0.2714687750935778, "64": 0.11447012085216568}, "worst_B": 256}
+- ledger: {"available": true, "estimate": true, "gm_bytes": 25165824, "kind": "analytic-model (run_batch_release m2 formula)", "launches": 6}
+- dispatch_probe: {"available": true, "dispatch": {"applicable": true, "core_p50": 23.36309803649783, "dispatch_share": -0.0031718101998133956, "entry_p50": 23.289229022338986, "kind": "measured", "scope": "entry total vs bare runner invoke (forward c2c: no epilogue cost)"}, "dispatch_share": -0.0031718101998133956, "first_call_ms": 23.829528014175594, "incumbent_p50": 23.34586891811341, "kind": "measured (fresh, this process)", "p95_over_p50": 1.0157859703486307, "plan_creation_ms": 0.2252371981739998, "selector_mad": 0.13024592772126198, "selector_p50": 23.289229022338986, "selector_p95": 23.6568721011281, "trials": 30, "vendor_p50": 0.5121489521116018}
+

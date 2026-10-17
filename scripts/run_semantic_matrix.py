@@ -567,7 +567,8 @@ def _aggregate(out_dir, cases, trials, warmup, sessions):
             entry["guard_pass_2pct"] = (
                 bool(entry["guard_vs_incumbent"] is not None
                      and entry["guard_vs_incumbent"] >= 0.02)
-                if entry["selector_source"] == "table" else None)
+                if entry["selector_source"] in ("table", "composition")
+                else None)
             cases_out.append(entry)
 
     supported = [c for c in cases_out

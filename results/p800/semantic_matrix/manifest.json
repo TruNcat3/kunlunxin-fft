@@ -8,7 +8,7 @@
     "vendor"
   ],
   "command": "",
-  "commit": "3ae88515cbd8798fc2cacba440deb0f74948087c",
+  "commit": "54260cf9f2dfda5dc830f749c2debf4101d59d48",
   "correctness_threshold": 0.0001,
   "device": "kunlunxin-p800",
   "direction": "forward",
@@ -27,7 +27,7 @@
   "processing_unit": "radix2-scalar",
   "profile_hash": "a78b86793c7142a0",
   "protocol_id": "semantic-matrix-v1:plan-reuse:interleave:correctness-first",
-  "repro_command": "scripts/run_semantic_matrix.py --sessions 3 --trials 30 --warmup 5 --scope all --snapshot --release-id 20261017-wp2-semantic-matrix --out results/p800/semantic_matrix",
+  "repro_command": "scripts/run_semantic_matrix.py --scope all --sessions 3 --trials 30 --warmup 5 --snapshot --release-id 20261017-wp2-semantic-matrix-v2 --aggregate-only",
   "seed_base": 1234,
   "selection_semantics": "correctness-first, interleaved randomized contender order, 3+ independent process sessions, 2% incumbent guard, oracle = bounded measured set, vendor errors preserved",
   "sessions": 3,
@@ -177,7 +177,7 @@
     "N65536B16:r2c",
     "N65536B16:c2r"
   ],
-  "source_hash": "3ae88515cbd8798fc2cacba440deb0f74948087c",
+  "source_hash": "54260cf9f2dfda5dc830f749c2debf4101d59d48",
   "td": 1,
   "timing_scope": "api wall time (dispatch+alloc+layout+sync), ms; tiers: plan_creation / steady / one_shot / e2e",
   "toolchain": "python 3.10.18 + semantic-matrix-v1",
