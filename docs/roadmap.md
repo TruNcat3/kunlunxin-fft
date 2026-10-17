@@ -10,7 +10,7 @@ Kunlunxin-FFT 当前定位是 cuButterfly 方法的 P800 迁移实例和可复�
 | P0 工程闭环 | 安装期硬件 probe、profile 版本化、bench manifest 协议字段自动生成。**已落地**：`hw_probe` + env 指纹绑定 + 运行时 fail-closed；**剩余**：manifest 协议字段自动生成 | 新环境可生成独立 profile；旧表不会静默复用 |
 | P1 Batch 性能 | **有界阶段已完成**：M2/M5/local-fused 纳入 focus 比较，M2 winner 接入 selector；**剩余**：扩展 N/B 网格与更强 residence | 已声明 B/N 网格相对 incumbent 有净收益，负点完整报告 |
 | P1 选择模型 | 参数化成本模型 + 小规模校准 + 留出验证。**已落地**：声明常数模型 + bounded search + focus/holdout 隔离验证（`model_validation.json`） | 排序误差、选择损失和搜索成本均可复核 |
-| P2 算子语义 | inverse、R2C/C2R、normalization | 每种语义有独立正确性与同语义基线 |
+| P2 算子语义 | **首轮已实现**：C2C inverse、四种 normalization、R2C/C2R compatibility path；Issue #6 semantic matrix v2 已归档 | 继续补专用 real-FFT 核心、扩大语义性能矩阵，并让每种语义都有独立 selector/同语义基线 |
 | P2 尺寸/布局 | 非二次幂、stride、2D/多维 | 明确算法与 padding 语义，端到端计时包含重排 |
 | P3 平台扩展 | 其他 Kunlunxin 设备与软件栈 | 每台硬件独立 probe、lowering、校准和发布矩阵 |
 
@@ -49,6 +49,25 @@ capability registry、3 session × 30 trial 交错复测脚本 `scripts/run_hybr
 为 `0.2298 ms`，相对 vendor `0.6586 ms` 为 `2.87x`；`N=1024,B=16/64` 仍分别落后约
 `3.6%/33.3%`。因此该路径证明“架构编排可以组合外部核心”，只在满足 2% guard 的 exact shape 进入
 composition 表（当前 2048×16；不进 `config/selector_table.json`），其余 shape 仍不进入 selector。
+
+## Issue #6 的当前边界
+
+Issue #6 的 WP0/WP1/WP2 已落地：环境/bootstrap 门、C2C inverse 与 normalization、R2C/C2R
+compatibility path、统一语义矩阵和 immutable snapshot 均有代码与 provenance。最新 snapshot
+`results/p800/releases/20261017-wp2-semantic-matrix-v2` 共 144 个 cell，其中 120 个 vendor
+可运行；selector 相对 vendor 为 `7/0/113`（win/tie/loss），几何平均 speedup `0.0986x`。
+因此这一步证明的是**语义迁移和 fail-closed 选择闭环**，不是四种语义已经达到厂商性能。
+
+WP3 仍是定向优化而非发布阻塞：
+
+- 先处理 R2C/C2R 的打包、Hermitian 重建和 epilogue 开销；
+- 再为 inverse/real path 建立独立的 candidate family 与 guard，不复用 C2C 的性能结论；
+- 对 `N>=4096` 先解决 vendor unsupported 的可比性，再讨论 speedup；
+- 保持 `composition_table.json` 的 exact-shape、env/profile 绑定和 fail-closed，不把单个正点
+  泛化成全局 selector。
+
+这与 cuButterfly 的迁移原则一致：架构编排、processing unit 和 lowering contract 分层，
+但每个语义仍需自己的测量协议和硬件证据。
 
 ## 已完成的迁移验收
 

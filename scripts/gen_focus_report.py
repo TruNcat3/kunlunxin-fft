@@ -659,11 +659,13 @@ def hybrid_canary_section(canary: dict | None) -> list[str]:
         "shape (the vendor sub-block core is much faster than our",
         "triton local stage in the A1 flow). Against the vendor",
         "*whole* transform the picture is shape-dependent — see the",
-        "guard tables above. This is an experimental canary: even a",
-        "guard pass does not promote A1P1 into the selector table",
-        "(the cost model has no A1 family; promotion would require a",
-        "full model + focus round). The finding is a data point for",
-        "future work, not a frozen claim.",
+        "guard tables above. This historical artifact is unchanged:",
+        "Issue #6 PR-E later promoted only the exact",
+        "`N=2048,B=16,c2c,dit` cell into the separate",
+        "`config/composition_table.json`; it still does not enter the",
+        "general selector table, and the cost model has no general A1",
+        "family. The finding is shape-bound evidence, not a global",
+        "resident-pipeline claim.",
         "",
     ]
     return lines
@@ -1041,7 +1043,17 @@ def main() -> None:
                      if args.hybrid_canary.exists() else None)
 
     headline, exact = headline_section(pairs)
-    out = ["# Batch / model validation report (P800)", ""]
+    out = [
+        "# Batch / model validation report (P800)",
+        "",
+        "> **Protocol boundary:** this report is the historical Issue #3 "
+        "batch/model and multi-process canary artifact. Issue #6's "
+        "semantic-matrix-v2 (144 cells, 120 vendor-supported, "
+        "win/tie/loss=7/0/113) is kept as a separate snapshot; the two "
+        "protocols must not be averaged. The exact-shape composition "
+        "promotion is documented in `external-cores.md`.",
+        "",
+    ]
     out += provenance_section(args.focus, args.holdout, table, calib,
                               four_cell=four_cell,
                               hybrid_canary=hybrid_canary)

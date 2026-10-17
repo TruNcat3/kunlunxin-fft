@@ -4,8 +4,9 @@ Kunlunxin-FFT 是一个面向昆仑芯平台的 FFT 算子库，也是
 [cuButterfly](https://github.com/TruNcat3/cuButterfly) 混合空间-时间数据流方法在 P800 上的
 迁移实例。它继承方法层的阶段/数据展开、局部驻留和计算核心分层，但针对 Triton/XPU 工具链
 重新实现 lowering、候选执行和硬件绑定选择。当前版本完成了可执行设备路径、M0--M5 候选、冻结
-selector、plan reuse、batch 局部核心、手动硬件 probe、结构成本模型、留出验证和正式 release
-matrix；安装期一键校准与跨 worker persistent pipeline 仍在路线图中。
+selector、plan reuse、batch 局部核心、手动硬件 probe、结构成本模型、留出验证、C2C
+inverse/normalization、R2C/C2R compatibility path 和正式 release matrix；安装期一键校准与
+跨 worker persistent pipeline 仍在路线图中。
 
 <div class="project-affiliation">
   <div class="project-affiliation__logo">
@@ -33,6 +34,11 @@ matrix；安装期一键校准与跨 worker persistent pipeline 仍在路线图�
 - 发布矩阵全部通过 NumPy complex128 参考检查；完整误差、设备和协议见[结果汇总](benchmarks/results.md)。
 - 本项目证明方法能够迁移并产生可复现收益，不声称已达到 P800 的全局最优。
 
+Issue #6 的最新语义矩阵包含 144 个 cell，其中 120 个 vendor-supported；selector 相对 vendor
+为 `7/0/113`（win/tie/loss），几何平均 speedup `0.0986x`。这项快照证明语义迁移、正确性
+门禁和 fail-closed 选择已贯通，同时明确暴露了兼容 real path 的性能缺口；它不能与上面的 release
+matrix 混合平均。
+
 ### Issue #3 验收增量
 
 本轮新增证据与正式 release 分层保存，不把实验性结果改写成发布 headline：
@@ -41,7 +47,7 @@ matrix；安装期一键校准与跨 worker persistent pipeline 仍在路线图�
 |---|---|---|
 | Batch focus | 四个 `N=1024/2048 × B=16/64` shape 相对旧 incumbent 提升 `2.2x--2.7x` | 通过 guard 的项已冻结 |
 | 模型留出 | top-3/full-space recall `6/6`；平均 top-1 regret `0.0816%` | 用于筛选，不替代实测 |
-| 外部核心组合 | `N=2048,B=16` 为 `2.87x` vendor；两个 `N=1024` 点为负 | experimental，不进 selector |
+| 外部核心组合 | Issue #3 canary 的 `N=2048,B=16` 为 `2.87x` vendor；Issue #6 仅晋升一个 exact-shape composition 条目 | `N=1024` 两点为负；composition 不进通用 selector |
 
 详见[实验设计与结果汇总](benchmarks/results.md)和[批量与模型验证](benchmarks/batch-focus.md)。
 
@@ -56,8 +62,9 @@ matrix；安装期一键校准与跨 worker persistent pipeline 仍在路线图�
 
 ## 当前接口边界
 
-公开 Python 入口接受连续 `torch.complex64` XPU tensor，支持 1D 二次幂长度、forward C2C、
-rank-1 单变换或 `(B, N)` batch。DIT/DIF 都是 forward FFT 的分解。内部 planar lowering 不是
-用户输入格式。未覆盖能力见[支持范围](reference/support.md)和[未来计划](roadmap.md)。
+公开 Python 入口接受连续 XPU tensor，支持 1D 二次幂长度、FP32/complex64 C2C forward/inverse，
+以及首轮 R2C/C2R compatibility path；rank-1 单变换或 `(B, N)` batch 均有独立语义检查。DIT/DIF
+都是 forward FFT 的分解。内部 planar lowering 不是用户输入格式。未覆盖能力见[支持范围](reference/support.md)
+和[未来计划](roadmap.md)。
 
 下一页：[安装](getting-started/installation.md)。

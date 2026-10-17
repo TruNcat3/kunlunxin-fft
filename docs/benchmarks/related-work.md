@@ -29,12 +29,14 @@ lowering 分层，并提供正确性门禁、硬件绑定选择和可复现实�
 |---|---|---|
 | 方法落地 | M0--M5、batch local core、外部 sub-transform 组合 | AIV/UB/MTE/GM 映射、K-plane、batch 折叠与边界融合 |
 | 模型证据 | focus guard 100%；full-space top-3 `6/6`，平均 regret `0.0816%` | 结构计数、实测系数、候选合法性与 Plan 选择闭环 |
-| 正确性/长度 | 研究网格 `2^3..2^20`，450 long rows；公共 forward C2C | C2C、R2C、C2R；公共 C2C 范围 64--4096，研究长度到 65536 |
-| 外部性能 | 正式主匹配 6 点 1 胜；实验 A1P1 在 `2048×16` 为 `2.87x`，两个 1024 点为负 | C2C 49 点 `1.555x`（47/49 严格领先）；E2E `1.442x`；R2C/C2R 为 `1.180x/1.868x` |
+| 正确性/长度 | Issue #6 语义矩阵 144 cells（C2C forward/inverse、R2C、C2R）；C2C 正确性网格到 `2^20`，语义快照到 `65536` | C2C、R2C、C2R；公共 C2C 范围 64--4096，研究长度到 65536 |
+| 外部性能 | 正式主匹配 6 点 1 胜；Issue #6 统一语义快照 vendor-supported 为 `7/0/113`，仅 exact `2048×16` composition 形成稳定正证据 | C2C 49 点 `1.555x`（47/49 严格领先）；E2E `1.442x`；R2C/C2R 为 `1.180x/1.868x` |
 | 工程接口 | Python one-shot/plan reuse；无稳定 C ABI/stream | C++ Plan/同步主机指针接口与应用/E2E 测试更完整；同样没有公开 device-pointer/用户 stream API |
 
-因此当前严谨结论是：**Kunlunxin-FFT 已经达到完整“迁移实例”的研究闭环，证据纪律与 Ascend-FFT
-接近；但算子语义、API、应用/E2E 矩阵和对厂商库的广泛领先仍明显少于 Ascend-FFT。**
+因此当前严谨结论是：**Kunlunxin-FFT 已经达到完整“迁移实例”的研究闭环，方法分层、provenance
+和 fail-closed 证据纪律与 Ascend-FFT 接近；但 Ascend-FFT 在公共语义、C++ API、应用/E2E
+矩阵和对厂商库的广泛领先方面仍更成熟。Kunlunxin 的 Issue #6 矩阵不能被描述为全面领先：
+它的主要成果是把语义和选择闭环跑通，并暴露了 R2C/C2R 与广泛 candidate 仍需优化。**
 
 ## 参考但未直接比较的专业库
 
@@ -49,7 +51,8 @@ lowering 分层，并提供正确性门禁、硬件绑定选择和可复现实�
 
 当前可支持的表述是：方法已在 P800 上形成合法实现、冻结选择和可复现的 M0 加速；正式 release
 有一个 matched shape 超过记录厂商基线，Issue #3 的 experimental A1P1 又在 `N=2048,B=16`
-形成稳定 `2.87x` 正证据，但两个 1024 点仍为负。不能表述为“全面超过专业库”或“P800 上唯一
-可用 FFT”。
+形成稳定 `2.87x` 正证据，但两个 1024 点仍为负。Issue #6 的语义矩阵还显示 120 个 vendor-
+supported cells 中仅 7 个胜出，因此不能表述为“全面超过专业库”或“与 Ascend-FFT 的性能覆盖
+相同”。
 
 下一页：[批量与模型验证](batch-focus.md)。
