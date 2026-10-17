@@ -60,7 +60,12 @@ def test_table_loads_and_matches_profile():
     assert t["profile_hash"] == p.hash()
     assert t["precision"] == "fp32"
     assert t["guard_pct"] == GUARD_PCT
-    keys = [(e["N"], e["batch"], e["direction"]) for e in t["entries"]]
+    # Issue #8: the uniqueness key is the FULL selector key including
+    # the semantic triple (legacy entries key their absent triple as
+    # None and may coexist with exact-semantic entries per shape).
+    keys = [(e["N"], e["batch"], e["direction"], e.get("transform_type"),
+             e.get("transform_direction"), e.get("normalization"))
+            for e in t["entries"]]
     assert len(keys) == len(set(keys)), "duplicate table keys"
 
 

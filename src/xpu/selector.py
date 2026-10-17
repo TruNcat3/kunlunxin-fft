@@ -3,7 +3,14 @@
 Review round C of the migration convergence plan: the selector is a static
 table built from measured confirmation sessions, never a model. Contract:
 
-* **Keys**: ``(device, profile_hash, precision, direction, N, batch)``.
+* **Keys**: ``(device, profile_hash, precision, transform_type,
+  transform_direction, normalization, direction, N, batch)`` (issue #8
+  PR-G). The three semantic fields form an exact-match tier: an entry
+  carrying them only answers its own ``(transform_type,
+  transform_direction, normalization)``; entries without them (the
+  pre-issue-#8 table schema) are the legacy tier and answer any
+  semantic as the old deployed path. Exact semantic tier wins over the
+  legacy tier; both absent abstains.
 * **Values**: ``(block, flow_id, flow_realization, processing_unit, params)``
   — the schema-v2 attribution of the measured winner.
 * **M0 closure**: every table build compares challengers against the M0
@@ -39,7 +46,12 @@ import json
 import os
 from dataclasses import dataclass, field
 
-from .config import ConfigError
+from .config import (
+    ConfigError,
+    NORMALIZATIONS,
+    TRANSFORM_DIRECTIONS,
+    TRANSFORM_TYPES,
+)
 
 TABLE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__)))), "config", "selector_table.json")
@@ -155,6 +167,21 @@ def entry_contract_violations(entry: dict) -> list[str]:
     if "variant" in params and params["variant"] not in sp.batch_variants:
         bad.append(
             f"variant {params['variant']!r} not in {sp.batch_variants}")
+    # Semantic-tier entries must carry a legal triple (issue #8); the
+    # values come from the shared taxonomy, not from free text.
+    if "transform_type" in entry:
+        triple = (entry.get("transform_type"),
+                  entry.get("transform_direction"),
+                  entry.get("normalization"))
+        if triple[0] not in TRANSFORM_TYPES:
+            bad.append(f"transform_type {triple[0]!r} not in "
+                       f"{TRANSFORM_TYPES}")
+        if triple[1] not in TRANSFORM_DIRECTIONS:
+            bad.append(f"transform_direction {triple[1]!r} not in "
+                       f"{TRANSFORM_DIRECTIONS}")
+        if triple[2] not in NORMALIZATIONS:
+            bad.append(f"normalization {triple[2]!r} not in "
+                       f"{NORMALIZATIONS}")
     if "batch" in params and params["batch"] not in sp.batch_candidates:
         bad.append(f"batch {params['batch']!r} not in {sp.batch_candidates}")
     if "radix" in params and params["radix"] not in sp.radix:
@@ -168,6 +195,39 @@ def entry_contract_violations(entry: dict) -> list[str]:
     return bad
 
 
+def semantic_key_of(entry: dict) -> tuple | None:
+    """Exact semantic tier of an entry, or ``None`` for a legacy entry."""
+    if "transform_type" not in entry:
+        return None
+    return (entry.get("transform_type"),
+            entry.get("transform_direction"),
+            entry.get("normalization"))
+
+
+def find_entry(table: dict, n: int, batch: int, direction: str,
+               transform_type: str = "c2c",
+               transform_direction: str = "forward",
+               normalization: str = "backward") -> dict | None:
+    """Exact semantic-tier entry first, legacy (pre-semantic) fallback.
+
+    Single source of truth shared by :func:`select` and entry's
+    incumbent-block lookup, so a plan and its M0 block resolve against
+    the same tier of the table.
+    """
+    legacy = None
+    for e in table.get("entries", ()):
+        if not (e["N"] == n and e["batch"] == batch
+                and e["direction"] == direction):
+            continue
+        key = semantic_key_of(e)
+        if key is None:
+            if legacy is None:
+                legacy = e
+        elif key == (transform_type, transform_direction, normalization):
+            return e
+    return legacy
+
+
 @dataclass(frozen=True)
 class Selection:
     """One selector verdict. ``source`` is ``table`` or ``abstain``."""
@@ -178,6 +238,10 @@ class Selection:
     precision: str
     source: str
     reason: str
+    transform_type: str = "c2c"
+    transform_direction: str = "forward"
+    normalization: str = "backward"
+    entry_tier: str = "abstain"  # "semantic" | "legacy" | "abstain"
     block: int | None = None
     flow_id: str | None = None
     flow_realization: str | None = None
@@ -253,15 +317,24 @@ def assert_current_environment(table: dict) -> str:
     return cur
 
 
-def _abstain(n, direction, batch, precision, reason) -> Selection:
+def _abstain(n, direction, batch, precision, reason,
+             transform_type: str = "c2c",
+             transform_direction: str = "forward",
+             normalization: str = "backward") -> Selection:
     return Selection(n=n, direction=direction, batch=batch,
-                     precision=precision, source="abstain", reason=reason)
+                     precision=precision, source="abstain", reason=reason,
+                     transform_type=transform_type,
+                     transform_direction=transform_direction,
+                     normalization=normalization, entry_tier="abstain")
 
 
 def select(direction: str, n: int, batch: int = 1, precision: str = "fp32",
            profile_hash: str | None = None,
            table: dict | None = None,
-           env_hash: str | None = "auto") -> Selection:
+           env_hash: str | None = "auto",
+           transform_type: str = "c2c",
+           transform_direction: str = "forward",
+           normalization: str = "backward") -> Selection:
     """Return the measured winner for a shape, or abstain outside the matrix.
 
     ``env_hash`` verifies the table against the live environment: ``"auto"``
@@ -270,29 +343,56 @@ def select(direction: str, n: int, batch: int = 1, precision: str = "fp32",
     production-schema table MUST carry a non-empty ``env_hash``; unbound
     (pre-freshness) tables never select at runtime — inspect their entries
     offline via ``load_table`` only.
+
+    Semantic tiering (issue #8 PR-G): an entry carrying
+    ``(transform_type, transform_direction, normalization)`` answers
+    only its exact triple; entries without the fields (legacy) answer
+    any semantic as the old deployed path. :func:`find_entry` resolves
+    exact semantic tier first, then legacy, else abstains.
     """
     table = table if table is not None else load_table()
+    if transform_type not in TRANSFORM_TYPES:
+        return _abstain(n, direction, batch, precision,
+                        f"transform_type must be one of {TRANSFORM_TYPES}, "
+                        f"got {transform_type!r}",
+                        transform_type, transform_direction, normalization)
+    if transform_direction not in TRANSFORM_DIRECTIONS:
+        return _abstain(
+            n, direction, batch, precision,
+            f"transform_direction must be one of {TRANSFORM_DIRECTIONS}, "
+            f"got {transform_direction!r}",
+            transform_type, transform_direction, normalization)
+    if normalization not in NORMALIZATIONS:
+        return _abstain(n, direction, batch, precision,
+                        f"normalization must be one of {NORMALIZATIONS}, "
+                        f"got {normalization!r}",
+                        transform_type, transform_direction, normalization)
     if direction not in ("dit", "dif"):
         return _abstain(n, direction, batch, precision,
-                        f"direction must be dit/dif, got {direction!r}")
+                        f"direction must be dit/dif, got {direction!r}",
+                        transform_type, transform_direction, normalization)
     if precision != table["precision"]:
         return _abstain(n, direction, batch, precision,
-                        f"table measured {table['precision']}, got {precision!r}")
+                        f"table measured {table['precision']}, got {precision!r}",
+                        transform_type, transform_direction, normalization)
     if profile_hash is None:
         return _abstain(n, direction, batch, precision,
                         "profile_hash is required; None cannot bypass the "
-                        "table (fall back to M0)")
+                        "table (fall back to M0)",
+                        transform_type, transform_direction, normalization)
     if profile_hash != table["profile_hash"]:
         return _abstain(n, direction, batch, precision,
                         f"profile hash {profile_hash} != table "
-                        f"{table['profile_hash']}; re-measure before selecting")
+                        f"{table['profile_hash']}; re-measure before selecting",
+                        transform_type, transform_direction, normalization)
     bound_env = table.get("env_hash") or ""
     if not bound_env:
         return _abstain(
             n, direction, batch, precision,
             "table carries no env_hash (pre-freshness schema); runtime "
             "selection fails closed to M0 -- inspect entries offline via "
-            "load_table only")
+            "load_table only",
+            transform_type, transform_direction, normalization)
     cur = env_hash
     if cur == "auto":
         from .envcheck import current_env_hash
@@ -302,26 +402,37 @@ def select(direction: str, n: int, batch: int = 1, precision: str = "fp32",
             n, direction, batch, precision,
             "environment fingerprint unknown (device/runtime/compiler "
             "not probeable); this table cannot be verified here and "
-            "must fail closed to M0")
+            "must fail closed to M0",
+            transform_type, transform_direction, normalization)
     if cur != bound_env:
         return _abstain(
             n, direction, batch, precision,
             f"environment hash {cur} != table {bound_env} "
             "(device/runtime/compiler changed since the table was "
-            "built); re-run the probe and re-measure before selecting")
-    for e in table["entries"]:
-        if (e["N"] == n and e["batch"] == batch and e["direction"] == direction):
-            return Selection(
-                n=n, direction=direction, batch=batch, precision=precision,
-                source="table",
-                reason=e.get("reason", "measured confirmation winner"),
-                block=e["block"], flow_id=e["flow_id"],
-                flow_realization=e["flow_realization"],
-                processing_unit=e["processing_unit"],
-                params=dict(e.get("params") or {}),
-                incumbent_ms=e.get("incumbent_ms"),
-                challenger_ms=e.get("challenger_ms"),
-            )
+            "built); re-run the probe and re-measure before selecting",
+            transform_type, transform_direction, normalization)
+    e = find_entry(table, n, batch, direction, transform_type,
+                   transform_direction, normalization)
+    if e is not None:
+        tier = "semantic" if semantic_key_of(e) is not None else "legacy"
+        return Selection(
+            n=n, direction=direction, batch=batch, precision=precision,
+            source="table",
+            reason=e.get("reason", "measured confirmation winner"),
+            transform_type=transform_type,
+            transform_direction=transform_direction,
+            normalization=normalization,
+            entry_tier=tier,
+            block=e["block"], flow_id=e["flow_id"],
+            flow_realization=e["flow_realization"],
+            processing_unit=e["processing_unit"],
+            params=dict(e.get("params") or {}),
+            incumbent_ms=e.get("incumbent_ms"),
+            challenger_ms=e.get("challenger_ms"),
+        )
     return _abstain(n, direction, batch, precision,
                     f"no measured entry for N={n} batch={batch} "
-                    f"direction={direction}; fall back to M0")
+                    f"direction={direction} semantic="
+                    f"{transform_type}/{transform_direction}/"
+                    f"{normalization}; fall back to M0",
+                    transform_type, transform_direction, normalization)

@@ -347,3 +347,52 @@ def test_verify_bundle_fails_closed_on_env_mismatch(tmp_path):
     # freshness gate refuses (unknown/mismatch) -> fail closed
     assert "freshness gate failed closed" in text or "env mismatch" in text
     assert failures  # never a silent pass
+
+
+def test_non_ok_row_may_omit_timing_fields(tmp_path):
+    """Issue #8 PR-G: unsupported/error rows keep no timing sample but
+    stay in the raw evidence (status + reason), so the strict gate must
+    not reject them for missing api_ms/err."""
+    man = _valid_manifest()
+    ok = _valid_row(trial=0)
+    bad = _valid_row(trial=1, candidate="vendor")
+    bad.update({"api_ms": None, "err": None, "correct": False,
+                "status": "vendor-unsupported",
+                "reason": "RuntimeError: unsupported size"})
+    summary = _write_bench_dir(tmp_path, man, [ok, bad])
+    assert validate_benchmark_output(summary, strict=False) == []
+    payload = json.loads(summary.read_text())
+    payload["manifest"]["result_sha256"] = result_sha256(tmp_path)
+    summary.write_text(json.dumps(payload))
+    assert validate_benchmark_output(summary, strict=True) == []
+    # an "ok" row still requires its timing sample
+    late = _valid_row(trial=2, candidate="m0")
+    del late["api_ms"]
+    with open(tmp_path / "raw_session0.jsonl", "a") as f:
+        f.write(json.dumps(late) + "\n")
+    failures = validate_benchmark_output(summary, strict=True)
+    assert any("missing row field 'api_ms'" in f for f in failures)
+
+
+def test_stamp_result_hashes_covers_matrix_runs(tmp_path):
+    """Issue #8: matrix_*/summary.json is stamped in place with
+    source_hash + result_sha256 over its raw sessions."""
+    import bootstrap_profile as bp
+    import run_semantic_matrix as sm
+    out = tmp_path / "staging"
+    mdir = out / "matrix_stress"
+    mdir.mkdir(parents=True)
+    rows = [_valid_row(trial=i) for i in range(2)]
+    with open(mdir / "raw_session0.jsonl", "w") as f:
+        for r in rows:
+            f.write(json.dumps(r) + "\n")
+    man = _valid_manifest()
+    man["protocol_id"] = sm.PROTOCOL_ID
+    man.pop("result_sha256", None)
+    (mdir / "summary.json").write_text(json.dumps(
+        {"manifest": man, "cases": [], "protocol_id": sm.PROTOCOL_ID}))
+    failures = bp.stamp_result_hashes(out)
+    assert failures == []
+    stamped = json.loads((mdir / "summary.json").read_text())["manifest"]
+    assert stamped.get("source_hash")
+    assert stamped.get("result_sha256") == result_sha256(mdir)

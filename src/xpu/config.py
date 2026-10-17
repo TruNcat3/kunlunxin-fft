@@ -25,6 +25,17 @@ class ConfigError(ValueError):
     """Raised when a config file is missing, unreadable, or fails its schema."""
 
 
+# Semantic key taxonomy (issue #8 PR-G). The selector's exact key is
+# (transform_type, transform_direction, normalization, direction, N,
+# batch) inside one (device, profile_hash, precision, env) table.  The
+# three semantic fields are optional on legacy entries (schema v2,
+# pre-issue-#8): those entries match ANY semantic as the old deployed
+# path until a semantic-specific entry clears its own guard.
+TRANSFORM_TYPES = ("c2c", "r2c", "c2r")
+TRANSFORM_DIRECTIONS = ("forward", "inverse")
+NORMALIZATIONS = ("none", "forward", "backward", "ortho")
+
+
 def _read_json(name: str) -> dict:
     path = os.path.join(_CONFIG_DIR, name)
     if not os.path.exists(path):

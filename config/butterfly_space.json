@@ -33,9 +33,9 @@
       "gather_scatter_note": "The tested Triton 3.0.0 XPU lowering rejects the tensor-subscript gather Xt[idx_tensor] (ValueError: Did you forget to add @triton.jit?) but ACCEPTS pointer-form gather tl.load(ptr + idx_tensor); canaries: tests/test_fft.py::test_tensor_subscript_gather_blocked / test_pointer_form_gather_lowers. M1 uses only pointer tl.load/tl.store."
     },
     "batch_expansion": {
-      "candidates": [1, 4, 16, 64],
+      "candidates": [1, 4, 16, 64, 256],
       "variants": ["spread", "folded"],
-      "note": "M4 data-space/time expansion over the (B, N) batch axis. 'spread' maps batch to grid axis 1 (Ud=B, flow batch-spread); 'folded' splits the batch out of a flat pair-space grid (Td=B, flow batch-folded). Both consume B in dit/dif_stage_batch_kernel and keep the M0 stage count (log2(N) launches); batch=1 degenerates to the baseline. The batch axis is a workload axis, not an assumed speedup (plan sections 6/7)."
+      "note": "M4 data-space/time expansion over the (B, N) batch axis. 'spread' maps batch to grid axis 1 (Ud=B, flow batch-spread); 'folded' splits the batch out of a flat pair-space grid (Td=B, flow batch-folded). Both consume B in dit/dif_stage_batch_kernel and keep the M0 stage count (log2(N) launches); batch=1 degenerates to the baseline. The batch axis is a workload axis, not an assumed speedup (plan sections 6/7). batch=256 joined the published axis with issue #8 (stress domain N=1024,B=256): a workload axis entry measured by the semantic-matrix confirmation sessions, still no assumed speedup; the lowering contract and selector validation read this same list."
     },
     "register_matrix": {
       "tiles": [32, 64, 128],

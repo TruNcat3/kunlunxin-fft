@@ -65,10 +65,17 @@ PRODUCTION_CALIBRATION = ROOT / "config" / "calibration.json"
 # stage -> short human name; order matters.
 ALL_STAGES = ("probe", "check", "calibrate", "build", "verify")
 
+# Issue #8: default semantic-matrix scope for the bootstrap chain is
+# the stress domain (the cells whose high regret the issue requires
+# fixing); --matrix-scope overrides for diagnostics runs.
+MATRIX_SCOPE_DEFAULT = "stress"
+
 # The representative calibration recipe (issue #6 WP0): confirm rounds
 # feed the table builder, focus+holdout feed the cost model — the same
 # commands the frozen evidence was produced with.
-def calibrate_commands(out: Path, device: str) -> list[list[str]]:
+def calibrate_commands(out: Path, device: str,
+                       matrix_scope: str = MATRIX_SCOPE_DEFAULT
+                       ) -> list[list[str]]:
     py = sys.executable
     focus_a = out / "batch_focus_a"
     focus_b = out / "batch_focus_b"
@@ -105,6 +112,15 @@ def calibrate_commands(out: Path, device: str) -> list[list[str]]:
         [py, "scripts/run_batch_release.py", "--overwrite",
          "--shapes", "1024x16,1024x64,2048x16", "--full-space",
          "--out", str(holdout)],
+        # issue #8 WP1: the semantic-matrix confirmation run whose
+        # cells feed --matrix-run (>= 3 sessions x >= 30 trials; the
+        # builder enforces the same floor). Scope defaults to the
+        # stress domain; production table entries come only from cells
+        # that clear their own >= 2% guard.
+        [py, "scripts/run_semantic_matrix.py",
+         "--scope", matrix_scope, "--sessions", "3",
+         "--trials", "30", "--warmup", "5",
+         "--out", str(out / f"matrix_{matrix_scope}")],
     ]
 
 
@@ -165,6 +181,9 @@ def stamp_result_hashes(out: Path) -> list[str]:
     failures = []
     source_hash = git_commit()
     targets: list[Path] = list(out.glob("batch_*/summary.json"))
+    # matrix_* are directories: summary.json embeds the manifest and
+    # raw_session siblings feed result_sha256(dir) below (issue #8)
+    targets += list(out.glob("matrix_*/summary.json"))
     if (out / "summary.json").is_file():
         targets.append(out / "summary.json")
     # *.progress.json are bench resume checkpoints (pid/last_completed),
@@ -214,9 +233,11 @@ def verify_bundle(out: Path, env_hash: str | None,
 
     failures: list[str] = []
     # 1. Strict manifest contract on every staged run output.
-    outputs = sorted(out.glob("batch_*")) + sorted(
-        p for p in out.glob("confirm_*.json")
-        if not p.name.endswith(".progress.json"))
+    outputs = (sorted(out.glob("batch_*"))
+               + sorted(out.glob("matrix_*"))
+               + sorted(
+                   p for p in out.glob("confirm_*.json")
+                   if not p.name.endswith(".progress.json")))
     if not outputs:
         failures.append("verify: no staged benchmark outputs found")
     for target in outputs:
@@ -247,7 +268,13 @@ def verify_bundle(out: Path, env_hash: str | None,
                          batch=entry["batch"],
                          precision=table["precision"],
                          profile_hash=table["profile_hash"],
-                         table=table, env_hash=env_hash)
+                         table=table, env_hash=env_hash,
+                         transform_type=entry.get("transform_type",
+                                                  "c2c"),
+                         transform_direction=entry.get(
+                             "transform_direction", "forward"),
+                         normalization=entry.get("normalization",
+                                                "backward"))
         except Exception as e:  # noqa: BLE001
             failures.append(f"verify: select({entry['N']},"
                             f"{entry['batch']}) raised {e}")
@@ -256,6 +283,15 @@ def verify_bundle(out: Path, env_hash: str | None,
             failures.append(
                 f"verify: exact-key select abstained for "
                 f"N{entry['N']}B{entry['batch']} ({sel.reason})")
+            continue
+        # The query must resolve to THIS entry (its params/geometry),
+        # not merely to some table hit on the shape.
+        if (dict(sel.params or {}) != dict(entry.get("params") or {})
+                or sel.block != entry.get("block")):
+            failures.append(
+                f"verify: exact-key select for "
+                f"N{entry['N']}B{entry['batch']} resolved a different "
+                f"entry (params/block mismatch)")
     # Out-of-matrix abstention still works.
     try:
         sel = select(direction="dit", n=3000, batch=1,
@@ -295,6 +331,10 @@ def main() -> int:
     ap.add_argument("--device", default=os.environ.get("CUDA_VISIBLE_DEVICES",
                                                        "0"),
                     help="CUDA_VISIBLE_DEVICES value for stage commands")
+    ap.add_argument("--matrix-scope", default=MATRIX_SCOPE_DEFAULT,
+                    help="semantic-matrix scope for calibrate + build "
+                         "(default: %(default)s, the issue #8 stress "
+                         "domain; pass 'all' for a full-domain run)")
     ap.add_argument("--output", type=Path,
                     default=ROOT / "results" / "local-profile",
                     help="staging directory for this bootstrap run")
@@ -360,8 +400,8 @@ def main() -> int:
                 if code != 0:
                     return _fail(stage, code, tag)
         elif stage == "calibrate":
-            for i, cmd in enumerate(calibrate_commands(staging,
-                                                       args.device)):
+            for i, cmd in enumerate(calibrate_commands(
+                    staging, args.device, args.matrix_scope)):
                 code = run_cmd(cmd, args.device, log_dir,
                                f"{stage}_{i:02d}")
                 if code != 0:
@@ -380,14 +420,16 @@ def main() -> int:
             have_holdout = holdout.is_file()
             have_confirms = all(p.is_file() for p in confirms)
             batch_confirm = staging / "confirm_batch.json"
+            matrix_dir = staging / f"matrix_{args.matrix_scope}"
+            have_matrix = (matrix_dir / "summary.json").is_file()
             if not (have_focus and have_holdout and have_confirms
-                    and batch_confirm.is_file()):
+                    and batch_confirm.is_file() and have_matrix):
                 # build without calibrate: fall back to nothing staged
                 # — this is only legal when verifying pre-existing
                 # artifacts is not the goal; fail clearly.
                 return _fail(stage, 1,
-                             "staged confirm/focus/holdout missing; "
-                             "run with --calibrate first")
+                             "staged confirm/focus/holdout/matrix "
+                             "missing; run with --calibrate first")
             code = run_cmd(
                 [sys.executable, "scripts/validate_cost_model.py",
                  str(focus_a), str(holdout),
@@ -400,6 +442,7 @@ def main() -> int:
                  str(confirms[0]), str(confirms[1]),
                  "--batch", str(batch_confirm),
                  "--focus", str(focus_a), str(focus_b),
+                 "--matrix-run", str(matrix_dir),
                  "--out", str(staging / "selector_table.json"),
                  "--verify-live-env"],
                 args.device, log_dir, stage + "_table")

@@ -28,6 +28,17 @@ all sessions correctness-gated) are compared against the stable batch
 incumbent (best of M4 folded/spread) under the same 2% promotion guard.
 A focus run with fewer than ``--min-focus-sessions`` sessions (default
 3, the issue's protocol floor) is refused.
+
+``--matrix-run`` appends issue #8 exact-semantic entries from
+semantic-matrix run directories (``summary.json`` + raw sessions). A
+cell only produces an entry when the artifact passes the strict output
+gate (>= 3 sessions x >= 30 trials, stamped result_sha256), its oracle
+winner has correctness-clean timing in every session, the plan geometry
+is consistent and contract-legal, the flow belongs to that semantic's
+own family, and the winner clears the promotion guard against the
+matrix incumbent. Entries carry the full ``(transform_type,
+transform_direction, normalization)`` key and answer only that triple;
+legacy entries stay as the deployed old path for every other semantic.
 """
 from __future__ import annotations
 
@@ -37,13 +48,23 @@ import math
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(_SCRIPT_DIR))
+if _SCRIPT_DIR not in sys.path:
+    # sibling scripts (run_semantic_matrix) for the matrix gates
+    sys.path.insert(0, _SCRIPT_DIR)
 
+from src.xpu import semantic as semantic_mod  # noqa: E402
 from src.xpu.config import ConfigError, DeviceProfile  # noqa: E402
 from src.xpu.envcheck import env_hash as fingerprint_env  # noqa: E402
 from src.xpu.evidence import focus_candidate_verdict  # noqa: E402
+from src.xpu.manifest_contract import (  # noqa: E402
+    validate_benchmark_output,
+)
 from src.xpu.selector import GUARD_PCT  # noqa: E402
 from src.xpu.selector import entry_contract_violations  # noqa: E402
+
+import run_semantic_matrix as sm  # noqa: E402
 
 # candidate key -> (flow_id, flow_realization, processing_unit, params-beyond-block)
 _UNIT = {
@@ -181,6 +202,21 @@ def _check_manifest_consistency(runs, table_profile_hash: str) -> None:
             f"DeviceProfile hash {table_profile_hash}; re-measure under the "
             "current profile before building the table")
 
+
+# Issue #8 PR-G: one semantic-matrix run dir must agree with the
+# others and with the current profile on these keys.
+_MATRIX_CONSISTENCY_KEYS = ("device", "profile_hash", "protocol_id",
+                            "precision", "correctness_threshold", "dtype",
+                            "timing_scope", "sessions", "trials", "warmup")
+# Issue #8 confirmation floor for promotion-grade cells.
+_MATRIX_MIN_SESSIONS = 3
+_MATRIX_MIN_TRIALS = 30
+# Issue #8 search budget: <= 24 pre-registered candidates per
+# semantic/shape (the bounded oracle set in a matrix cell).
+_MATRIX_MAX_CANDIDATES = 24
+# Plan params that are provenance, not lowering input.
+_PARAM_META_KEYS = ("oracle_name", "selection_source", "reason",
+                    "fallback", "real_compat")
 
 _FOCUS_MANIFEST_KEYS = ("device", "profile_hash", "protocol_id",
                         "error_threshold", "shapes", "candidates",
@@ -499,6 +535,244 @@ def build_batch_entries(run, guard=GUARD_PCT, threshold=1e-4, rejections=None):
     return entries
 
 
+def _load_matrix(path: str, rejections) -> dict:
+    """Load one semantic-matrix run directory (issue #8 PR-G).
+
+    Fail-closed artifact gates: the directory must pass the strict
+    output gate (embedded manifest + raw sessions + result_sha256,
+    stamped by the calibration stage), its protocol must be the matrix
+    protocol this builder trusts, and it must meet the issue's
+    confirmation floor (>= 3 sessions x >= 30 trials). Untrusted
+    artifacts raise ConfigError; per-cell business gates live in
+    :func:`build_matrix_entries`.
+    """
+    problems = validate_benchmark_output(path, strict=True)
+    if problems:
+        raise ConfigError(
+            f"matrix run {path} failed the strict output gate: "
+            + "; ".join(problems[:6])
+            + (" ..." if len(problems) > 6 else "")
+            + "; refusing to build")
+    summary_path = os.path.join(path, "summary.json")
+    try:
+        with open(summary_path) as fh:
+            payload = json.load(fh)
+    except (OSError, json.JSONDecodeError) as e:
+        raise ConfigError(f"matrix run {path}: unreadable summary: {e}")
+    man = payload.get("manifest")
+    if not isinstance(man, dict):
+        raise ConfigError(f"matrix run {path}: no embedded manifest")
+    if man.get("protocol_id") != sm.PROTOCOL_ID:
+        raise ConfigError(
+            f"matrix run {path}: protocol_id {man.get('protocol_id')!r} != "
+            f"trusted matrix protocol {sm.PROTOCOL_ID!r}")
+    sessions = man.get("sessions")
+    trials = man.get("trials")
+    if not isinstance(sessions, int) or sessions < _MATRIX_MIN_SESSIONS:
+        raise ConfigError(
+            f"matrix run {path}: sessions={sessions!r} below the issue "
+            f"floor {_MATRIX_MIN_SESSIONS}; refusing")
+    if not isinstance(trials, int) or trials < _MATRIX_MIN_TRIALS:
+        raise ConfigError(
+            f"matrix run {path}: trials={trials!r} below the issue floor "
+            f"{_MATRIX_MIN_TRIALS}; refusing")
+    rows = []
+    raw_dir = os.path.join(path)
+    for name in sorted(os.listdir(raw_dir)):
+        if not (name.startswith("raw_session") and name.endswith(".jsonl")):
+            continue
+        with open(os.path.join(raw_dir, name)) as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                rows.append(json.loads(line))
+    if not rows:
+        raise ConfigError(f"matrix run {path}: no raw session rows")
+    return {"path": path, "manifest": man,
+            "cases": payload.get("cases") or [], "rows": rows}
+
+
+def _check_matrix_consistency(matrix_runs, profile_hash) -> None:
+    """All matrix runs share one protocol/profile with the build host."""
+    ref = matrix_runs[0]["manifest"]
+    for run in matrix_runs[1:]:
+        for k in _MATRIX_CONSISTENCY_KEYS:
+            if run["manifest"].get(k) != ref.get(k):
+                raise ConfigError(
+                    f"mixed matrix protocols: {run['path']} {k}="
+                    f"{run['manifest'].get(k)!r} != {matrix_runs[0]['path']} "
+                    f"{k}={ref.get(k)!r}; refusing to build")
+    if ref.get("profile_hash") != profile_hash:
+        raise ConfigError(
+            f"matrix profile_hash {ref.get('profile_hash')!r} != current "
+            f"DeviceProfile hash {profile_hash}; re-measure under the "
+            "current profile before building")
+
+
+def build_matrix_entries(matrix_runs, guard=GUARD_PCT, threshold=1e-4,
+                         rejections=None) -> list:
+    """Exact-semantic entries from confirmed matrix cells (issue #8).
+
+    Per-cell promotion gates (issue #8 PR-G), all measured-source only:
+
+    * the cell's oracle winner (bounded candidate set, <= 24 entries)
+      beats the matrix incumbent by at least the semantic's own guard
+      (default 2%);
+    * the winner has correctness-clean steady timing in EVERY declared
+      session of a >= 3 x >= 30 confirmation run, with err <= threshold;
+    * its plan geometry (block/params/attribution) is identical across
+      those samples, passes the design-space/lowering contract, and the
+      flow belongs to the *semantic's own* family (no cross-semantic
+      inheritance; PR-H specialized flows join only theirs).
+
+    A cell that fails any gate is recorded in ``rejections`` and keeps
+    whatever legacy/abstain path it already had -- the table is never
+    touched by a rejected cell.
+    """
+    if rejections is None:
+        rejections = []
+    entries = []
+    for run in matrix_runs:
+        man = run["manifest"]
+        path = run["path"]
+        need_sessions = int(man.get("sessions") or 0)
+        by_label: dict[str, list] = {}
+        for row in run["rows"]:
+            by_label.setdefault(row.get("label"), []).append(row)
+        for case in run["cases"]:
+            n, b = case.get("N"), case.get("batch")
+            sem, label = case.get("semantic"), case.get("label")
+            tag = f"matrix {path} {label}"
+
+            def rej(msg, tag=tag):
+                rejections.append(f"{tag}: {msg}")
+
+            if not _finite_positive(case.get("incumbent_ms"))                     or not _finite_positive(case.get("oracle_ms")):
+                rej("non-finite incumbent/oracle median; no entry")
+                continue
+            try:
+                sp = semantic_mod.spec(sem)
+            except KeyError:
+                rej(f"unknown semantic {sem!r}; no entry")
+                continue
+            winner = case.get("oracle_candidate")
+            if not winner:
+                rej("no measured oracle winner; no entry")
+                continue
+
+            rows = by_label.get(label) or []
+            oracle_names = {
+                r.get("candidate") for r in rows
+                if str(r.get("candidate") or "").startswith("oracle:")}
+            if not oracle_names:
+                rej("no measured oracle candidates in the raw rows; "
+                    "no entry")
+                continue
+            if len(oracle_names) > _MATRIX_MAX_CANDIDATES:
+                rej(f"{len(oracle_names)} candidates exceed the issue's "
+                    f"{_MATRIX_MAX_CANDIDATES}-candidate budget; no entry")
+                continue
+
+            inc = float(case["incumbent_ms"])
+            orc = float(case["oracle_ms"])
+            gain_pct = (inc - orc) / inc * 100.0
+            if gain_pct < guard:
+                rej(f"guard not cleared: best oracle {winner} only "
+                    f"{gain_pct:.2f}% vs incumbent (need {guard}%) "
+                    f"-> legacy/abstain path stays")
+                continue
+
+            w_steady = [r for r in rows
+                        if r.get("candidate") == winner
+                        and r.get("tier") == sm.TIER_STEADY]
+            ok_sessions = {r.get("session") for r in w_steady
+                           if r.get("status") == "ok"}
+            if need_sessions < _MATRIX_MIN_SESSIONS                     or len(ok_sessions) < need_sessions:
+                rej(f"winner {winner} has timing in {len(ok_sessions)}/"
+                    f"{need_sessions} sessions; no entry")
+                continue
+            bad = [r for r in rows
+                   if r.get("candidate") == winner
+                   and r.get("status") != "ok"]
+            if bad:
+                rej(f"winner {winner} has {len(bad)} non-ok sample(s) "
+                    f"({bad[0].get('reason')}); no entry")
+                continue
+            errs = [r.get("err") for r in w_steady
+                    if r.get("status") == "ok"
+                    and isinstance(r.get("err"), (int, float))]
+            if errs and max(errs) > threshold:
+                rej(f"winner {winner} err {max(errs):.3e} > {threshold:g}; "
+                    f"no entry")
+                continue
+
+            blocks = {r.get("block") for r in w_steady}
+            if None in blocks or len(blocks) != 1:
+                rej(f"winner {winner} block geometry missing/inconsistent "
+                    f"across sessions {sorted(map(str, blocks))}; no entry")
+                continue
+            block = int(next(iter(blocks)))
+
+            def _lower(p):
+                return {k: v for k, v in (p or {}).items()
+                        if k not in _PARAM_META_KEYS}
+            param_variants = {
+                json.dumps(_lower(r.get("params")), sort_keys=True)
+                for r in w_steady}
+            if len(param_variants) != 1:
+                rej(f"winner {winner} plan params differ across samples "
+                    f"({len(param_variants)} variants); no entry")
+                continue
+            params = json.loads(next(iter(param_variants)))
+            params["batch"] = b
+
+            flow_id = w_steady[0].get("flow_id")
+            unit = w_steady[0].get("processing_unit")
+            real = w_steady[0].get("flow_realization")
+            if not flow_id or not unit or not real:
+                rej(f"winner {winner} rows lack flow attribution "
+                    f"(flow_id={flow_id!r}, unit={unit!r}, real={real!r}); "
+                    f"no entry")
+                continue
+            if not semantic_mod.family_allows(sp.transform_type, flow_id):
+                rej(f"flow {flow_id!r} not in the {sp.transform_type} "
+                    f"family (per-semantic legality, issue #8); no entry")
+                continue
+            direction = case.get("direction") or sm.DIRECTION
+            if direction != sm.DIRECTION:
+                rej(f"matrix locks direction {sm.DIRECTION!r}, got "
+                    f"{direction!r}; no entry")
+                continue
+
+            entries.append({
+                "N": n, "batch": b, "direction": direction,
+                "transform_type": sp.transform_type,
+                "transform_direction": sp.transform_direction,
+                "normalization": sp.normalization,
+                "incumbent_ms": inc, "incumbent_block": block,
+                "challenger_ms": orc, "block": block,
+                "flow_id": flow_id, "flow_realization": real,
+                "processing_unit": unit, "params": params,
+                "evidence": {
+                    "incumbent": "matrix-incumbent",
+                    "challenger": winner,
+                    "gain_pct": round(gain_pct, 3),
+                    "challenger_ms": orc,
+                    "sessions": len(ok_sessions),
+                    "protocol_id": man.get("protocol_id"),
+                    "semantic": sem,
+                    "source": "semantic-matrix confirmation",
+                },
+                "reason": (
+                    f"independent matrix confirmation ({sem}): {winner} "
+                    f"beats incumbent by {gain_pct:.1f}% (>= {guard}%) "
+                    f"over {len(ok_sessions)} sessions; exact semantic "
+                    f"key {sp.key}"),
+            })
+    return entries
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("runs", nargs="+", help="B=1 confirmation JSONs")
@@ -507,6 +781,11 @@ def main() -> None:
                     help="run_batch_release summary.json files (issue #3)")
     ap.add_argument("--min-focus-sessions", type=int, default=3,
                     help="focus runs below this session count are refused")
+    ap.add_argument("--matrix-run", nargs="*", default=[],
+                    help="semantic-matrix run directories (issue #8): "
+                         "summary.json + raw sessions; entries carry the "
+                         "exact semantic key and only land when the cell "
+                         "clears its own guard")
     ap.add_argument("--out", default="config/selector_table.json")
     ap.add_argument("--guard", type=float, default=GUARD_PCT)
     ap.add_argument("--verify-live-env", action="store_true",
@@ -547,6 +826,16 @@ def main() -> None:
                 f"DeviceProfile hash {profile_hash}; re-measure under the "
                 "current profile before building")
 
+    matrix_runs = [_load_matrix(p, rejections) for p in args.matrix_run]
+    if matrix_runs:
+        _check_matrix_consistency(matrix_runs, profile_hash)
+        matrix_threshold = float(
+            matrix_runs[0]["manifest"]["correctness_threshold"])
+        if matrix_threshold != threshold:
+            raise ConfigError(
+                f"matrix correctness_threshold {matrix_threshold!r} != "
+                f"confirm runs' {threshold!r}; refusing to mix bars")
+
     # Environment binding (issue #3 P0): taken from the MEASUREMENT
     # manifests, not from this build host -- the same clean artifact must
     # rebuild deterministically in plain CI. The focus campaign is the
@@ -554,6 +843,14 @@ def main() -> None:
     # env_hash. Confirm runs may predate env binding and are covered by
     # the focus campaign; when they do carry env_hash it must agree.
     env_hashes = []  # (path, env_hash)
+    for run in matrix_runs:
+        h = (run["manifest"].get("env_hash") or "").strip()
+        if not h:
+            raise ConfigError(
+                f"matrix run {run['path']} manifest has no env_hash; "
+                "matrix runs come from the env-bound harness and are "
+                "required to bind, refusing to build")
+        env_hashes.append((run["path"], h))
     for run in focus_runs:
         h = (run["manifest"].get("env_hash") or "").strip()
         if not h:
@@ -625,14 +922,29 @@ def main() -> None:
             focus_runs, guard=args.guard,
             min_sessions=args.min_focus_sessions, rejections=rejections))
         sources.extend(_rel(r["path"]) for r in focus_runs)
-        seen = {}
-        for e in entries:
-            key = (e["N"], e["batch"], e["direction"])
-            if key in seen:
-                raise ConfigError(
-                    f"duplicate table entry for {key} ({seen[key]} and a "
-                    "focus/confirm overlap); refusing to build")
-            seen[key] = e.get("reason", "?")
+    if matrix_runs:
+        entries.extend(build_matrix_entries(
+            matrix_runs, guard=args.guard, threshold=threshold,
+            rejections=rejections))
+        sources.extend(_rel(r["path"]) for r in matrix_runs)
+
+    # Issue #8 PR-G: the duplicate key is the FULL selector key,
+    # including the semantic triple. Legacy entries (no triple fields)
+    # key as (None, None, None) and may coexist with exact-semantic
+    # entries at the same shape: the semantic tier answers its own
+    # triple, the legacy entry stays as the deployed old path for
+    # every other semantic until it clears its own guard.
+    seen = {}
+    for e in entries:
+        key = (e["N"], e["batch"], e["direction"],
+               e.get("transform_type"), e.get("transform_direction"),
+               e.get("normalization"))
+        if key in seen:
+            raise ConfigError(
+                f"duplicate table entry for {key} ({seen[key]} and a "
+                "second run claiming the same full key); refusing to "
+                "build")
+        seen[key] = e.get("reason", "?")
 
     # Entries must satisfy the shared design space / lowering contract
     # BEFORE they are written: a frozen item goes through the same

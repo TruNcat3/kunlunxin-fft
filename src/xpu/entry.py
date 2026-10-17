@@ -56,15 +56,23 @@ import math
 from dataclasses import dataclass, field
 
 from .composition import composition_select
-from .selector import Selection, load_table, select
+from .config import (
+    NORMALIZATIONS,
+    TRANSFORM_DIRECTIONS,
+    TRANSFORM_TYPES,
+)
+from .selector import Selection, find_entry, load_table, select
 
 DEFAULT_BLOCK = 1024
 SUPPORTED_DIRECTIONS = ("dit", "dif")
 SUPPORTED_PRECISIONS = ("fp32",)
-SUPPORTED_TRANSFORMS = ("c2c", "r2c", "c2r")
+# Single source: the semantic-key taxonomy lives with the table
+# contract (config.py, issue #8 PR-G); these aliases keep the
+# historical entry-module names.
+SUPPORTED_TRANSFORMS = TRANSFORM_TYPES
 REAL_COMPAT_MARK = "packed-c2c-compat"
-SUPPORTED_TRANSFORM_DIRECTIONS = ("forward", "inverse")
-SUPPORTED_NORMS = ("none", "forward", "backward", "ortho")
+SUPPORTED_TRANSFORM_DIRECTIONS = TRANSFORM_DIRECTIONS
+SUPPORTED_NORMS = NORMALIZATIONS
 _SUPPORTED_DTYPES = {"fp32": "complex64"}
 
 
@@ -263,13 +271,18 @@ def _with_compat(plan: ExecutionPlan, compat: dict) -> ExecutionPlan:
 
 
 def _entry_block(table: dict, sel: Selection) -> int:
-    """Incumbent block for the shape when the table records one."""
-    for e in table.get("entries", ()):
-        if (e["N"] == sel.n and e["batch"] == sel.batch
-                and e["direction"] == sel.direction):
-            return int(e.get("incumbent_block") or e.get("block")
-                       or DEFAULT_BLOCK)
-    return DEFAULT_BLOCK
+    """Incumbent block for the shape when the table records one.
+
+    Resolves through the same semantic tier as ``select()`` (exact
+    semantic entry first, legacy fallback), so the M0 block and the
+    selected plan never come from different tiers of the table.
+    """
+    e = find_entry(table, sel.n, sel.batch, sel.direction,
+                   sel.transform_type, sel.transform_direction,
+                   sel.normalization)
+    if e is None:
+        return DEFAULT_BLOCK
+    return int(e.get("incumbent_block") or e.get("block") or DEFAULT_BLOCK)
 
 
 def plan_fft(direction: str, n: int, batch: int = 1, precision: str = "fp32",
@@ -298,10 +311,16 @@ def plan_fft(direction: str, n: int, batch: int = 1, precision: str = "fp32",
     device/runtime/compiler stack; unknown or stale environment falls
     back to M0.
 
-    Inverse C2C reuses the forward incumbent from the table: conjugate-
-    trick lowerings share candidate structure, so the measured ordering
-    carries over; the plan records the semantics and the executor wraps
-    the forward lowering (conjugate in/out + epilogue scale).
+    Semantic tiering (issue #8 PR-G): the table query carries the full
+    semantic key. Entries built with exact ``(transform_type,
+    transform_direction, normalization)`` answer only their own triple
+    (inverse / R2C / C2R no longer inherit a forward ordering); legacy
+    entries without the fields remain the old deployed path for any
+    semantic until that semantic's own entry clears its own guard. For
+    a legacy c2c hit the plan still records the semantics and the
+    executor wraps the lowering (conjugate in/out + epilogue scale for
+    inverse, pack/crop for real transforms) -- the wrapper is part of
+    the measured path of that semantic's confirmation rows.
     """
     # None means "the type's locked direction" (r2c forward, c2r
     # inverse, c2c forward); an explicit value is validated against the
@@ -326,7 +345,9 @@ def plan_fft(direction: str, n: int, batch: int = 1, precision: str = "fp32",
     table = table if table is not None else load_table()
     sel = select(direction, n, batch=batch, precision=precision,
                  profile_hash=profile_hash, table=table,
-                 env_hash=env_hash)
+                 env_hash=env_hash, transform_type=transform_type,
+                 transform_direction=transform_direction,
+                 normalization=norm)
     compat = ({"real_compat": REAL_COMPAT_MARK}
               if transform_type in ("r2c", "c2r") else {})
     if not sel.selected:

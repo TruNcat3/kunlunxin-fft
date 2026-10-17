@@ -70,7 +70,12 @@ REQUIRED_RESULT_HASH_KEYS = (
     "result_sha256",
 )
 
-# One raw trial row (raw_session*.jsonl) must carry these.
+# One raw trial row (raw_session*.jsonl) must carry these. For rows
+# recording a non-timed outcome (status != "ok": wrong-value / error /
+# vendor-unsupported), ``api_ms`` and ``err`` are exempt: the row's
+# evidence is the status+reason (issue #8: unsupported and negative
+# points stay in the raw evidence, they just carry no timing sample).
+TIMING_KEYS = ("api_ms", "err")
 REQUIRED_ROW_KEYS = (
     "session",
     "label",
@@ -169,11 +174,15 @@ def validate_raw_sessions(raw_dir: Path, manifest: dict,
             failures.append(f"{path.name}:{line_no} invalid JSON: "
                             f"{row['__decode_error__']}")
             continue
+        timed = row.get("status", "ok") == "ok"
         for key in REQUIRED_ROW_KEYS:
+            if not timed and key in TIMING_KEYS:
+                continue
             if key not in row or row[key] in (None, ""):
                 failures.append(f"{path.name}:{line_no} missing row field "
                                 f"{key!r} (candidate="
-                                f"{row.get('candidate')!r})")
+                                f"{row.get('candidate')!r}, status="
+                                f"{row.get('status')!r})")
                 break
         key = (row.get("session"), row.get("label"), row.get("trial"),
                row.get("candidate"))

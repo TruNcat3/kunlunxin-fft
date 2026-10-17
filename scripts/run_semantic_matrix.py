@@ -53,6 +53,10 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+# The matrix locks the FFT decomposition direction (issue #8 scope:
+# decomposition stability). Builders reading entry geometry source it
+# from here so table rows and run code can never disagree.
+DIRECTION = "dit"
 PROTOCOL_ID = ("semantic-matrix-v1:plan-reuse:interleave:"
                "correctness-first")
 TIMING_SCOPE = ("api wall time (dispatch+alloc+layout+sync), ms; "
@@ -76,6 +80,10 @@ SCOPES = {
     # this scope are confirmation evidence only -- never fitting input.
     "regret": [(64, 1), (512, 64), (2048, 4), (1024, 256), (2048, 256),
                (16384, 1), (16384, 16)],
+    # issue #8 stress domain: the four N1024B256 cells whose high
+    # regret the issue requires fixing; also the bootstrap chain's
+    # default confirmation scope (WP1 step 2 -> exact-key promotion).
+    "stress": [(1024, 256)],
 }
 
 
@@ -290,7 +298,12 @@ def _row(session, case_label, semantic, contender, tier, trial, **kw):
         "timed_scope": TIMING_SCOPE,
         "processing_unit": kw.get("processing_unit"),
         "flow_id": kw.get("flow_id"),
+        "flow_realization": kw.get("flow_realization"),
         "params": kw.get("params"),
+        # plan geometry the sample was measured under (issue #8: the
+        # builder binds an entry to the measured block, never to a
+        # re-derived default)
+        "block": kw.get("block"),
         "api_ms": kw.get("api_ms"),
         "correct": kw.get("correct"),
         "err": kw.get("err"),
@@ -308,7 +321,7 @@ def run_case(session, n, b, semantic, trials, warmup, seed, table,
     from src.xpu.config import DeviceProfile
 
     case_label = f"N{n}B{b}"
-    direction = "dit"
+    direction = DIRECTION
     prof = DeviceProfile.load().hash()
     norm = _norm_of(semantic)
     transform_type, transform_direction = _semantic_of(semantic)
@@ -374,10 +387,14 @@ def run_case(session, n, b, semantic, trials, warmup, seed, table,
             raw.append(_row(
                 session, case_label, semantic, name, TIER_STEADY, i,
                 api_ms=ms, correct=True, err=errs.get(name),
+                block=plan.block if plan else None,
                 flow_id=plan.flow_id if plan else "vendor",
+                flow_realization=(plan.flow_realization if plan
+                                  else "global-stage"),
                 processing_unit=(plan.processing_unit if plan
                                  else "vendor-torch-fft"),
-                params={"selection_source": plan.selection_source
+                params={**((plan.params or {}) if plan else {}),
+                        "selection_source": plan.selection_source
                         if plan else "vendor",
                         "fallback": plan.fallback if plan else False}))
 
@@ -482,7 +499,7 @@ def run_child(payload):
     return raw_path
 
 
-def _aggregate(out_dir, cases, trials, warmup, sessions):
+def _aggregate(out_dir, cases, trials, warmup, sessions, manifest=None):
     from src.xpu.manifest_contract import (
         REQUIRED_ROW_KEYS, rows_sha256)
 
@@ -537,7 +554,7 @@ def _aggregate(out_dir, cases, trials, warmup, sessions):
             ven = med.get("vendor")
             entry = {
                 "label": label, "N": n, "batch": b,
-                "semantic": semantic,
+                "semantic": semantic, "direction": DIRECTION,
                 "selector_ms": sel, "incumbent_ms": inc,
                 "vendor_ms": ven, "oracle_ms": oracle,
                 "selector_mad_ms": mad.get("selector"),
@@ -609,6 +626,11 @@ def _aggregate(out_dir, cases, trials, warmup, sessions):
                        separators=(",", ":")).encode()).hexdigest(),
         "rows_sha256_check": rows_sha256({"rows": raw_rows}),
     }
+    if manifest is not None:
+        # WP0 integration (issue #8): summary.json embeds the same
+        # manifest as manifest.json so strict validation/stamping of a
+        # directory artifact works on summary.json alone.
+        summary["manifest"] = manifest
     (Path(out_dir) / "summary.json").write_text(
         json.dumps(summary, indent=2) + "\n")
     cols = ["label", "semantic", "N", "batch", "selector_ms",
@@ -796,7 +818,7 @@ def main():
             print(f"session done: raw_session{s}.jsonl", flush=True)
 
     summary = _aggregate(out_dir, cases, args.trials, args.warmup,
-                         args.sessions)
+                         args.sessions, manifest=man)
     m = summary["metrics"]
     print(f"cases={len(summary['cases'])} "
           f"win/tie/loss={m['win']}/{m['tie']}/{m['loss']} "
