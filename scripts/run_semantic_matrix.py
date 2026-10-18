@@ -89,6 +89,11 @@ SCOPES = {
     # regret the issue requires fixing; also the bootstrap chain's
     # default confirmation scope (WP1 step 2 -> exact-key promotion).
     "stress": [(1024, 256)],
+    # issue #8 PR-H: fixed cells for the dedicated real-flow A/B --
+    # packed half-length candidates vs the deployed compat entries on
+    # the OFDM/radar proxies plus the (64,1) probe and the stress cell.
+    "prh": [(64, 1), (1024, 16), (1024, 64), (1024, 256),
+            (2048, 16), (2048, 64)],
 }
 
 
