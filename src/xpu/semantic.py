@@ -50,12 +50,14 @@ CORE_FLOWS = frozenset({
 })
 
 # Semantic-specific cores (PR-H hook): flow ids legal ONLY for the
-# named transform_type. Empty until a dedicated real-transform flow
-# lands; entries naming anything else here would be family-illegal.
+# named transform_type. The dedicated real-transform flows route the
+# semantic through a half-length core plus the timed pack/stitch/
+# pre/unpack epilogues (plan.params["real_flow"]); entries naming
+# anything else here would be family-illegal.
 SPECIALIZED_FLOWS: dict[str, frozenset] = {
     "c2c": frozenset(),
-    "r2c": frozenset(),
-    "c2r": frozenset(),
+    "r2c": frozenset({"dedicated-r2c-pack-v1"}),
+    "c2r": frozenset({"dedicated-c2r-hermitian-v1"}),
 }
 
 

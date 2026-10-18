@@ -241,7 +241,15 @@ def _attribution(executed, params=None):
     attribution from here (the same flow ids/unit names the bench
     builder and the schema-v2 table use), never re-derived downstream.
     """
-    variant = (params or {}).get("variant") or "folded"
+    p = params or {}
+    real_flow = p.get("real_flow")
+    if real_flow:
+        # Dedicated real flow (PR-H): the plan's real_flow IS the
+        # attribution; realization/unit stay the underlying core's.
+        real, unit = _attribution(
+            executed, {k: v for k, v in p.items() if k != "real_flow"})[1:]
+        return real_flow, real, unit
+    variant = p.get("variant") or "folded"
     if executed in ("fft_dit_batch", "fft_dif_batch"):
         return f"batch-{variant}", "global-stage", "radix2-scalar"
     if executed in ("fft_dit_matrix", "fft_dif_matrix",
@@ -258,7 +266,7 @@ def _attribution(executed, params=None):
 
 def _oracle_plans(n, b, direction, semantic, block):
     """Bounded measured candidate set, each as an executable plan."""
-    from src.xpu.entry import ExecutionPlan, REAL_COMPAT_MARK
+    from src.xpu.entry import ExecutionPlan, REAL_COMPAT_MARK, REAL_FLOW_MARK
     transform_type, transform_direction = _semantic_of(semantic)
     common = dict(n=n, batch=b, direction=direction, precision="fp32",
                   selection_source="oracle-candidate",
@@ -272,10 +280,14 @@ def _oracle_plans(n, b, direction, semantic, block):
 
     def add(name, executed, params=None, blk=None):
         flow, real, unit = _attribution(executed, params)
+        # A dedicated real-flow candidate carries the dedicated mark
+        # (PR-H); the compat mark stays for the full-length pipeline.
+        mark = ({"real_compat": REAL_FLOW_MARK}
+                if (params or {}).get("real_flow") else compat)
         plans.append(ExecutionPlan(
             **common, executed=executed, block=blk or block,
             flow_id=flow, flow_realization=real, processing_unit=unit,
-            params={**(params or {}), "oracle_name": name, **compat}))
+            params={**(params or {}), "oracle_name": name, **mark}))
 
     if b == 1:
         add("m0_dit", "fft_dit")
@@ -293,6 +305,23 @@ def _oracle_plans(n, b, direction, semantic, block):
         add("m2_dif_t64", "fft_dif_matrix_batch",
             {"tile": 64, "rows": 8, "variant": "spread"})
         add("m5_r4_dit", "fft_dit_radix4_batch", {"variant": "spread"})
+    if transform_type in ("r2c", "c2r"):
+        # Dedicated half-length pipeline candidates (PR-H): same core
+        # space, timed pack/stitch/pre/unpack epilogues; budget stays
+        # 6 + 2 = 8 <= 24 per semantic/shape.
+        real_flow = ("dedicated-r2c-pack-v1" if transform_type == "r2c"
+                     else "dedicated-c2r-hermitian-v1")
+        if b == 1:
+            add("h_dit_t64", "fft_dit_matrix",
+                {"tile": 64, "rows": 8, "real_flow": real_flow})
+            add("h_dif_t64", "fft_dif_matrix",
+                {"tile": 64, "rows": 8, "real_flow": real_flow})
+        else:
+            add("h_dif_t64", "fft_dif_matrix_batch",
+                {"tile": 64, "rows": 8, "variant": "spread",
+                 "real_flow": real_flow})
+            add("h_spread", "fft_dit_batch",
+                {"variant": "spread", "real_flow": real_flow})
     return plans
 
 

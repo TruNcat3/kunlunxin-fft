@@ -196,7 +196,31 @@ def launch_ledger(plan) -> dict:
     ttype = getattr(plan, "transform_type", "c2c")
     cplx = n * batch * 8
     half = (n // 2 + 1) * batch * 4
-    if ttype == "r2c":
+    real_flow = params.get("real_flow")
+    if real_flow and ttype == "r2c":
+        # Dedicated flow (PR-H): stitch stores fused scale; no crop,
+        # no full-length spectrum materialization.
+        ops += [
+            {"op": "real-input pack (strided torch.complex)",
+             "in_bytes": n * batch * 4, "out_bytes": (n // 2) * batch * 8,
+             "kind": "analytic estimate"},
+            {"op": "half-spectrum stitch (triton, scale fused)",
+             "in_bytes": (n // 2) * batch * 8, "out_bytes": half,
+             "kind": "analytic estimate"},
+        ]
+    elif real_flow and ttype == "c2r":
+        # Dedicated flow (PR-H): pre-twiddle kernel, then one unpack
+        # store folding mirror + conjugate + scale (fused, no separate
+        # normalization pass).
+        ops += [
+            {"op": "half-spectrum pre-twiddle (triton, DC/Nyquist owned)",
+             "in_bytes": half, "out_bytes": (n // 2) * batch * 8,
+             "kind": "analytic estimate"},
+            {"op": "mirror+scale+interleave epilogue (triton, fused)",
+             "in_bytes": (n // 2) * batch * 8, "out_bytes": n * batch * 4,
+             "kind": "analytic estimate"},
+        ]
+    elif ttype == "r2c":
         ops += [
             {"op": "real-input-pack (torch.complex)",
              "in_bytes": n * batch * 8, "out_bytes": cplx,
@@ -224,7 +248,9 @@ def launch_ledger(plan) -> dict:
         ops.append({"op": "inverse conjugate materialize",
                     "in_bytes": cplx, "out_bytes": cplx,
                     "kind": "analytic estimate"})
-    if ops:
+    if ops and not real_flow:
+        # Dedicated real flows fuse the normalization into their final
+        # store (listed per-op above); never a separate pass.
         ops.append({"op": "normalization epilogue (scale)",
                     "in_bytes": cplx, "out_bytes": cplx,
                     "kind": "analytic estimate",

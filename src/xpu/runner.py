@@ -43,6 +43,8 @@ from .kernels import (
     bitrev_batch_kernel,
     bitrev_interleaved_batch_kernel,
     bitrev_kernel,
+    c2r_pre_kernel,
+    c2r_unpack_kernel,
     dif_stage2_batch_kernel,
     dif_stage4_batch_kernel,
     dif_stage4_kernel,
@@ -56,6 +58,7 @@ from .kernels import (
     local_matrix_batch_kernel,
     local_matrix_kernel,
     local_matrix_packet_kernel,
+    r2c_stitch_kernel,
     tail_group_kernel,
 )
 from .matrices import local_matrix_planar, tail_group_planar, tail_groups
@@ -1630,3 +1633,202 @@ def time_call_detailed(fn, warmup: int = 10, trials: int = 50, seed: int = 0):
             "else null"
         ),
     }
+
+
+# ------------------------------------------------------------------
+# Dedicated real-transform epilogues (issue #8 PR-H, flows
+# dedicated-r2c-pack-v1 / dedicated-c2r-hermitian-v1).
+#
+# The half-length core runs through the regular runners (plan.executed);
+# pack / stitch / pre-twiddle / unpack are the timed epilogues. Every
+# wrapper is contract-checked, launches inside xpu_context, and has a
+# torch reference (``*_ref``) that is exact against numpy/torch.fft on
+# the host -- the same reference the device parity test compares to.
+# ------------------------------------------------------------------
+
+
+def _real_twiddle(n: int, device):
+    """cos/sin of exp(-2j*pi*idx/n) for idx in [0, n/2] (inclusive).
+
+    The stitch/pre kernels index up to k = N/2 (stitch output length
+    N/2+1), one entry past the core's ``twiddle_tables`` range.
+    """
+    idx = torch.arange((n >> 1) + 1, device=device, dtype=torch.float32)
+    ang = (-2.0 * math.pi * idx / n).to(torch.float32)
+    return torch.cos(ang), torch.sin(ang)
+
+
+def _validate_real_half(x: torch.Tensor, n: int, bins: int, name: str):
+    """Shared contract of the dedicated real-transform epilogues."""
+    if not isinstance(x, torch.Tensor):
+        raise TypeError(f"{name} must be a torch.Tensor, "
+                        f"got {type(x).__name__}")
+    if x.dtype != torch.complex64:
+        raise TypeError(f"{name} must be complex64, got {x.dtype}")
+    if x.device.type != "cuda":
+        raise ValueError(f"{name} must be on the XPU device, got {x.device}")
+    if x.dim() not in (1, 2):
+        raise ValueError(f"{name} must be rank-1 or rank-2, got dim={x.dim()}")
+    if not x.is_contiguous():
+        raise ValueError(f"{name} must be contiguous")
+    log2_exact(n)
+    if n < 4:
+        raise ValueError(f"dedicated real flow needs N >= 4, got {n}")
+    if x.shape[-1] != bins:
+        raise ValueError(f"{name} last dim {x.shape[-1]} != expected {bins}")
+
+
+def _epilogue_block(block) -> int:
+    if not isinstance(block, int) or block <= 0 or (block & (block - 1)):
+        raise ValueError(f"block must be a positive power of two, got {block!r}")
+    return block
+
+
+def r2c_stitch(z: torch.Tensor, n: int, scale: float = 1.0,
+               block: int = 1024) -> torch.Tensor:
+    """Dedicated r2c epilogue: half-FFT -> full real spectrum.
+
+    ``z`` is the unnormalized ``N/2``-point complex FFT of the packed
+    pairs ``x[2k] + i*x[2k+1]`` (rank-1 ``(N/2,)`` or ``(B, N/2)``).
+    Returns the ``(N/2+1,)``/``(B, N/2+1)`` complex64 spectrum with DC
+    and Nyquist imaginary owned to 0; the normalization ``scale`` fuses
+    into the single store (one launch, no follow-up pass).
+    """
+    n2 = n >> 1
+    _validate_real_half(z, n, n2, "z")
+    scale = float(scale)
+    block = _epilogue_block(block)
+    wr, wi = _real_twiddle(n, z.device)
+    z2 = z if z.dim() == 2 else z.unsqueeze(0)
+    rows, cols = z2.shape[0], n2 + 1
+    zr, zi = _as_so(z2)
+    xr = torch.empty((rows, cols), dtype=torch.float32, device=z.device)
+    # DC/Nyquist imaginary lanes are masked OUT of the kernel store, so
+    # the buffer must own the exact zeros (integer-predicate selects
+    # crash the vendor XPU vectorize pass -- zeros, not selects)
+    xi = torch.zeros((rows, cols), dtype=torch.float32, device=z.device)
+    grid = triton.cdiv(rows * cols, block)
+    with xpu_context(z.device.index or 0):
+        _launch(r2c_stitch_kernel, block, grid,
+                zr, zi, wr, wi, xr, xi, n, n2, rows, scale)
+    out = _from_so(xr, xi)
+    return out if z.dim() == 2 else out.squeeze(0)
+
+
+def c2r_pre(xh: torch.Tensor, n: int, block: int = 1024) -> torch.Tensor:
+    """Dedicated c2r prep: half spectrum -> direct half-length core input.
+
+    ``xh`` is the complex64 half spectrum ``(N/2+1,)``/``(B, N/2+1)``
+    (DC/Nyquist imaginary ignored, as torch.fft does). Returns the
+    ``(N/2,)``/``(B, N/2)`` pre-twiddled input the unnormalized inverse
+    N/2 core consumes directly -- no conjugate materialization (the
+    conj-trick mirror folds into :func:`c2r_unpack`).
+    """
+    n2 = n >> 1
+    _validate_real_half(xh, n, n2 + 1, "xh")
+    block = _epilogue_block(block)
+    wr, wi = _real_twiddle(n, xh.device)
+    x2 = xh if xh.dim() == 2 else xh.unsqueeze(0)
+    rows = x2.shape[0]
+    xr, xi = _as_so(x2)
+    zr = torch.empty((rows, n2), dtype=torch.float32, device=xh.device)
+    zi = torch.empty((rows, n2), dtype=torch.float32, device=xh.device)
+    grid = triton.cdiv(rows * n2, block)
+    with xpu_context(xh.device.index or 0):
+        _launch(c2r_pre_kernel, block, grid,
+                xr, xi, wr, wi, zr, zi, n, n2, rows)
+    out = _from_so(zr, zi)
+    return out if xh.dim() == 2 else out.squeeze(0)
+
+
+def c2r_unpack(u: torch.Tensor, n: int, scale: float = 1.0,
+               block: int = 1024) -> torch.Tensor:
+    """Dedicated c2r epilogue: half-FFT -> interleaved real output.
+
+    ``u`` is the direct unnormalized ``N/2``-point FFT of
+    :func:`c2r_pre`'s output. Folds the conj-trick mirror
+    (``conj(fft(conj(Z)))[k] = fft(Z)[(N/2-k) % N/2]``), the conjugate
+    and ``scale = 2 * norm_scale(N, inverse, norm)`` into one store of
+    interleaved real samples: rank-1 ``(N,)`` float32 for rank-1 input,
+    ``(B, N)`` otherwise.
+    """
+    n2 = n >> 1
+    _validate_real_half(u, n, n2, "u")
+    scale = float(scale)
+    block = _epilogue_block(block)
+    u2 = u if u.dim() == 2 else u.unsqueeze(0)
+    rows = u2.shape[0]
+    ur, ui = _as_so(u2)
+    out = torch.empty((rows, n), dtype=torch.float32, device=u.device)
+    grid = triton.cdiv(rows * n, block)
+    with xpu_context(u.device.index or 0):
+        _launch(c2r_unpack_kernel, block, grid,
+                ur, ui, out, n, n2, rows, scale)
+    return out if u.dim() == 2 else out.squeeze(0)
+
+
+# ------------------------- torch references ------------------------
+# Exact mirrors of the three kernels, written with planar float torch
+# ops only (complex*float and complex flip are unimplemented in this
+# vendor stack, but these also run on CPU for host parity tests).
+
+
+def r2c_stitch_ref(z: torch.Tensor, n: int, scale: float = 1.0):
+    """torch reference of :func:`r2c_stitch` (see the kernel docstring)."""
+    n2 = n >> 1
+    if z.shape[-1] != n2:
+        raise ValueError(f"z last dim {z.shape[-1]} != N/2 ({n2})")
+    k = torch.arange(n2 + 1, device=z.device)
+    j = (n2 - k) % n2
+    idx_k = torch.where(k == n2, torch.zeros_like(k), k)
+    zr, zi = z.real, z.imag
+    zr_k, zi_k = zr[..., idx_k], zi[..., idx_k]
+    zr_j, zi_j = zr[..., j], zi[..., j]
+    ar = 0.5 * (zr_k + zr_j)
+    ai = 0.5 * (zi_k - zi_j)
+    cr = 0.5 * (zr_k - zr_j)
+    ci = 0.5 * (zi_k + zi_j)
+    ang = (-2.0 * math.pi * k / n).to(torch.float32)
+    wr, wi = torch.cos(ang), torch.sin(ang)
+    xr = ar + wr * ci + wi * cr
+    xi = ai - wr * cr + wi * ci
+    xi = torch.where((k == 0) | (k == n2), torch.zeros_like(xi), xi)
+    return torch.complex(xr * scale, xi * scale)
+
+
+def c2r_pre_ref(xh: torch.Tensor, n: int):
+    """torch reference of :func:`c2r_pre` (see the kernel docstring)."""
+    n2 = n >> 1
+    if xh.shape[-1] != n2 + 1:
+        raise ValueError(f"xh last dim {xh.shape[-1]} != N/2+1 ({n2 + 1})")
+    k = torch.arange(n2, device=xh.device)
+    j = n2 - k
+    xr, xi = xh.real, xh.imag
+    xk_r, xk_i = xr[..., k], xi[..., k]
+    xj_r, xj_i = xr[..., j], xi[..., j]
+    xk_i = torch.where(k == 0, torch.zeros_like(xk_i), xk_i)
+    xj_i = torch.where(j == n2, torch.zeros_like(xj_i), xj_i)
+    ar = 0.5 * (xk_r + xj_r)
+    ai = 0.5 * (xk_i - xj_i)
+    cr = 0.5 * (xk_r - xj_r)
+    ci = 0.5 * (xk_i + xj_i)
+    ang = (2.0 * math.pi * k.to(torch.float32) / n).to(torch.float32)
+    wr, wi = torch.cos(ang), torch.sin(ang)
+    zr = ar - (wr * ci + wi * cr)
+    zi = ai + (wr * cr - wi * ci)
+    return torch.complex(zr, zi)
+
+
+def c2r_unpack_ref(u: torch.Tensor, n: int, scale: float = 1.0):
+    """torch reference of :func:`c2r_unpack` (see the kernel docstring)."""
+    n2 = n >> 1
+    if u.shape[-1] != n2:
+        raise ValueError(f"u last dim {u.shape[-1]} != N/2 ({n2})")
+    k = torch.arange(n2, device=u.device)
+    m = torch.where(k == 0, torch.zeros_like(k), n2 - k)
+    ur, ui = u.real[..., m], u.imag[..., m]
+    out = torch.empty((*u.shape[:-1], n), dtype=torch.float32,
+                      device=u.device)
+    out[..., 0::2] = ur * scale
+    out[..., 1::2] = ui * scale
+    return out

@@ -12,6 +12,9 @@ Building blocks:
 * ``bitrev_kernel``     -- out-of-place bit-reversal permutation.
 * ``dit_stage_kernel``  -- one radix-2 decimation-in-time butterfly stage.
 * ``dif_stage_kernel``  -- one radix-2 decimation-in-frequency butterfly stage.
+* ``r2c_stitch_kernel`` -- dedicated r2c half-spectrum stitch (PR-H).
+* ``c2r_pre_kernel``    -- dedicated c2r half-spectrum pre-twiddle (PR-H).
+* ``c2r_unpack_kernel`` -- dedicated c2r mirror/scale real-output store (PR-H).
 
 The first DIT stage reads its input in bit-reversed order (``BITREV_INPUT``),
 so a full FFT is ``log2(N)`` stage launches with no separate permutation pass.
@@ -1119,3 +1122,137 @@ def dif_stage_batch_kernel(
         tl.store(Yi + base + i, si, mask=mask)
         tl.store(Yr + base + i + n, drw, mask=mask)
         tl.store(Yi + base + i + n, diw, mask=mask)
+
+
+@triton.jit
+def r2c_stitch_kernel(
+    Zr, Zi, WR, WI, Xr, Xi,
+    N, Np, B, SCALE,
+    BLOCK: tl.constexpr,
+):
+    """R2C half-spectrum stitch (dedicated r2c epilogue, issue #8 PR-H).
+
+    ``Zr/Zi`` hold the unnormalized N/2-point FFT of the packed pairs
+    ``z[k] = x[2k] + i*x[2k+1]`` (batch-major ``(B, Np)``, ``Np = N/2``).
+    Rebuilds the N-point real spectrum ``X`` of length ``Np+1``:
+
+        a = (Z[k] + conj(Z[j])) / 2,  c = (Z[k] - conj(Z[j])) / 2,
+        j = (Np - k) % Np,  w = exp(-2j*pi*k/N),
+        X[k] = a - i * w * c
+
+    ``WR/WI`` are ``cos``/``sin`` of ``-2j*pi*idx/N`` for idx in [0, Np].
+    DC and Nyquist imaginary lanes are not stored (the caller allocates
+    ``Xi`` zeroed, so those lanes stay exactly 0) and the normalization
+    ``SCALE`` fuses into the single store.
+    """
+    pid = tl.program_id(0)
+    off = pid * BLOCK + tl.arange(0, BLOCK)
+    cols = Np + 1
+    mask = off < (B * cols)
+    b = off // cols
+    k = off - b * cols
+    jc = (Np - k) % Np                 # (Np - k) % Np, k==0 -> 0
+    zk = k % Np                        # Zpad[Np] = Z[0]
+    zr_k = tl.load(Zr + b * Np + zk, mask=mask)
+    zi_k = tl.load(Zi + b * Np + zk, mask=mask)
+    zr_j = tl.load(Zr + b * Np + jc, mask=mask)
+    zi_j = tl.load(Zi + b * Np + jc, mask=mask)
+    ar = 0.5 * (zr_k + zr_j)
+    ai = 0.5 * (zi_k - zi_j)
+    cr = 0.5 * (zr_k - zr_j)
+    ci = 0.5 * (zi_k + zi_j)
+    wr = tl.load(WR + k, mask=mask)
+    wi = tl.load(WI + k, mask=mask)
+    # X = a - i * (wr + i*wi) * c
+    xr = ar + wr * ci + wi * cr
+    xi = ai - wr * cr + wi * ci
+    # DC/Nyquist imaginary lanes are skipped: the caller pre-zeroes Xi
+    # (integer-predicate selects crash the vendor XPU vectorize pass,
+    # so the zero is owned by the buffer + masked store, not a select)
+    nz = k != 0
+    nn = k != Np
+    dc_nyq = nz & nn
+    store_mask = mask & dc_nyq
+    tl.store(Xr + off, xr * SCALE, mask=mask)
+    tl.store(Xi + off, xi * SCALE, mask=store_mask)
+
+
+@triton.jit
+def c2r_pre_kernel(
+    Xr, Xi, WR, WI, Zr, Zi,
+    N, Np, B,
+    BLOCK: tl.constexpr,
+):
+    """C2R half-spectrum pre-twiddle (dedicated c2r prep, issue #8 PR-H).
+
+    ``X`` is the N-point real spectrum (batch-major ``(B, Np+1)``; DC and
+    Nyquist imaginary parts are owned to 0, torch.fft ignores them).
+    Builds the direct input of the unnormalized inverse N/2 FFT:
+
+        a = (X[k] + conj(X[j])) / 2,  c = (X[k] - conj(X[j])) / 2,
+        j = Np - k in [1, Np],  w = exp(+2j*pi*k/N),
+        Z[k] = a + i * w * c,  k in [0, Np)
+
+    ``WR/WI`` hold exp(-2j*pi*idx/N); the kernel reads (WR[k], -WI[k]).
+    The core then runs DIRECTLY on Z (the conj-trick mirror folds into
+    the unpack epilogue: conj(fft(conj(Z)))[k] = fft(Z)[(Np-k) % Np]).
+    """
+    pid = tl.program_id(0)
+    off = pid * BLOCK + tl.arange(0, BLOCK)
+    cols = Np + 1
+    mask = off < (B * Np)
+    b = off // Np
+    k = off - b * Np
+    j = Np - k
+    xk_r = tl.load(Xr + b * cols + k, mask=mask)
+    xk_i = tl.load(Xi + b * cols + k, mask=mask)
+    # torch.fft ignores DC/Nyquist imaginary parts: zero them here.
+    # Predicates are materialized statements (the pattern every existing
+    # kernel compiles with; inline/nested predicates break the vendor
+    # XPU vectorize pass).
+    is_dc = k > 0
+    xk_i = tl.where(is_dc, xk_i, 0.0)
+    xj_r = tl.load(Xr + b * cols + j, mask=mask)
+    xj_i = tl.load(Xi + b * cols + j, mask=mask)
+    not_nyq = j < Np
+    xj_i = tl.where(not_nyq, xj_i, 0.0)
+    ar = 0.5 * (xk_r + xj_r)
+    ai = 0.5 * (xk_i - xj_i)
+    cr = 0.5 * (xk_r - xj_r)
+    ci = 0.5 * (xk_i + xj_i)
+    wr = tl.load(WR + k, mask=mask)
+    wi = -tl.load(WI + k, mask=mask)   # exp(+2j*pi*k/N)
+    # Z = a + i * (wr + i*wi) * c
+    zr = ar - (wr * ci + wi * cr)
+    zi = ai + (wr * cr - wi * ci)
+    tl.store(Zr + off, zr, mask=mask)
+    tl.store(Zi + off, zi, mask=mask)
+
+
+@triton.jit
+def c2r_unpack_kernel(
+    Zr, Zi, OUT,
+    N, Np, B, SCALE,
+    BLOCK: tl.constexpr,
+):
+    """C2R real-output epilogue (dedicated c2r flow, issue #8 PR-H).
+
+    ``Zr/Zi`` is the direct (non-conjugated) unnormalized N/2-point FFT of
+    the pre-twiddled input. The conj-trick identity folds inversion into
+    a mirror: ``conj(fft(conj(Z)))[k] = fft(Z)[(Np-k) % Np]``, so one
+    store emits ``SCALE * [Re u[mirror], Im u[mirror]]`` interleaved as
+    the N real samples (``SCALE = 2 * norm_scale(N, inverse, norm)``;
+    the factor 2 converts the half-length core's N/2 normalization).
+    """
+    pid = tl.program_id(0)
+    off = pid * BLOCK + tl.arange(0, BLOCK)
+    mask = off < (B * N)
+    b = off // (Np << 1)
+    k = (off - (b << 1) * Np) >> 1
+    par = off & 1
+    m = (Np - k) % Np                  # (Np - k) % Np, k==0 -> 0
+    zr = tl.load(Zr + b * Np + m, mask=mask)
+    zi = tl.load(Zi + b * Np + m, mask=mask)
+    odd = par > 0
+    out = tl.where(odd, zi, zr) * SCALE
+    tl.store(OUT + off, out, mask=mask)

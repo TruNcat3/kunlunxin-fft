@@ -74,6 +74,7 @@ REAL_COMPAT_MARK = "packed-c2c-compat"
 SUPPORTED_TRANSFORM_DIRECTIONS = TRANSFORM_DIRECTIONS
 SUPPORTED_NORMS = NORMALIZATIONS
 _SUPPORTED_DTYPES = {"fp32": "complex64"}
+REAL_FLOW_MARK = "dedicated-half-spectrum"
 
 
 def norm_scale(n: int, transform_direction: str, norm: str) -> float:
@@ -385,7 +386,20 @@ def plan_fft(direction: str, n: int, batch: int = 1, precision: str = "fp32",
             plan = _with_compat(plan, compat)
         return plan
     params = dict(sel.params or {})
-    params.update(compat)
+    if params.get("real_flow"):
+        # Dedicated real flow (PR-H): the entry carries the flow id;
+        # validate it fail-closed here and mark the plan accordingly
+        # (M0 fallbacks above keep the plain compat mark -- they drop
+        # real_flow with the rest of the unselected params).
+        from .semantic import family_allows
+
+        if not family_allows(transform_type, params["real_flow"]):
+            raise ValueError(
+                f"real_flow {params['real_flow']!r} not in the "
+                f"{transform_type} family")
+        params["real_compat"] = REAL_FLOW_MARK
+    else:
+        params.update(compat)
     return ExecutionPlan(
         n=n, batch=batch, direction=direction, precision=precision,
         selection_source="table", reason=sel.reason, fallback=False,
@@ -519,6 +533,43 @@ def execute_fft_plan(plan: ExecutionPlan, x):
                 conjugate=plan.transform_direction == "inverse")
     module = __import__("src.xpu.runner", fromlist=[plan.executed])
     fn = getattr(module, plan.executed)
+    # Dedicated real flow (PR-H): pack / half-spectrum stitch / pre-
+    # twiddle / unpack replace the full-length compat pipeline with a
+    # half-length core; every timed op stays inside the execution, the
+    # same measurement contract as real_compat (plan.params["real_flow"]).
+    real_flow = plan.params.get("real_flow")
+    if real_flow is not None:
+        from .semantic import family_allows
+
+        if plan.transform_type not in ("r2c", "c2r"):
+            raise ValueError(
+                "real_flow plans support transform_type r2c/c2r only, "
+                f"got {plan.transform_type!r}")
+        if not family_allows(plan.transform_type, real_flow):
+            raise ValueError(
+                f"real_flow {real_flow!r} not in the "
+                f"{plan.transform_type} family")
+        core_block = min(plan.block or DEFAULT_BLOCK, plan.n >> 1)
+        if plan.transform_type == "r2c":
+            with phase("real-input-pack"):
+                z = torch.complex(x[..., 0::2], x[..., 1::2])
+            with phase("core-invoke"):
+                u = _invoke(fn, z, plan.direction, core_block, plan.params)
+            with phase("half-spectrum-stitch"):
+                return module.r2c_stitch(
+                    u, plan.n,
+                    scale=norm_scale(plan.n, "forward", plan.norm),
+                    block=plan.block or DEFAULT_BLOCK)
+        with phase("half-spectrum-pre"):
+            zpre = module.c2r_pre(x, plan.n,
+                                  block=plan.block or DEFAULT_BLOCK)
+        with phase("core-invoke"):
+            u = _invoke(fn, zpre, plan.direction, core_block, plan.params)
+        with phase("real-output-epilogue"):
+            return module.c2r_unpack(
+                u, plan.n,
+                scale=2.0 * norm_scale(plan.n, "inverse", plan.norm),
+                block=plan.block or DEFAULT_BLOCK)
     # Real compatibility path: all packing / Hermitian reconstruction /
     # half-spectrum cropping happens HERE, inside the timed execution —
     # never hidden outside the measurement (plan.params["real_compat"]).
