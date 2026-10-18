@@ -43,6 +43,26 @@ accept. It does not guess performance. The candidate state machine is:
 from dataclasses import dataclass, asdict
 
 from .config import DesignSpace, DeviceProfile
+from .semantic import SPECIALIZED_FLOWS
+
+# Issue #8 PR-H: the dedicated semantic routing flows (packed half-
+# length core + timed pack/stitch/pre/unpack epilogues). Flow-identity
+# rules below bind the entry's GEOMETRY to its core flow; a
+# specialized flow rides on top of that core and answers in place of
+# it here, while processing-unit, realization and executed-runner
+# gates (selector contract, semantic family) stay strict -- a
+# specialized id never widens which geometry may run, only which
+# routing may wrap it.
+SPECIALIZED_ROUTING = frozenset().union(*SPECIALIZED_FLOWS.values())
+
+_LOCAL_FLOWS = frozenset({"local-fused-tile"})
+_GLOBAL_CORE_FLOWS = frozenset({"baseline-global-stage", "batch-spread",
+                                "batch-folded"})
+_BATCH_SPREAD_FLOWS = frozenset({"batch-spread"})
+
+
+def _flow_is(flow_id, allowed: frozenset) -> bool:
+    return flow_id in allowed or flow_id in SPECIALIZED_ROUTING
 
 PROCESSING_UNITS = ("radix2-scalar", "radix4-scalar", "dense-dot-fft64",
                     "composite-linear-map")
@@ -231,14 +251,13 @@ def check_lowering(cand: Candidate, profile: DeviceProfile) -> Verdict:
         )
     else:
         wants_local_flow = realization != "global-stage"
-        if wants_local_flow and cand.flow_id != "local-fused-tile":
+        if wants_local_flow and not _flow_is(cand.flow_id, _LOCAL_FLOWS):
             reasons.append(
                 f"flow_realization: {realization!r} requires flow 'local-fused-tile', "
                 f"got {cand.flow_id!r}"
             )
-        if not wants_local_flow and cand.flow_id not in (
-            "baseline-global-stage", "batch-spread", "batch-folded",
-        ):
+        if not wants_local_flow and not _flow_is(cand.flow_id,
+                                                 _GLOBAL_CORE_FLOWS):
             reasons.append(
                 f"flow_realization: 'global-stage' requires the baseline or a batch "
                 f"flow, got {cand.flow_id!r}"
@@ -262,14 +281,13 @@ def check_lowering(cand: Candidate, profile: DeviceProfile) -> Verdict:
 
     # 5b. Fused local tile legality: tile>1 pairs with the local-fused-tile
     #     flow (M1/M2/M3), tile=1 with the baseline or a batch flow (M0/M4/M5).
-    if cand.fused_tile > 1 and cand.flow_id != "local-fused-tile":
+    if cand.fused_tile > 1 and not _flow_is(cand.flow_id, _LOCAL_FLOWS):
         reasons.append(
             f"flow_id: fused_tile={cand.fused_tile} requires flow 'local-fused-tile', "
             f"got {cand.flow_id!r}"
         )
-    if cand.fused_tile == 1 and cand.flow_id not in (
-        "baseline-global-stage", "batch-spread", "batch-folded",
-    ):
+    if cand.fused_tile == 1 and not _flow_is(cand.flow_id,
+                                             _GLOBAL_CORE_FLOWS):
         reasons.append(
             f"flow_id: fused_tile=1 requires flow 'baseline-global-stage' or a "
             f"batch flow, got {cand.flow_id!r}"
@@ -312,12 +330,12 @@ def check_lowering(cand: Candidate, profile: DeviceProfile) -> Verdict:
             # M2 batch: the matrix group keeps flow 'local-fused-tile'; the
             # batch is an expansion axis on that flow, not a new flow id.
             if realization == "matrix-resident":
-                if cand.flow_id != "local-fused-tile":
+                if not _flow_is(cand.flow_id, _LOCAL_FLOWS):
                     reasons.append(
                         f"flow_id: matrix-resident batch keeps 'local-fused-tile', "
                         f"got {cand.flow_id!r}"
                     )
-            elif cand.flow_id != "batch-spread":
+            elif not _flow_is(cand.flow_id, _BATCH_SPREAD_FLOWS):
                 reasons.append(
                     f"flow_id: spread variant requires 'batch-spread' for "
                     f"{realization!r}, got {cand.flow_id!r}"

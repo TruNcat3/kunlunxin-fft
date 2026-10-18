@@ -1,0 +1,14 @@
+{
+  "completed": [
+    "probe",
+    "check",
+    "calibrate"
+  ],
+  "failures": {
+    "build": {
+      "at": "2026-10-18T10:39:58Z",
+      "detail": "build_selector_table",
+      "exit": 1
+    }
+  }
+}

@@ -326,3 +326,68 @@ def test_ref_bin_contracts():
     u = torch.zeros(63, dtype=torch.complex64)
     with pytest.raises(ValueError, match="N/2"):
         c2r_unpack_ref(u, 128)
+
+
+# --- design-space / lowering contract on dedicated entries (PR-H) ---
+
+def _dedicated_entry(flow, executed, realization, unit, params, n=1024,
+                     batch=16, ttype="r2c"):
+    return {
+        "N": n, "batch": batch, "direction": "dit",
+        "transform_type": ttype,
+        "transform_direction": "forward" if ttype == "r2c" else "inverse",
+        "normalization": "backward",
+        "block": 1024,
+        "flow_id": flow,
+        "flow_realization": realization,
+        "processing_unit": unit,
+        "executed": executed,
+        "params": {**params, "batch": batch, "real_flow": flow,
+                   "real_compat": REAL_FLOW_MARK,
+                   "oracle_name": "h_test"},
+        "evidence": {"incumbent": "matrix-incumbent", "challenger": "h_test",
+                     "gain_pct": 50.0, "sessions": 3,
+                     "protocol_id": "semantic-matrix-v1", "semantic": "r2c",
+                     "source": "semantic-matrix confirmation",
+                     "executed": executed},
+        "reason": "test entry",
+    }
+
+
+def test_dedicated_entry_passes_design_space_contract():
+    from src.xpu.selector import entry_contract_violations
+    cases = [
+        # B=1 matrix core (h_dit/h_dif t64)
+        _dedicated_entry("dedicated-r2c-pack-v1", "fft_dit_matrix",
+                         "matrix-resident", "dense-dot-fft64",
+                         {"tile": 64, "rows": 8}, n=64, batch=1),
+        # batch matrix core (h_dif t64, spread)
+        _dedicated_entry("dedicated-r2c-pack-v1", "fft_dif_matrix_batch",
+                         "matrix-resident", "dense-dot-fft64",
+                         {"tile": 64, "rows": 8, "variant": "spread"}),
+        # batch radix-2 core (h_spread, spread)
+        _dedicated_entry("dedicated-c2r-hermitian-v1", "fft_dit_batch",
+                         "global-stage", "radix2-scalar",
+                         {"variant": "spread"}, ttype="c2r"),
+    ]
+    for entry in cases:
+        bad = entry_contract_violations(entry)
+        assert bad == [], f"{entry['flow_id']} {entry['params']}: {bad}"
+
+
+def test_contract_rejects_unknown_flow_on_same_geometry():
+    from src.xpu.selector import entry_contract_violations
+    entry = _dedicated_entry("bogus-flow", "fft_dit_matrix",
+                             "matrix-resident", "dense-dot-fft64",
+                             {"tile": 64, "rows": 8}, n=64, batch=1)
+    bad = entry_contract_violations(entry)
+    assert bad, "unknown flow id must still violate the flow-identity rules"
+
+
+def test_specialized_routing_registry_matches_families():
+    from src.xpu.candidates import SPECIALIZED_ROUTING
+    from src.xpu.semantic import SPECIALIZED_FLOWS
+    union = frozenset().union(*SPECIALIZED_FLOWS.values())
+    assert SPECIALIZED_ROUTING == union
+    assert SPECIALIZED_ROUTING == frozenset(
+        {"dedicated-r2c-pack-v1", "dedicated-c2r-hermitian-v1"})

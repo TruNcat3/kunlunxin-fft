@@ -1,0 +1,97 @@
+{
+  "focus": "issue #3 P0 acceptance + P1.1 execution metadata",
+  "protocol_id": "batch-release-v1:focus:plan-reuse:interleave:correctness-first:3sess:p11",
+  "full_space": false,
+  "commit": "b3b48b9b40827a6751c0230f6a7ec1c74a4aa22b",
+  "dirty": false,
+  "device": "kunlunxin-p800",
+  "driver": "515.58",
+  "device_index": "0",
+  "toolchain": "torch 2.9.0+cu129 + torch_xmlir (XPYTORCH XMLIR--bc1b1dc6f-dev+2026032411, XRE 5.13.0.0)",
+  "profile_hash": "a78b86793c7142a0",
+  "config_hash": "a78b86793c7142a0",
+  "env_hash": "6b50bd316032c0fe",
+  "env": {
+    "torch": "2.9.0+cu129",
+    "triton": "3.0.0",
+    "xpytorch": "XMLIR--bc1b1dc6f-dev+2026032411",
+    "xre": "5.13.0.0",
+    "xhpc": "20770323",
+    "driver": "515.58",
+    "device_model": 3,
+    "multiprocessor_count": 12,
+    "max_shared_mem": 262144
+  },
+  "selector_table_sha256": "f172147dc2c3e875e83600ae8b44348d5da7fa4b323b131b41de3ffc8572fccb",
+  "sessions": 3,
+  "warmup": 5,
+  "trials": 30,
+  "seed_base": 1234,
+  "shapes": [
+    "N1024B16:dit",
+    "N1024B16:dif",
+    "N1024B64:dit",
+    "N1024B64:dif",
+    "N2048B16:dit",
+    "N2048B16:dif",
+    "N2048B64:dit",
+    "N2048B64:dif"
+  ],
+  "candidates": [
+    "baseline_m0_rank1_loop",
+    "incumbent_m4_folded",
+    "m4_spread",
+    "m2_batch",
+    "m5_batch",
+    "selected",
+    "vendor",
+    "m2_packet_td1",
+    "m2_packet_td2",
+    "m2_t*_rows* (cost-model bounded search, per-shape, soft-gated)"
+  ],
+  "canary_shape": "N1024B16",
+  "timing_scope": "api wall time (dispatch+alloc+layout+sync), ms",
+  "kernel_time_status": "not collected: this stack exposes reliable sync API wall time; device/kernel time not gathered this round",
+  "error_threshold": 0.0001,
+  "error_definition": "max_rel_error = max(max(|Re(got-ref)|, |Im(got-ref)|)) / max(|ref|); numpy complex128 reference",
+  "gm_bytes_kind": "analytical estimate from launch counts x read+write of (B,N) complex64; no hardware counters -- not a measured bandwidth",
+  "selection_semantics": "frozen table; plan-reuse timings use execute_fft_plan after one plan_fft; 2% promotion gate applies to candidates vs the incumbent control in a separate gate step",
+  "vendor_probe": [
+    {
+      "N": 16,
+      "batch": 1,
+      "status": "ok"
+    },
+    {
+      "N": 1024,
+      "batch": 16,
+      "status": "ok"
+    },
+    {
+      "N": 2048,
+      "batch": 64,
+      "status": "ok"
+    },
+    {
+      "N": 4096,
+      "batch": 16,
+      "status": "unsupported: RuntimeError: [NOT IMPLEMENTED]: error code= 4(at /home/agent/xpytorch/workspace/8ba19c15-fc11-4377-85f3-84daf8eaab09/XMLIR/python/torch_xmlir/csrc/aten_capture/eager_"
+    },
+    {
+      "N": 16384,
+      "batch": 1,
+      "status": "unsupported: RuntimeError: [NOT IMPLEMENTED]: error code= 4(at /home/agent/xpytorch/workspace/8ba19c15-fc11-4377-85f3-84daf8eaab09/XMLIR/python/torch_xmlir/csrc/aten_capture/eager_"
+    },
+    {
+      "N": 65536,
+      "batch": 1,
+      "status": "unsupported: RuntimeError: [NOT IMPLEMENTED]: error code= 4(at /home/agent/xpytorch/workspace/8ba19c15-fc11-4377-85f3-84daf8eaab09/XMLIR/python/torch_xmlir/csrc/aten_capture/eager_"
+    },
+    {
+      "N": 1048576,
+      "batch": 1,
+      "status": "unsupported: RuntimeError: [NOT IMPLEMENTED]: error code= 4(at /home/agent/xpytorch/workspace/8ba19c15-fc11-4377-85f3-84daf8eaab09/XMLIR/python/torch_xmlir/csrc/aten_capture/eager_"
+    }
+  ],
+  "repro_command": "CUDA_VISIBLE_DEVICES=<healthy card> timeout -s KILL 3600 python scripts/run_batch_release.py --sessions 3 --trials 30 --warmup 5 --out results/p800/batch_release"
+}

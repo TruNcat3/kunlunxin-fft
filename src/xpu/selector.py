@@ -101,7 +101,7 @@ def _candidate_from_entry(entry: dict):
     expansion). Optional entry-level ``layout``/``boundary_residence``/
     ``pipeline`` keys are honored so contract tests can probe them.
     """
-    from .candidates import UNIT_RADIX, Candidate
+    from .candidates import SPECIALIZED_ROUTING, UNIT_RADIX, Candidate
 
     params = dict(entry.get("params") or {})
     unit = entry.get("processing_unit")
@@ -110,13 +110,17 @@ def _candidate_from_entry(entry: dict):
     batch = int(params.get("batch") or entry.get("batch") or 1)
     tile = params.get("tile")
     rows = params.get("rows")
+    # Issue #8 PR-H: a specialized routing flow carries the CORE's
+    # tile geometry, so it maps tile -> fused_tile like the local flow
+    # does (contract view only; runners read params directly).
+    local_tile = flow in (SPECIALIZED_ROUTING | {"local-fused-tile"})
     return Candidate(
         flow_id=flow,
         processing_unit=unit,
         radix=int(params.get("radix") or UNIT_RADIX.get(unit, 2)),
         block=int(entry.get("block") or 0),
         fused_tile=int(tile) if (
-            flow == "local-fused-tile" and isinstance(tile, int)) else 1,
+            local_tile and isinstance(tile, int)) else 1,
         batch=batch,
         batch_variant=variant if variant in ("spread", "folded") else "none",
         rows=int(rows) if isinstance(rows, int) else 1,
