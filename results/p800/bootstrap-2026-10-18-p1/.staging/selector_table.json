@@ -1,0 +1,1130 @@
+{
+  "schema_version": 2,
+  "device": "kunlunxin-p800",
+  "profile_hash": "a78b86793c7142a0",
+  "env_hash": "6b50bd316032c0fe",
+  "env": {
+    "torch": "2.9.0+cu129",
+    "triton": "3.0.0",
+    "xpytorch": "XMLIR--bc1b1dc6f-dev+2026032411",
+    "xre": "5.13.0.0",
+    "xhpc": "20770323",
+    "driver": "515.58",
+    "device_model": 3,
+    "multiprocessor_count": 12,
+    "max_shared_mem": 262144
+  },
+  "precision": "fp32",
+  "guard_pct": 2.0,
+  "selection_semantics": "search-stage median improvement (aggregated medians within one run schedule), not paired per-trial medians",
+  "sources": [
+    "results/p800/bootstrap-2026-10-18-p1/.staging/confirm_b1024.json",
+    "results/p800/bootstrap-2026-10-18-p1/.staging/confirm_b256.json",
+    "results/p800/bootstrap-2026-10-18-p1/.staging/confirm_batch.json",
+    "results/p800/bootstrap-2026-10-18-p1/.staging/batch_focus_a/summary.json",
+    "results/p800/bootstrap-2026-10-18-p1/.staging/batch_focus_b/summary.json",
+    "results/p800/bootstrap-2026-10-18-p1/.staging/matrix_stress"
+  ],
+  "rejections": [],
+  "entries": [
+    {
+      "N": 8,
+      "batch": 1,
+      "direction": "dit",
+      "incumbent_ms": 0.18128706142306328,
+      "incumbent_block": 256,
+      "challenger_ms": 0.13759697321802378,
+      "evidence": {
+        "incumbent": "m0_dit@block256",
+        "challenger": "m1_t64@block256",
+        "gain_pct": 24.1
+      },
+      "reason": "challenger m1_t64@block256 beats M0 incumbent m0_dit@block256 by 24.1% (>= 2.0%)",
+      "block": 256,
+      "flow_id": "local-fused-tile",
+      "flow_realization": "fused-inplace",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "tile": 64
+      }
+    },
+    {
+      "N": 8,
+      "batch": 1,
+      "direction": "dif",
+      "incumbent_ms": 0.18661597277969122,
+      "incumbent_block": 256,
+      "challenger_ms": 0.14828704297542572,
+      "evidence": {
+        "incumbent": "m0_dif@block256",
+        "challenger": "m2_dif_t64@block256",
+        "gain_pct": 20.54
+      },
+      "reason": "challenger m2_dif_t64@block256 beats M0 incumbent m0_dif@block256 by 20.5% (>= 2.0%)",
+      "block": 256,
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "tile": 64,
+        "rows": 8
+      }
+    },
+    {
+      "N": 16,
+      "batch": 1,
+      "direction": "dit",
+      "incumbent_ms": 0.20827504340559244,
+      "incumbent_block": 256,
+      "challenger_ms": 0.13911700807511806,
+      "evidence": {
+        "incumbent": "m0_dit@block256",
+        "challenger": "m1_t64@block256",
+        "gain_pct": 33.21
+      },
+      "reason": "challenger m1_t64@block256 beats M0 incumbent m0_dit@block256 by 33.2% (>= 2.0%)",
+      "block": 256,
+      "flow_id": "local-fused-tile",
+      "flow_realization": "fused-inplace",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "tile": 64
+      }
+    },
+    {
+      "N": 16,
+      "batch": 1,
+      "direction": "dif",
+      "incumbent_ms": 0.21112593822181225,
+      "incumbent_block": 256,
+      "challenger_ms": 0.15208707191050053,
+      "evidence": {
+        "incumbent": "m0_dif@block256",
+        "challenger": "m2_dif_t64@block256",
+        "gain_pct": 27.96
+      },
+      "reason": "challenger m2_dif_t64@block256 beats M0 incumbent m0_dif@block256 by 28.0% (>= 2.0%)",
+      "block": 256,
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "tile": 64,
+        "rows": 8
+      }
+    },
+    {
+      "N": 1024,
+      "batch": 1,
+      "direction": "dit",
+      "incumbent_ms": 0.377922086045146,
+      "incumbent_block": 256,
+      "challenger_ms": 0.27606403455138206,
+      "evidence": {
+        "incumbent": "m0_dit@block256",
+        "challenger": "m2_dit_t64@block256",
+        "gain_pct": 26.95
+      },
+      "reason": "challenger m2_dit_t64@block256 beats M0 incumbent m0_dit@block256 by 27.0% (>= 2.0%)",
+      "block": 256,
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "tile": 64,
+        "rows": 8
+      }
+    },
+    {
+      "N": 1024,
+      "batch": 1,
+      "direction": "dif",
+      "incumbent_ms": 0.3802919527515769,
+      "incumbent_block": 256,
+      "challenger_ms": 0.2657140139490366,
+      "evidence": {
+        "incumbent": "m0_dif@block256",
+        "challenger": "m5_r4_dif@block256",
+        "gain_pct": 30.13
+      },
+      "reason": "challenger m5_r4_dif@block256 beats M0 incumbent m0_dif@block256 by 30.1% (>= 2.0%)",
+      "block": 256,
+      "flow_id": "baseline-global-stage",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix4-scalar",
+      "params": {
+        "radix": 4
+      }
+    },
+    {
+      "N": 2048,
+      "batch": 1,
+      "direction": "dit",
+      "incumbent_ms": 0.4629199393093586,
+      "incumbent_block": 256,
+      "challenger_ms": 0.3145530354231596,
+      "evidence": {
+        "incumbent": "m0_dit@block256",
+        "challenger": "m2_dit_t64@block256",
+        "gain_pct": 32.05
+      },
+      "reason": "challenger m2_dit_t64@block256 beats M0 incumbent m0_dit@block256 by 32.1% (>= 2.0%)",
+      "block": 256,
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "tile": 64,
+        "rows": 8
+      }
+    },
+    {
+      "N": 2048,
+      "batch": 1,
+      "direction": "dif",
+      "incumbent_ms": 0.46006101183593273,
+      "incumbent_block": 256,
+      "challenger_ms": 0.3169738920405507,
+      "evidence": {
+        "incumbent": "m0_dif@block256",
+        "challenger": "m2_dif_t64@block256",
+        "gain_pct": 31.1
+      },
+      "reason": "challenger m2_dif_t64@block256 beats M0 incumbent m0_dif@block256 by 31.1% (>= 2.0%)",
+      "block": 256,
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "tile": 64,
+        "rows": 8
+      }
+    },
+    {
+      "N": 4096,
+      "batch": 1,
+      "direction": "dit",
+      "incumbent_ms": 0.5678279558196664,
+      "incumbent_block": 256,
+      "challenger_ms": 0.40474103298038244,
+      "evidence": {
+        "incumbent": "m0_dit@block256",
+        "challenger": "m2_dit_t64@block256",
+        "gain_pct": 28.72
+      },
+      "reason": "challenger m2_dit_t64@block256 beats M0 incumbent m0_dit@block256 by 28.7% (>= 2.0%)",
+      "block": 256,
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "tile": 64,
+        "rows": 8
+      }
+    },
+    {
+      "N": 4096,
+      "batch": 1,
+      "direction": "dif",
+      "incumbent_ms": 0.5467190640047193,
+      "incumbent_block": 256,
+      "challenger_ms": 0.35583297722041607,
+      "evidence": {
+        "incumbent": "m0_dif@block256",
+        "challenger": "m2_dif_t64@block256",
+        "gain_pct": 34.91
+      },
+      "reason": "challenger m2_dif_t64@block256 beats M0 incumbent m0_dif@block256 by 34.9% (>= 2.0%)",
+      "block": 256,
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "tile": 64,
+        "rows": 8
+      }
+    },
+    {
+      "N": 65536,
+      "batch": 1,
+      "direction": "dit",
+      "incumbent_ms": 8.95618402864784,
+      "incumbent_block": 256,
+      "challenger_ms": 4.307089955545962,
+      "evidence": {
+        "incumbent": "m0_dit@block256",
+        "challenger": "m5_r4_dit@block256",
+        "gain_pct": 51.91
+      },
+      "reason": "challenger m5_r4_dit@block256 beats M0 incumbent m0_dit@block256 by 51.9% (>= 2.0%)",
+      "block": 256,
+      "flow_id": "baseline-global-stage",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix4-scalar",
+      "params": {
+        "radix": 4
+      }
+    },
+    {
+      "N": 65536,
+      "batch": 1,
+      "direction": "dif",
+      "incumbent_ms": 8.628359995782375,
+      "incumbent_block": 256,
+      "challenger_ms": 4.0084769716486335,
+      "evidence": {
+        "incumbent": "m0_dif@block256",
+        "challenger": "m5_r4_dif@block256",
+        "gain_pct": 53.54
+      },
+      "reason": "challenger m5_r4_dif@block256 beats M0 incumbent m0_dif@block256 by 53.5% (>= 2.0%)",
+      "block": 256,
+      "flow_id": "baseline-global-stage",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix4-scalar",
+      "params": {
+        "radix": 4
+      }
+    },
+    {
+      "N": 1048576,
+      "batch": 1,
+      "direction": "dit",
+      "incumbent_ms": 165.1513569522649,
+      "incumbent_block": 256,
+      "challenger_ms": 86.99558104854077,
+      "evidence": {
+        "incumbent": "m0_dit@block256",
+        "challenger": "m5_r4_dit@block256",
+        "gain_pct": 47.32
+      },
+      "reason": "challenger m5_r4_dit@block256 beats M0 incumbent m0_dit@block256 by 47.3% (>= 2.0%)",
+      "block": 256,
+      "flow_id": "baseline-global-stage",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix4-scalar",
+      "params": {
+        "radix": 4
+      }
+    },
+    {
+      "N": 1048576,
+      "batch": 1,
+      "direction": "dif",
+      "incumbent_ms": 161.44993400666863,
+      "incumbent_block": 256,
+      "challenger_ms": 82.7485000481829,
+      "evidence": {
+        "incumbent": "m0_dif@block256",
+        "challenger": "m5_r4_dif@block256",
+        "gain_pct": 48.75
+      },
+      "reason": "challenger m5_r4_dif@block256 beats M0 incumbent m0_dif@block256 by 48.7% (>= 2.0%)",
+      "block": 256,
+      "flow_id": "baseline-global-stage",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix4-scalar",
+      "params": {
+        "radix": 4
+      }
+    },
+    {
+      "N": 64,
+      "batch": 4,
+      "direction": "dit",
+      "incumbent_ms": 0.39860198739916086,
+      "incumbent_block": 1024,
+      "challenger_ms": 0.39743201341480017,
+      "evidence": {
+        "variant_ms": {
+          "spread": 0.39860198739916086,
+          "folded": 0.39743201341480017
+        }
+      },
+      "reason": "folded kept (spread gain -0.3% < 2.0%)",
+      "block": 1024,
+      "flow_id": "batch-folded",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "variant": "folded",
+        "batch": 4
+      }
+    },
+    {
+      "N": 64,
+      "batch": 4,
+      "direction": "dif",
+      "incumbent_ms": 0.40140096098184586,
+      "incumbent_block": 1024,
+      "challenger_ms": 0.401232042349875,
+      "evidence": {
+        "variant_ms": {
+          "spread": 0.40140096098184586,
+          "folded": 0.401232042349875
+        }
+      },
+      "reason": "folded kept (spread gain -0.0% < 2.0%)",
+      "block": 1024,
+      "flow_id": "batch-folded",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "variant": "folded",
+        "batch": 4
+      }
+    },
+    {
+      "N": 64,
+      "batch": 16,
+      "direction": "dit",
+      "incumbent_ms": 0.7209050236269832,
+      "incumbent_block": 1024,
+      "challenger_ms": 0.41146203875541687,
+      "evidence": {
+        "variant_ms": {
+          "spread": 0.7209050236269832,
+          "folded": 0.41146203875541687
+        }
+      },
+      "reason": "folded kept (spread gain -75.2% < 2.0%)",
+      "block": 1024,
+      "flow_id": "batch-folded",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "variant": "folded",
+        "batch": 16
+      }
+    },
+    {
+      "N": 64,
+      "batch": 16,
+      "direction": "dif",
+      "incumbent_ms": 0.7217350648716092,
+      "incumbent_block": 1024,
+      "challenger_ms": 0.41000195778906345,
+      "evidence": {
+        "variant_ms": {
+          "spread": 0.7217350648716092,
+          "folded": 0.41000195778906345
+        }
+      },
+      "reason": "folded kept (spread gain -76.0% < 2.0%)",
+      "block": 1024,
+      "flow_id": "batch-folded",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "variant": "folded",
+        "batch": 16
+      }
+    },
+    {
+      "N": 64,
+      "batch": 64,
+      "direction": "dit",
+      "incumbent_ms": 2.064386964775622,
+      "incumbent_block": 1024,
+      "challenger_ms": 0.5567279877141118,
+      "evidence": {
+        "variant_ms": {
+          "spread": 2.064386964775622,
+          "folded": 0.5567279877141118
+        }
+      },
+      "reason": "folded kept (spread gain -270.8% < 2.0%)",
+      "block": 1024,
+      "flow_id": "batch-folded",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "variant": "folded",
+        "batch": 64
+      }
+    },
+    {
+      "N": 64,
+      "batch": 64,
+      "direction": "dif",
+      "incumbent_ms": 2.0544780418276787,
+      "incumbent_block": 1024,
+      "challenger_ms": 0.5431890022009611,
+      "evidence": {
+        "variant_ms": {
+          "spread": 2.0544780418276787,
+          "folded": 0.5431890022009611
+        }
+      },
+      "reason": "folded kept (spread gain -278.2% < 2.0%)",
+      "block": 1024,
+      "flow_id": "batch-folded",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "variant": "folded",
+        "batch": 64
+      }
+    },
+    {
+      "N": 4096,
+      "batch": 4,
+      "direction": "dit",
+      "incumbent_ms": 2.0695769926533103,
+      "incumbent_block": 1024,
+      "challenger_ms": 2.054366981610656,
+      "evidence": {
+        "variant_ms": {
+          "spread": 2.0695769926533103,
+          "folded": 2.054366981610656
+        }
+      },
+      "reason": "folded kept (spread gain -0.7% < 2.0%)",
+      "block": 1024,
+      "flow_id": "batch-folded",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "variant": "folded",
+        "batch": 4
+      }
+    },
+    {
+      "N": 4096,
+      "batch": 4,
+      "direction": "dif",
+      "incumbent_ms": 1.9960280042141676,
+      "incumbent_block": 1024,
+      "challenger_ms": 1.9659489626064897,
+      "evidence": {
+        "variant_ms": {
+          "spread": 1.9960280042141676,
+          "folded": 1.9659489626064897
+        }
+      },
+      "reason": "folded kept (spread gain -1.5% < 2.0%)",
+      "block": 1024,
+      "flow_id": "batch-folded",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "variant": "folded",
+        "batch": 4
+      }
+    },
+    {
+      "N": 4096,
+      "batch": 16,
+      "direction": "dit",
+      "incumbent_ms": 7.742958958260715,
+      "incumbent_block": 1024,
+      "challenger_ms": 7.266759057529271,
+      "evidence": {
+        "variant_ms": {
+          "spread": 7.742958958260715,
+          "folded": 7.266759057529271
+        }
+      },
+      "reason": "folded kept (spread gain -6.6% < 2.0%)",
+      "block": 1024,
+      "flow_id": "batch-folded",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "variant": "folded",
+        "batch": 16
+      }
+    },
+    {
+      "N": 4096,
+      "batch": 16,
+      "direction": "dif",
+      "incumbent_ms": 7.400585920549929,
+      "incumbent_block": 1024,
+      "challenger_ms": 6.914035999216139,
+      "evidence": {
+        "variant_ms": {
+          "spread": 7.400585920549929,
+          "folded": 6.914035999216139
+        }
+      },
+      "reason": "folded kept (spread gain -7.0% < 2.0%)",
+      "block": 1024,
+      "flow_id": "batch-folded",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "variant": "folded",
+        "batch": 16
+      }
+    },
+    {
+      "N": 4096,
+      "batch": 64,
+      "direction": "dit",
+      "incumbent_ms": 31.831937958486378,
+      "incumbent_block": 1024,
+      "challenger_ms": 28.03415700327605,
+      "evidence": {
+        "variant_ms": {
+          "spread": 31.831937958486378,
+          "folded": 28.03415700327605
+        }
+      },
+      "reason": "folded kept (spread gain -13.5% < 2.0%)",
+      "block": 1024,
+      "flow_id": "batch-folded",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "variant": "folded",
+        "batch": 64
+      }
+    },
+    {
+      "N": 4096,
+      "batch": 64,
+      "direction": "dif",
+      "incumbent_ms": 30.37719801068306,
+      "incumbent_block": 1024,
+      "challenger_ms": 26.705365045927465,
+      "evidence": {
+        "variant_ms": {
+          "spread": 30.37719801068306,
+          "folded": 26.705365045927465
+        }
+      },
+      "reason": "folded kept (spread gain -13.7% < 2.0%)",
+      "block": 1024,
+      "flow_id": "batch-folded",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "variant": "folded",
+        "batch": 64
+      }
+    },
+    {
+      "N": 65536,
+      "batch": 4,
+      "direction": "dit",
+      "incumbent_ms": 35.09081690572202,
+      "incumbent_block": 1024,
+      "challenger_ms": 35.76750308275223,
+      "evidence": {
+        "variant_ms": {
+          "spread": 35.09081690572202,
+          "folded": 35.76750308275223
+        }
+      },
+      "reason": "folded kept (spread gain 1.9% < 2.0%)",
+      "block": 1024,
+      "flow_id": "batch-folded",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "variant": "folded",
+        "batch": 4
+      }
+    },
+    {
+      "N": 65536,
+      "batch": 4,
+      "direction": "dif",
+      "incumbent_ms": 33.78202498424798,
+      "incumbent_block": 1024,
+      "challenger_ms": 34.45958998054266,
+      "evidence": {
+        "variant_ms": {
+          "spread": 33.78202498424798,
+          "folded": 34.45958998054266
+        }
+      },
+      "reason": "folded kept (spread gain 2.0% < 2.0%)",
+      "block": 1024,
+      "flow_id": "batch-folded",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "variant": "folded",
+        "batch": 4
+      }
+    },
+    {
+      "N": 65536,
+      "batch": 16,
+      "direction": "dit",
+      "incumbent_ms": 140.88195702061057,
+      "incumbent_block": 1024,
+      "challenger_ms": 136.75950304605067,
+      "evidence": {
+        "variant_ms": {
+          "spread": 136.75950304605067,
+          "folded": 140.88195702061057
+        }
+      },
+      "reason": "spread beats folded by 2.9% (>= 2.0%)",
+      "block": 1024,
+      "flow_id": "batch-spread",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "variant": "spread",
+        "batch": 16
+      }
+    },
+    {
+      "N": 65536,
+      "batch": 16,
+      "direction": "dif",
+      "incumbent_ms": 136.30859297700226,
+      "incumbent_block": 1024,
+      "challenger_ms": 132.5366609962657,
+      "evidence": {
+        "variant_ms": {
+          "spread": 132.5366609962657,
+          "folded": 136.30859297700226
+        }
+      },
+      "reason": "spread beats folded by 2.8% (>= 2.0%)",
+      "block": 1024,
+      "flow_id": "batch-spread",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "variant": "spread",
+        "batch": 16
+      }
+    },
+    {
+      "N": 65536,
+      "batch": 64,
+      "direction": "dit",
+      "incumbent_ms": 557.8562149312347,
+      "incumbent_block": 1024,
+      "challenger_ms": 557.4934219475836,
+      "evidence": {
+        "variant_ms": {
+          "spread": 557.8562149312347,
+          "folded": 557.4934219475836
+        }
+      },
+      "reason": "folded kept (spread gain -0.1% < 2.0%)",
+      "block": 1024,
+      "flow_id": "batch-folded",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "variant": "folded",
+        "batch": 64
+      }
+    },
+    {
+      "N": 65536,
+      "batch": 64,
+      "direction": "dif",
+      "incumbent_ms": 536.948891938664,
+      "incumbent_block": 1024,
+      "challenger_ms": 536.2928960239515,
+      "evidence": {
+        "variant_ms": {
+          "spread": 536.948891938664,
+          "folded": 536.2928960239515
+        }
+      },
+      "reason": "folded kept (spread gain -0.1% < 2.0%)",
+      "block": 1024,
+      "flow_id": "batch-folded",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "variant": "folded",
+        "batch": 64
+      }
+    },
+    {
+      "N": 1024,
+      "batch": 16,
+      "direction": "dif",
+      "incumbent_ms": 1.6850600368343294,
+      "incumbent_block": 256,
+      "challenger_ms": 0.7148100121412426,
+      "block": 256,
+      "evidence": {
+        "incumbent": "incumbent_m4_folded",
+        "sessions": 3,
+        "protocol_id": "batch-release-v1:focus:plan-reuse:interleave:correctness-first:3sess:p11",
+        "focus_paths": [
+          "results/p800/bootstrap-2026-10-18-p1/.staging/batch_focus_a/summary.json",
+          "results/p800/bootstrap-2026-10-18-p1/.staging/batch_focus_b/summary.json"
+        ],
+        "challenger": "m2_t128_rows16",
+        "gain_pct": 57.58,
+        "challenger_ms": 0.7148100121412426
+      },
+      "reason": "focus challenger m2_t128_rows16 beats stable incumbent incumbent_m4_folded by 57.6% (>= 2.0%) across 3 sessions",
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "variant": "spread",
+        "tile": 128,
+        "rows": 16,
+        "batch": 16
+      }
+    },
+    {
+      "N": 1024,
+      "batch": 16,
+      "direction": "dit",
+      "incumbent_ms": 1.7487335135228932,
+      "incumbent_block": 256,
+      "challenger_ms": 0.6962452607695013,
+      "block": 256,
+      "evidence": {
+        "incumbent": "m4_spread",
+        "sessions": 3,
+        "protocol_id": "batch-release-v1:focus:plan-reuse:interleave:correctness-first:3sess:p11",
+        "focus_paths": [
+          "results/p800/bootstrap-2026-10-18-p1/.staging/batch_focus_a/summary.json",
+          "results/p800/bootstrap-2026-10-18-p1/.staging/batch_focus_b/summary.json"
+        ],
+        "challenger": "m2_t128_rows4",
+        "gain_pct": 60.19,
+        "challenger_ms": 0.6962452607695013
+      },
+      "reason": "focus challenger m2_t128_rows4 beats stable incumbent m4_spread by 60.2% (>= 2.0%) across 3 sessions",
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "variant": "spread",
+        "tile": 128,
+        "rows": 4,
+        "batch": 16
+      }
+    },
+    {
+      "N": 1024,
+      "batch": 64,
+      "direction": "dif",
+      "incumbent_ms": 5.914204259170219,
+      "incumbent_block": 256,
+      "challenger_ms": 2.3024145048111677,
+      "block": 256,
+      "evidence": {
+        "incumbent": "incumbent_m4_folded",
+        "sessions": 3,
+        "protocol_id": "batch-release-v1:focus:plan-reuse:interleave:correctness-first:3sess:p11",
+        "focus_paths": [
+          "results/p800/bootstrap-2026-10-18-p1/.staging/batch_focus_a/summary.json",
+          "results/p800/bootstrap-2026-10-18-p1/.staging/batch_focus_b/summary.json"
+        ],
+        "challenger": "m2_t128_rows16",
+        "gain_pct": 61.07,
+        "challenger_ms": 2.3024145048111677
+      },
+      "reason": "focus challenger m2_t128_rows16 beats stable incumbent incumbent_m4_folded by 61.1% (>= 2.0%) across 3 sessions",
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "variant": "spread",
+        "tile": 128,
+        "rows": 16,
+        "batch": 64
+      }
+    },
+    {
+      "N": 1024,
+      "batch": 64,
+      "direction": "dit",
+      "incumbent_ms": 6.087932997616008,
+      "incumbent_block": 256,
+      "challenger_ms": 2.243483002530411,
+      "block": 256,
+      "evidence": {
+        "incumbent": "incumbent_m4_folded",
+        "sessions": 3,
+        "protocol_id": "batch-release-v1:focus:plan-reuse:interleave:correctness-first:3sess:p11",
+        "focus_paths": [
+          "results/p800/bootstrap-2026-10-18-p1/.staging/batch_focus_a/summary.json",
+          "results/p800/bootstrap-2026-10-18-p1/.staging/batch_focus_b/summary.json"
+        ],
+        "challenger": "m2_t128_rows8",
+        "gain_pct": 63.15,
+        "challenger_ms": 2.243483002530411
+      },
+      "reason": "focus challenger m2_t128_rows8 beats stable incumbent incumbent_m4_folded by 63.1% (>= 2.0%) across 3 sessions",
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "variant": "spread",
+        "tile": 128,
+        "rows": 8,
+        "batch": 64
+      }
+    },
+    {
+      "N": 2048,
+      "batch": 16,
+      "direction": "dif",
+      "incumbent_ms": 3.3839469542726874,
+      "incumbent_block": 256,
+      "challenger_ms": 1.5714747714810073,
+      "block": 256,
+      "evidence": {
+        "incumbent": "incumbent_m4_folded",
+        "sessions": 3,
+        "protocol_id": "batch-release-v1:focus:plan-reuse:interleave:correctness-first:3sess:p11",
+        "focus_paths": [
+          "results/p800/bootstrap-2026-10-18-p1/.staging/batch_focus_a/summary.json",
+          "results/p800/bootstrap-2026-10-18-p1/.staging/batch_focus_b/summary.json"
+        ],
+        "challenger": "m2_t128_rows16",
+        "gain_pct": 53.56,
+        "challenger_ms": 1.5714747714810073
+      },
+      "reason": "focus challenger m2_t128_rows16 beats stable incumbent incumbent_m4_folded by 53.6% (>= 2.0%) across 3 sessions",
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "variant": "spread",
+        "tile": 128,
+        "rows": 16,
+        "batch": 16
+      }
+    },
+    {
+      "N": 2048,
+      "batch": 16,
+      "direction": "dit",
+      "incumbent_ms": 3.480557235889137,
+      "incumbent_block": 256,
+      "challenger_ms": 1.5498727443628013,
+      "block": 256,
+      "evidence": {
+        "incumbent": "incumbent_m4_folded",
+        "sessions": 3,
+        "protocol_id": "batch-release-v1:focus:plan-reuse:interleave:correctness-first:3sess:p11",
+        "focus_paths": [
+          "results/p800/bootstrap-2026-10-18-p1/.staging/batch_focus_a/summary.json",
+          "results/p800/bootstrap-2026-10-18-p1/.staging/batch_focus_b/summary.json"
+        ],
+        "challenger": "m2_t128_rows4",
+        "gain_pct": 55.47,
+        "challenger_ms": 1.5498727443628013
+      },
+      "reason": "focus challenger m2_t128_rows4 beats stable incumbent incumbent_m4_folded by 55.5% (>= 2.0%) across 3 sessions",
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "variant": "spread",
+        "tile": 128,
+        "rows": 4,
+        "batch": 16
+      }
+    },
+    {
+      "N": 2048,
+      "batch": 64,
+      "direction": "dif",
+      "incumbent_ms": 12.032731261570007,
+      "incumbent_block": 256,
+      "challenger_ms": 5.074716260423884,
+      "block": 256,
+      "evidence": {
+        "incumbent": "incumbent_m4_folded",
+        "sessions": 3,
+        "protocol_id": "batch-release-v1:focus:plan-reuse:interleave:correctness-first:3sess:p11",
+        "focus_paths": [
+          "results/p800/bootstrap-2026-10-18-p1/.staging/batch_focus_a/summary.json",
+          "results/p800/bootstrap-2026-10-18-p1/.staging/batch_focus_b/summary.json"
+        ],
+        "challenger": "m2_t128_rows16",
+        "gain_pct": 57.83,
+        "challenger_ms": 5.074716260423884
+      },
+      "reason": "focus challenger m2_t128_rows16 beats stable incumbent incumbent_m4_folded by 57.8% (>= 2.0%) across 3 sessions",
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "variant": "spread",
+        "tile": 128,
+        "rows": 16,
+        "batch": 64
+      }
+    },
+    {
+      "N": 2048,
+      "batch": 64,
+      "direction": "dit",
+      "incumbent_ms": 12.445567699614912,
+      "incumbent_block": 256,
+      "challenger_ms": 4.965156258549541,
+      "block": 256,
+      "evidence": {
+        "incumbent": "incumbent_m4_folded",
+        "sessions": 3,
+        "protocol_id": "batch-release-v1:focus:plan-reuse:interleave:correctness-first:3sess:p11",
+        "focus_paths": [
+          "results/p800/bootstrap-2026-10-18-p1/.staging/batch_focus_a/summary.json",
+          "results/p800/bootstrap-2026-10-18-p1/.staging/batch_focus_b/summary.json"
+        ],
+        "challenger": "m2_t128_rows16",
+        "gain_pct": 60.11,
+        "challenger_ms": 4.965156258549541
+      },
+      "reason": "focus challenger m2_t128_rows16 beats stable incumbent incumbent_m4_folded by 60.1% (>= 2.0%) across 3 sessions",
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "variant": "spread",
+        "tile": 128,
+        "rows": 16,
+        "batch": 64
+      }
+    },
+    {
+      "N": 1024,
+      "batch": 256,
+      "direction": "dit",
+      "transform_type": "c2c",
+      "transform_direction": "forward",
+      "normalization": "backward",
+      "incumbent_ms": 23.303683032281697,
+      "incumbent_block": 1024,
+      "challenger_ms": 10.54299995303154,
+      "block": 1024,
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "rows": 8,
+        "tile": 64,
+        "variant": "spread",
+        "batch": 256
+      },
+      "executed": "fft_dif_matrix_batch",
+      "evidence": {
+        "incumbent": "matrix-incumbent",
+        "challenger": "oracle:m2_dif_t64",
+        "gain_pct": 54.758,
+        "challenger_ms": 10.54299995303154,
+        "sessions": 3,
+        "protocol_id": "semantic-matrix-v1:plan-reuse:interleave:correctness-first",
+        "semantic": "c2c-forward",
+        "source": "semantic-matrix confirmation",
+        "executed": "fft_dif_matrix_batch"
+      },
+      "reason": "independent matrix confirmation (c2c-forward): oracle:m2_dif_t64 beats incumbent by 54.8% (>= 2.0%) over 3 sessions; exact semantic key ('c2c', 'forward', 'backward')"
+    },
+    {
+      "N": 1024,
+      "batch": 256,
+      "direction": "dit",
+      "transform_type": "c2c",
+      "transform_direction": "inverse",
+      "normalization": "backward",
+      "incumbent_ms": 23.398441029712558,
+      "incumbent_block": 1024,
+      "challenger_ms": 10.644498048350215,
+      "block": 1024,
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "rows": 8,
+        "tile": 64,
+        "variant": "spread",
+        "batch": 256
+      },
+      "executed": "fft_dif_matrix_batch",
+      "evidence": {
+        "incumbent": "matrix-incumbent",
+        "challenger": "oracle:m2_dif_t64",
+        "gain_pct": 54.508,
+        "challenger_ms": 10.644498048350215,
+        "sessions": 3,
+        "protocol_id": "semantic-matrix-v1:plan-reuse:interleave:correctness-first",
+        "semantic": "c2c-inverse",
+        "source": "semantic-matrix confirmation",
+        "executed": "fft_dif_matrix_batch"
+      },
+      "reason": "independent matrix confirmation (c2c-inverse): oracle:m2_dif_t64 beats incumbent by 54.5% (>= 2.0%) over 3 sessions; exact semantic key ('c2c', 'inverse', 'backward')"
+    },
+    {
+      "N": 1024,
+      "batch": 256,
+      "direction": "dit",
+      "transform_type": "r2c",
+      "transform_direction": "forward",
+      "normalization": "backward",
+      "incumbent_ms": 23.84321193676442,
+      "incumbent_block": 1024,
+      "challenger_ms": 11.278033955022693,
+      "block": 1024,
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "rows": 8,
+        "tile": 64,
+        "variant": "spread",
+        "batch": 256
+      },
+      "executed": "fft_dif_matrix_batch",
+      "evidence": {
+        "incumbent": "matrix-incumbent",
+        "challenger": "oracle:m2_dif_t64",
+        "gain_pct": 52.699,
+        "challenger_ms": 11.278033955022693,
+        "sessions": 3,
+        "protocol_id": "semantic-matrix-v1:plan-reuse:interleave:correctness-first",
+        "semantic": "r2c",
+        "source": "semantic-matrix confirmation",
+        "executed": "fft_dif_matrix_batch"
+      },
+      "reason": "independent matrix confirmation (r2c): oracle:m2_dif_t64 beats incumbent by 52.7% (>= 2.0%) over 3 sessions; exact semantic key ('r2c', 'forward', 'backward')"
+    },
+    {
+      "N": 1024,
+      "batch": 256,
+      "direction": "dit",
+      "transform_type": "c2r",
+      "transform_direction": "inverse",
+      "normalization": "backward",
+      "incumbent_ms": 23.295232909731567,
+      "incumbent_block": 1024,
+      "challenger_ms": 11.524818954057992,
+      "block": 1024,
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "rows": 8,
+        "tile": 64,
+        "variant": "spread",
+        "batch": 256
+      },
+      "executed": "fft_dif_matrix_batch",
+      "evidence": {
+        "incumbent": "matrix-incumbent",
+        "challenger": "oracle:m2_dif_t64",
+        "gain_pct": 50.527,
+        "challenger_ms": 11.524818954057992,
+        "sessions": 3,
+        "protocol_id": "semantic-matrix-v1:plan-reuse:interleave:correctness-first",
+        "semantic": "c2r",
+        "source": "semantic-matrix confirmation",
+        "executed": "fft_dif_matrix_batch"
+      },
+      "reason": "independent matrix confirmation (c2r): oracle:m2_dif_t64 beats incumbent by 50.5% (>= 2.0%) over 3 sessions; exact semantic key ('c2r', 'inverse', 'backward')"
+    }
+  ]
+}

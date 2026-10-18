@@ -1,0 +1,11 @@
+{
+  "device_model": 3,
+  "driver": "515.58",
+  "max_shared_mem": 262144,
+  "multiprocessor_count": 12,
+  "torch": "2.9.0+cu129",
+  "triton": "3.0.0",
+  "xhpc": "20770323",
+  "xpytorch": "XMLIR--bc1b1dc6f-dev+2026032411",
+  "xre": "5.13.0.0"
+}
