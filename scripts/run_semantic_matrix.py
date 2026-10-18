@@ -94,6 +94,16 @@ SCOPES = {
     # the OFDM/radar proxies plus the (64,1) probe and the stress cell.
     "prh": [(64, 1), (1024, 16), (1024, 64), (1024, 256),
             (2048, 16), (2048, 64)],
+    # issue #8 PR-I round 1 fixed axis: the PR-H cells (their entries
+    # re-clear the guard on every re-measurement) plus the batch/large
+    # gap cells the WP2 ledger attributed to the M4 folded core
+    # (core-invoke >= 99.7% of wall; the registered M2 matrix batch
+    # candidates measured 1.9-2.4x faster there).
+    "pri": [(64, 1), (1024, 16), (1024, 64), (1024, 256),
+            (2048, 16), (2048, 64),
+            (64, 64), (128, 64), (256, 64), (2048, 256),
+            (4096, 16), (4096, 64), (16384, 16),
+            (65536, 16), (65536, 64)],
 }
 
 
