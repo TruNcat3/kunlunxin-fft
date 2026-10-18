@@ -272,8 +272,17 @@ def _attribution(executed, params=None):
         return "local-fused-tile", "matrix-resident", "dense-dot-fft64"
     if executed == "fft_dit_fused":
         return "local-fused-tile", "fused-inplace", "radix2-scalar"
-    if executed in ("fft_dit_radix4", "fft_dit_radix4_batch"):
+    if executed == "fft_dit_radix4":
         return "baseline-global-stage", "global-stage", "radix4-scalar"
+    if executed in ("fft_dit_radix4_batch", "fft_dif_radix4_batch"):
+        # Batched radix-4 cascade: same batch-flow family as M4 (the
+        # lowering contract's spread branch says batch-spread for the
+        # global stage; folded lowers radix-2 only). A radix4_batch
+        # plan without an explicit spread variant cannot be attributed
+        # -- fail closed instead of guessing.
+        if variant != "spread":
+            return None, None, None
+        return "batch-spread", "global-stage", "radix4-scalar"
     if executed in ("fft_dit", "fft_dif"):
         return "baseline-global-stage", "global-stage", "radix2-scalar"
     return None, None, None

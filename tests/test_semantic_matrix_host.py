@@ -242,8 +242,13 @@ def test_oracle_plan_attribution_is_single_sourced():
     assert sm._attribution("fft_dit_matrix_batch",
                            {"tile": 64, "rows": 8}) == (
         "local-fused-tile", "matrix-resident", "dense-dot-fft64")
-    assert sm._attribution("fft_dit_radix4_batch") == (
-        "baseline-global-stage", "global-stage", "radix4-scalar")
+    # batched radix-4 joins the batch flow family (issue #8 PR-I:
+    # spread is the only lowerable radix4 batch variant; bare plans
+    # fail closed rather than guessing an attribution).
+    assert sm._attribution("fft_dit_radix4_batch",
+                           {"variant": "spread"}) == (
+        "batch-spread", "global-stage", "radix4-scalar")
+    assert sm._attribution("fft_dit_radix4_batch") == (None, None, None)
     assert sm._attribution("fft_dit_fused", {"tile": 64}) == (
         "local-fused-tile", "fused-inplace", "radix2-scalar")
     # unknown executor never guesses attribution (fail closed upstream)
