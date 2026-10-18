@@ -28,6 +28,7 @@ from src.xpu import DeviceProfile  # noqa: E402
 from src.xpu import load_table  # noqa: E402
 from src.xpu.entry import (  # noqa: E402
     REAL_COMPAT_MARK,
+    REAL_FLOW_MARK,
     SUPPORTED_NORMS,
     execute_fft_plan,
     plan_fft,
@@ -84,7 +85,8 @@ def test_r2c_matches_numpy_rfft(decomposition, n, b, norm):
     plan = _plan("r2c", decomposition, n, b, norm)
     assert plan.transform_type == "r2c"
     assert plan.transform_direction == "forward"
-    assert plan.params.get("real_compat") == REAL_COMPAT_MARK
+    assert plan.params.get("real_compat") in (
+        REAL_COMPAT_MARK, REAL_FLOW_MARK)  # either real path
     y = execute_fft_plan(plan, x)
     assert y.dtype == torch.complex64
     assert tuple(y.shape) == ((b, n // 2 + 1) if b > 1
@@ -109,7 +111,8 @@ def test_c2r_matches_numpy_irfft(decomposition, n, b, norm):
     plan = _plan("c2r", decomposition, n, b, norm)
     assert plan.transform_type == "c2r"
     assert plan.transform_direction == "inverse"
-    assert plan.params.get("real_compat") == REAL_COMPAT_MARK
+    assert plan.params.get("real_compat") in (
+        REAL_COMPAT_MARK, REAL_FLOW_MARK)  # either real path
     y = execute_fft_plan(plan, half_t)
     assert y.dtype == torch.float32
     assert tuple(y.shape) == ((b, n) if b > 1 else (n,))

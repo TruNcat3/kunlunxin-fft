@@ -1,18 +1,18 @@
 {
   "baseline_costs": {
-    "cuda_synchronize_ms": 0.009069975931197405,
-    "d2d_64mib_ms": 0.0736129586584866,
-    "d2d_gib_per_s": 849.0352940432258,
-    "d2h_64mib_ms": 39.155712991487235,
-    "d2h_gib_per_s": 1.5961910849021699,
-    "h2d_64mib_ms": 6.216785404831171,
-    "h2d_gib_per_s": 10.053427282760987,
+    "cuda_synchronize_ms": 0.009170034900307655,
+    "d2d_64mib_ms": 0.07263303268700838,
+    "d2d_gib_per_s": 860.4900234487822,
+    "d2h_64mib_ms": 38.259981432929635,
+    "d2h_gib_per_s": 1.6335606463783447,
+    "h2d_64mib_ms": 6.738484022207558,
+    "h2d_gib_per_s": 9.27508320773976,
     "timing_protocol": "warmup then N trials, wall time with explicit torch.cuda.synchronize(), median",
-    "torch_mm_1024_fp32_ms": 0.04524399992078543,
-    "torch_mm_gflops": 47464.49588365042,
-    "triton_launch_ms": 0.027484027668833733,
-    "triton_launch_ms_g1024": 12.208704953081906,
-    "vendor_fft_b64n2048_ms": 0.6093524862080812
+    "torch_mm_1024_fp32_ms": 0.04324910696595907,
+    "torch_mm_gflops": 49653.826371265015,
+    "triton_launch_ms": 0.026064575649797916,
+    "triton_launch_ms_g1024": 12.2071000514552,
+    "vendor_fft_b64n2048_ms": 0.6084425840526819
   },
   "env": {
     "device_model": 3,
@@ -27,7 +27,7 @@
   },
   "env_hash": "6b50bd316032c0fe",
   "kind": "p800-calibration",
-  "profile_hash": "952b728776e5b84d",
+  "profile_hash": "e8576974fffeba84",
   "resource_constraints": {
     "observed": {
       "device_count": 1,
@@ -120,7 +120,7 @@
     "device_profile_hash": "a78b86793c7142a0",
     "driver": "515.58",
     "git_dirty": false,
-    "git_rev": "1dc7775aaebd65e2b81f8972d89ebace91826f75",
+    "git_rev": "39bd915c054b59eff296938b041f38f823bef830",
     "python": "3.10.18",
     "torch": "2.9.0+cu129",
     "triton": "3.0.0"

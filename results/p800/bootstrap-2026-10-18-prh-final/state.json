@@ -1,0 +1,23 @@
+{
+  "completed": [
+    "probe",
+    "check",
+    "calibrate",
+    "build",
+    "verify"
+  ],
+  "verified": {
+    "at": "2026-10-18T11:24:55Z",
+    "hashes": {
+      "batch_focus_a/summary.json": "b52db8eefe62f90c30b59f53c204839f6b9c44ac3c13eacfba1d3587701c93aa",
+      "batch_focus_b/summary.json": "51c9ac6fdedc3e96a581e29b3a227395c435e033103145105ecc6c033312d90a",
+      "batch_holdout/summary.json": "6487d5ae24b75296d0b5896ab955f59cd742a38bc5c96585b58ad07a9ac2bfb4",
+      "calibration.json": "edc50359a6847d79a709cd69d985658625b80f1a71e84b9e4dff7b824faa7dc3",
+      "confirm_b1024.json": "ba92af7a9ad3017d5fbf22de26432018cf2351c1a8d474d407c1cf20018c8310",
+      "confirm_b256.json": "3fa04cb54b37c24cb826d6c19e951fa45b3e776e3ce0fb94c6f1a5e41453dba1",
+      "confirm_batch.json": "046740fb0ab4269a4d0627562f1b1efcd90cd0ca35dc0997ea1967b3ef57c11f",
+      "matrix_prh/summary.json": "e43c98797159ef615da8fd7ad56d8e38415406ecf4a5dfe55b8828f22ab11a7b",
+      "selector_table.json": "602782a3ad785fa0f0040c5bb5e3b984b32156d4d47f7cb1f8345241131611b9"
+    }
+  }
+}
