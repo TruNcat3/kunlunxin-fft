@@ -488,3 +488,118 @@ def test_stamp_result_hashes_covers_matrix_runs(tmp_path):
     stamped = json.loads((mdir / "summary.json").read_text())["manifest"]
     assert stamped.get("source_hash")
     assert stamped.get("result_sha256") == result_sha256(mdir)
+
+
+# ------------- exact-key smoke vs the semantic/legacy tiers (PR-H) -----
+
+def _smoke_table():
+    legacy = {
+        "N": 1024, "batch": 16, "direction": "dit", "block": 256,
+        "flow_id": "local-fused-tile",
+        "flow_realization": "matrix-resident",
+        "processing_unit": "dense-dot-fft64",
+        "params": {"tile": 128, "rows": 16, "variant": "spread",
+                   "batch": 16},
+        "reason": "legacy",
+    }
+    semantic = {
+        "N": 1024, "batch": 16, "direction": "dit", "block": 256,
+        "transform_type": "c2c", "transform_direction": "forward",
+        "normalization": "backward",
+        "flow_id": "local-fused-tile",
+        "flow_realization": "matrix-resident",
+        "processing_unit": "dense-dot-fft64",
+        "params": {"tile": 64, "rows": 8, "variant": "spread",
+                   "batch": 16},
+        "reason": "semantic",
+    }
+    return {"profile_hash": "p" * 16, "precision": "fp32",
+            "env_hash": "e" * 16, "entries": [legacy, semantic]}
+
+
+def _run_smoke(table, select_impl, tmp_path, monkeypatch):
+    """verify_bundle's exact-key smoke over a fabricated staged table."""
+    import bootstrap_profile as bp
+    from src.xpu.selector import Selection
+
+    staging = tmp_path / "staging"
+    (staging / "batch_dummy").mkdir(parents=True)
+    (staging / "selector_table.json").write_text(json.dumps(table))
+    monkeypatch.setattr(bp, "validate_benchmark_output",
+                        lambda *a, **k: [])
+    monkeypatch.setattr(
+        "src.xpu.selector.load_table", lambda path: json.loads(
+            (staging / "selector_table.json").read_text()))
+    monkeypatch.setattr(
+        "src.xpu.selector.assert_current_environment",
+        lambda tbl: tbl.get("env_hash"))
+
+    def fake_select(*, direction, n, batch, precision, profile_hash,
+                    table, env_hash, transform_type="c2c",
+                    transform_direction="forward", normalization="backward"):
+        hit = select_impl(n, batch, transform_type, transform_direction,
+                          normalization)
+        if hit is None:
+            return Selection(n=n, direction=direction, batch=batch,
+                             precision=precision, source="abstain",
+                             reason="none")
+        entry, tier = hit
+        return Selection(n=n, direction=direction, batch=batch,
+                         precision=precision, source="table", reason="ok",
+                         entry_tier=tier,
+                         params=dict(entry.get("params") or {}),
+                         block=entry.get("block"))
+
+    monkeypatch.setattr("src.xpu.selector.select", fake_select)
+    return [f for f in bp.verify_bundle(staging, "e" * 16)
+            if "exact-key select" in f]
+
+
+def test_exact_key_smoke_accepts_semantic_shadowing_legacy(tmp_path,
+                                                           monkeypatch):
+    # Legacy entry's default key resolves to the semantic-tier entry
+    # (tier order by design); the legacy re-probe (c2c/ortho) answers
+    # the legacy entry itself -> no smoke failure.
+    table = _smoke_table()
+    entries = table["entries"]
+    legacy, semantic = entries[0], entries[1]
+
+    def select_impl(n, b, ttype, tdir, norm):
+        if (ttype, tdir, norm) == ("c2c", "forward", "ortho"):
+            return (legacy, "legacy")
+        return (semantic, "semantic")   # default key -> semantic tier
+
+    failures = _run_smoke(table, select_impl, tmp_path, monkeypatch)
+    assert failures == []
+
+
+def test_exact_key_smoke_fails_when_legacy_is_actually_shadowed(
+        tmp_path, monkeypatch):
+    # Same shadow, but the legacy re-probe resolves a different entry:
+    # that is a real shadowing bug and must fail closed.
+    table = _smoke_table()
+    entries = table["entries"]
+    legacy, semantic = entries[0], entries[1]
+
+    def select_impl(n, b, ttype, tdir, norm):
+        if (ttype, tdir, norm) == ("c2c", "forward", "ortho"):
+            return (semantic, "semantic")
+        return (semantic, "semantic")
+
+    failures = _run_smoke(table, select_impl, tmp_path, monkeypatch)
+    assert any("resolved a different entry" in f for f in failures)
+
+
+def test_exact_key_smoke_fails_legacy_tier_mismatch(tmp_path, monkeypatch):
+    # No semantic shadow: a legacy-tier mismatch is a plain failure.
+    table = _smoke_table()
+    entries = table["entries"]
+    legacy, semantic = entries[0], entries[1]
+
+    def select_impl(n, b, ttype, tdir, norm):
+        if "transform_type" in legacy:
+            return (legacy, "legacy")
+        return (semantic, "legacy")   # wrong legacy hit for the default
+
+    failures = _run_smoke(table, select_impl, tmp_path, monkeypatch)
+    assert any("resolved a different entry" in f for f in failures)

@@ -301,19 +301,21 @@ def verify_bundle(out: Path, env_hash: str | None,
     if live is not None and env_hash is not None and live != env_hash:
         failures.append(f"verify: env mismatch live={live} != {env_hash}")
     # Exact-key smoke: every table entry must select itself.
+    def _qsel(entry, ttype, tdir, norm):
+        return select(direction=entry["direction"], n=entry["N"],
+                      batch=entry["batch"],
+                      precision=table["precision"],
+                      profile_hash=table["profile_hash"],
+                      table=table, env_hash=env_hash,
+                      transform_type=ttype,
+                      transform_direction=tdir,
+                      normalization=norm)
+
     for entry in table.get("entries", [])[:]:
         try:
-            sel = select(direction=entry["direction"], n=entry["N"],
-                         batch=entry["batch"],
-                         precision=table["precision"],
-                         profile_hash=table["profile_hash"],
-                         table=table, env_hash=env_hash,
-                         transform_type=entry.get("transform_type",
-                                                  "c2c"),
-                         transform_direction=entry.get(
-                             "transform_direction", "forward"),
-                         normalization=entry.get("normalization",
-                                                "backward"))
+            sel = _qsel(entry, entry.get("transform_type", "c2c"),
+                        entry.get("transform_direction", "forward"),
+                        entry.get("normalization", "backward"))
         except Exception as e:  # noqa: BLE001
             failures.append(f"verify: select({entry['N']},"
                             f"{entry['batch']}) raised {e}")
@@ -327,6 +329,28 @@ def verify_bundle(out: Path, env_hash: str | None,
         # not merely to some table hit on the shape.
         if (dict(sel.params or {}) != dict(entry.get("params") or {})
                 or sel.block != entry.get("block")):
+            # Tier order (issue #8 PR-G/PR-H): a semantic-tier entry
+            # outranks a legacy entry that shares the legacy default
+            # key (c2c/backward) at the same shape -- by design the
+            # semantic wins and the legacy path answers the keys no
+            # semantic entry claims. Re-probe the legacy entry under
+            # such a key (c2c-forward/ortho); it must still select
+            # itself with its own geometry, else the shadowing is
+            # real and the smoke still fails closed.
+            if ("transform_type" not in entry
+                    and getattr(sel, "entry_tier", "") == "semantic"):
+                try:
+                    alt = _qsel(entry, "c2c", "forward", "ortho")
+                except Exception as e:  # noqa: BLE001
+                    failures.append(
+                        f"verify: exact-key select re-probe for "
+                        f"N{entry['N']}B{entry['batch']} raised {e}")
+                    continue
+                if (alt.source == "table"
+                        and dict(alt.params or {})
+                        == dict(entry.get("params") or {})
+                        and alt.block == entry.get("block")):
+                    continue
             failures.append(
                 f"verify: exact-key select for "
                 f"N{entry['N']}B{entry['batch']} resolved a different "

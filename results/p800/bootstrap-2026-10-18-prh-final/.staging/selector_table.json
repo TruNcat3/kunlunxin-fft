@@ -1,0 +1,1817 @@
+{
+  "schema_version": 2,
+  "device": "kunlunxin-p800",
+  "profile_hash": "a78b86793c7142a0",
+  "env_hash": "6b50bd316032c0fe",
+  "env": {
+    "torch": "2.9.0+cu129",
+    "triton": "3.0.0",
+    "xpytorch": "XMLIR--bc1b1dc6f-dev+2026032411",
+    "xre": "5.13.0.0",
+    "xhpc": "20770323",
+    "driver": "515.58",
+    "device_model": 3,
+    "multiprocessor_count": 12,
+    "max_shared_mem": 262144
+  },
+  "precision": "fp32",
+  "guard_pct": 2.0,
+  "selection_semantics": "search-stage median improvement (aggregated medians within one run schedule), not paired per-trial medians",
+  "sources": [
+    "results/p800/bootstrap-2026-10-18-prh-final/.staging/confirm_b1024.json",
+    "results/p800/bootstrap-2026-10-18-prh-final/.staging/confirm_b256.json",
+    "results/p800/bootstrap-2026-10-18-prh-final/.staging/confirm_batch.json",
+    "results/p800/bootstrap-2026-10-18-prh-final/.staging/batch_focus_a/summary.json",
+    "results/p800/bootstrap-2026-10-18-prh-final/.staging/batch_focus_b/summary.json",
+    "results/p800/bootstrap-2026-10-18-prh-final/.staging/matrix_prh"
+  ],
+  "rejections": [],
+  "entries": [
+    {
+      "N": 8,
+      "batch": 1,
+      "direction": "dit",
+      "incumbent_ms": 0.18053711391985416,
+      "incumbent_block": 256,
+      "challenger_ms": 0.1361370086669922,
+      "evidence": {
+        "incumbent": "m0_dit@block256",
+        "challenger": "m1_t64@block256",
+        "gain_pct": 24.59
+      },
+      "reason": "challenger m1_t64@block256 beats M0 incumbent m0_dit@block256 by 24.6% (>= 2.0%)",
+      "block": 256,
+      "flow_id": "local-fused-tile",
+      "flow_realization": "fused-inplace",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "tile": 64
+      }
+    },
+    {
+      "N": 8,
+      "batch": 1,
+      "direction": "dif",
+      "incumbent_ms": 0.1808160450309515,
+      "incumbent_block": 256,
+      "challenger_ms": 0.147257000207901,
+      "evidence": {
+        "incumbent": "m0_dif@block256",
+        "challenger": "m2_dif_t64@block256",
+        "gain_pct": 18.56
+      },
+      "reason": "challenger m2_dif_t64@block256 beats M0 incumbent m0_dif@block256 by 18.6% (>= 2.0%)",
+      "block": 256,
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "tile": 64,
+        "rows": 8
+      }
+    },
+    {
+      "N": 16,
+      "batch": 1,
+      "direction": "dit",
+      "incumbent_ms": 0.20599504932761192,
+      "incumbent_block": 256,
+      "challenger_ms": 0.13702688738703728,
+      "evidence": {
+        "incumbent": "m0_dit@block256",
+        "challenger": "m1_t64@block256",
+        "gain_pct": 33.48
+      },
+      "reason": "challenger m1_t64@block256 beats M0 incumbent m0_dit@block256 by 33.5% (>= 2.0%)",
+      "block": 256,
+      "flow_id": "local-fused-tile",
+      "flow_realization": "fused-inplace",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "tile": 64
+      }
+    },
+    {
+      "N": 16,
+      "batch": 1,
+      "direction": "dif",
+      "incumbent_ms": 0.2045158762484789,
+      "incumbent_block": 256,
+      "challenger_ms": 0.1491159200668335,
+      "evidence": {
+        "incumbent": "m0_dif@block256",
+        "challenger": "m2_dif_t64@block256",
+        "gain_pct": 27.09
+      },
+      "reason": "challenger m2_dif_t64@block256 beats M0 incumbent m0_dif@block256 by 27.1% (>= 2.0%)",
+      "block": 256,
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "tile": 64,
+        "rows": 8
+      }
+    },
+    {
+      "N": 1024,
+      "batch": 1,
+      "direction": "dit",
+      "incumbent_ms": 0.374652910977602,
+      "incumbent_block": 256,
+      "challenger_ms": 0.2735049929469824,
+      "evidence": {
+        "incumbent": "m0_dit@block256",
+        "challenger": "m2_dit_t64@block256",
+        "gain_pct": 27.0
+      },
+      "reason": "challenger m2_dit_t64@block256 beats M0 incumbent m0_dit@block256 by 27.0% (>= 2.0%)",
+      "block": 256,
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "tile": 64,
+        "rows": 8
+      }
+    },
+    {
+      "N": 1024,
+      "batch": 1,
+      "direction": "dif",
+      "incumbent_ms": 0.3740931861102581,
+      "incumbent_block": 256,
+      "challenger_ms": 0.2669449895620346,
+      "evidence": {
+        "incumbent": "m0_dif@block256",
+        "challenger": "m5_r4_dif@block256",
+        "gain_pct": 28.64
+      },
+      "reason": "challenger m5_r4_dif@block256 beats M0 incumbent m0_dif@block256 by 28.6% (>= 2.0%)",
+      "block": 256,
+      "flow_id": "baseline-global-stage",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix4-scalar",
+      "params": {
+        "radix": 4
+      }
+    },
+    {
+      "N": 2048,
+      "batch": 1,
+      "direction": "dit",
+      "incumbent_ms": 0.46113994903862476,
+      "incumbent_block": 256,
+      "challenger_ms": 0.3070139791816473,
+      "evidence": {
+        "incumbent": "m0_dit@block256",
+        "challenger": "m2_dit_t64@block256",
+        "gain_pct": 33.42
+      },
+      "reason": "challenger m2_dit_t64@block256 beats M0 incumbent m0_dit@block256 by 33.4% (>= 2.0%)",
+      "block": 256,
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "tile": 64,
+        "rows": 8
+      }
+    },
+    {
+      "N": 2048,
+      "batch": 1,
+      "direction": "dif",
+      "incumbent_ms": 0.4597911611199379,
+      "incumbent_block": 256,
+      "challenger_ms": 0.3082340117543936,
+      "evidence": {
+        "incumbent": "m0_dif@block256",
+        "challenger": "m2_dif_t64@block256",
+        "gain_pct": 32.96
+      },
+      "reason": "challenger m2_dif_t64@block256 beats M0 incumbent m0_dif@block256 by 33.0% (>= 2.0%)",
+      "block": 256,
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "tile": 64,
+        "rows": 8
+      }
+    },
+    {
+      "N": 4096,
+      "batch": 1,
+      "direction": "dit",
+      "incumbent_ms": 0.5648981314152479,
+      "incumbent_block": 256,
+      "challenger_ms": 0.4006819799542427,
+      "evidence": {
+        "incumbent": "m0_dit@block256",
+        "challenger": "m2_dit_t64@block256",
+        "gain_pct": 29.07
+      },
+      "reason": "challenger m2_dit_t64@block256 beats M0 incumbent m0_dit@block256 by 29.1% (>= 2.0%)",
+      "block": 256,
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "tile": 64,
+        "rows": 8
+      }
+    },
+    {
+      "N": 4096,
+      "batch": 1,
+      "direction": "dif",
+      "incumbent_ms": 0.5431689787656069,
+      "incumbent_block": 256,
+      "challenger_ms": 0.3536720760166645,
+      "evidence": {
+        "incumbent": "m0_dif@block256",
+        "challenger": "m2_dif_t64@block256",
+        "gain_pct": 34.89
+      },
+      "reason": "challenger m2_dif_t64@block256 beats M0 incumbent m0_dif@block256 by 34.9% (>= 2.0%)",
+      "block": 256,
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "tile": 64,
+        "rows": 8
+      }
+    },
+    {
+      "N": 65536,
+      "batch": 1,
+      "direction": "dit",
+      "incumbent_ms": 8.995674084872007,
+      "incumbent_block": 256,
+      "challenger_ms": 4.319360945373774,
+      "evidence": {
+        "incumbent": "m0_dit@block256",
+        "challenger": "m5_r4_dit@block256",
+        "gain_pct": 51.98
+      },
+      "reason": "challenger m5_r4_dit@block256 beats M0 incumbent m0_dit@block256 by 52.0% (>= 2.0%)",
+      "block": 256,
+      "flow_id": "baseline-global-stage",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix4-scalar",
+      "params": {
+        "radix": 4
+      }
+    },
+    {
+      "N": 65536,
+      "batch": 1,
+      "direction": "dif",
+      "incumbent_ms": 8.618101011961699,
+      "incumbent_block": 256,
+      "challenger_ms": 4.026205977424979,
+      "evidence": {
+        "incumbent": "m0_dif@block256",
+        "challenger": "m5_r4_dif@block256",
+        "gain_pct": 53.28
+      },
+      "reason": "challenger m5_r4_dif@block256 beats M0 incumbent m0_dif@block256 by 53.3% (>= 2.0%)",
+      "block": 256,
+      "flow_id": "baseline-global-stage",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix4-scalar",
+      "params": {
+        "radix": 4
+      }
+    },
+    {
+      "N": 1048576,
+      "batch": 1,
+      "direction": "dit",
+      "incumbent_ms": 165.1039740536362,
+      "incumbent_block": 256,
+      "challenger_ms": 86.92153100855649,
+      "evidence": {
+        "incumbent": "m0_dit@block256",
+        "challenger": "m5_r4_dit@block256",
+        "gain_pct": 47.35
+      },
+      "reason": "challenger m5_r4_dit@block256 beats M0 incumbent m0_dit@block256 by 47.4% (>= 2.0%)",
+      "block": 256,
+      "flow_id": "baseline-global-stage",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix4-scalar",
+      "params": {
+        "radix": 4
+      }
+    },
+    {
+      "N": 1048576,
+      "batch": 1,
+      "direction": "dif",
+      "incumbent_ms": 161.30804014392197,
+      "incumbent_block": 256,
+      "challenger_ms": 82.7355869114399,
+      "evidence": {
+        "incumbent": "m0_dif@block256",
+        "challenger": "m5_r4_dif@block256",
+        "gain_pct": 48.71
+      },
+      "reason": "challenger m5_r4_dif@block256 beats M0 incumbent m0_dif@block256 by 48.7% (>= 2.0%)",
+      "block": 256,
+      "flow_id": "baseline-global-stage",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix4-scalar",
+      "params": {
+        "radix": 4
+      }
+    },
+    {
+      "N": 64,
+      "batch": 4,
+      "direction": "dit",
+      "incumbent_ms": 0.3995918668806553,
+      "incumbent_block": 1024,
+      "challenger_ms": 0.39521208964288235,
+      "evidence": {
+        "variant_ms": {
+          "spread": 0.3995918668806553,
+          "folded": 0.39521208964288235
+        }
+      },
+      "reason": "folded kept (spread gain -1.1% < 2.0%)",
+      "block": 1024,
+      "flow_id": "batch-folded",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "variant": "folded",
+        "batch": 4
+      }
+    },
+    {
+      "N": 64,
+      "batch": 4,
+      "direction": "dif",
+      "incumbent_ms": 0.40079187601804733,
+      "incumbent_block": 1024,
+      "challenger_ms": 0.4001019988209009,
+      "evidence": {
+        "variant_ms": {
+          "spread": 0.40079187601804733,
+          "folded": 0.4001019988209009
+        }
+      },
+      "reason": "folded kept (spread gain -0.2% < 2.0%)",
+      "block": 1024,
+      "flow_id": "batch-folded",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "variant": "folded",
+        "batch": 4
+      }
+    },
+    {
+      "N": 64,
+      "batch": 16,
+      "direction": "dit",
+      "incumbent_ms": 0.718546099960804,
+      "incumbent_block": 1024,
+      "challenger_ms": 0.4091921728104353,
+      "evidence": {
+        "variant_ms": {
+          "spread": 0.718546099960804,
+          "folded": 0.4091921728104353
+        }
+      },
+      "reason": "folded kept (spread gain -75.6% < 2.0%)",
+      "block": 1024,
+      "flow_id": "batch-folded",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "variant": "folded",
+        "batch": 16
+      }
+    },
+    {
+      "N": 64,
+      "batch": 16,
+      "direction": "dif",
+      "incumbent_ms": 0.717866001650691,
+      "incumbent_block": 1024,
+      "challenger_ms": 0.4089518915861845,
+      "evidence": {
+        "variant_ms": {
+          "spread": 0.717866001650691,
+          "folded": 0.4089518915861845
+        }
+      },
+      "reason": "folded kept (spread gain -75.5% < 2.0%)",
+      "block": 1024,
+      "flow_id": "batch-folded",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "variant": "folded",
+        "batch": 16
+      }
+    },
+    {
+      "N": 64,
+      "batch": 64,
+      "direction": "dit",
+      "incumbent_ms": 2.074848860502243,
+      "incumbent_block": 1024,
+      "challenger_ms": 0.5582489538937807,
+      "evidence": {
+        "variant_ms": {
+          "spread": 2.074848860502243,
+          "folded": 0.5582489538937807
+        }
+      },
+      "reason": "folded kept (spread gain -271.7% < 2.0%)",
+      "block": 1024,
+      "flow_id": "batch-folded",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "variant": "folded",
+        "batch": 64
+      }
+    },
+    {
+      "N": 64,
+      "batch": 64,
+      "direction": "dif",
+      "incumbent_ms": 2.0526889711618423,
+      "incumbent_block": 1024,
+      "challenger_ms": 0.5422388203442097,
+      "evidence": {
+        "variant_ms": {
+          "spread": 2.0526889711618423,
+          "folded": 0.5422388203442097
+        }
+      },
+      "reason": "folded kept (spread gain -278.6% < 2.0%)",
+      "block": 1024,
+      "flow_id": "batch-folded",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "variant": "folded",
+        "batch": 64
+      }
+    },
+    {
+      "N": 4096,
+      "batch": 4,
+      "direction": "dit",
+      "incumbent_ms": 2.058230107650161,
+      "incumbent_block": 1024,
+      "challenger_ms": 2.0543201826512814,
+      "evidence": {
+        "variant_ms": {
+          "spread": 2.058230107650161,
+          "folded": 2.0543201826512814
+        }
+      },
+      "reason": "folded kept (spread gain -0.2% < 2.0%)",
+      "block": 1024,
+      "flow_id": "batch-folded",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "variant": "folded",
+        "batch": 4
+      }
+    },
+    {
+      "N": 4096,
+      "batch": 4,
+      "direction": "dif",
+      "incumbent_ms": 2.0098600070923567,
+      "incumbent_block": 1024,
+      "challenger_ms": 1.9716110546141863,
+      "evidence": {
+        "variant_ms": {
+          "spread": 2.0098600070923567,
+          "folded": 1.9716110546141863
+        }
+      },
+      "reason": "folded kept (spread gain -1.9% < 2.0%)",
+      "block": 1024,
+      "flow_id": "batch-folded",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "variant": "folded",
+        "batch": 4
+      }
+    },
+    {
+      "N": 4096,
+      "batch": 16,
+      "direction": "dit",
+      "incumbent_ms": 7.752747042104602,
+      "incumbent_block": 1024,
+      "challenger_ms": 7.2437068447470665,
+      "evidence": {
+        "variant_ms": {
+          "spread": 7.752747042104602,
+          "folded": 7.2437068447470665
+        }
+      },
+      "reason": "folded kept (spread gain -7.0% < 2.0%)",
+      "block": 1024,
+      "flow_id": "batch-folded",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "variant": "folded",
+        "batch": 16
+      }
+    },
+    {
+      "N": 4096,
+      "batch": 16,
+      "direction": "dif",
+      "incumbent_ms": 7.411455037072301,
+      "incumbent_block": 1024,
+      "challenger_ms": 6.91484403796494,
+      "evidence": {
+        "variant_ms": {
+          "spread": 7.411455037072301,
+          "folded": 6.91484403796494
+        }
+      },
+      "reason": "folded kept (spread gain -7.2% < 2.0%)",
+      "block": 1024,
+      "flow_id": "batch-folded",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "variant": "folded",
+        "batch": 16
+      }
+    },
+    {
+      "N": 4096,
+      "batch": 64,
+      "direction": "dit",
+      "incumbent_ms": 31.81996406055987,
+      "incumbent_block": 1024,
+      "challenger_ms": 28.061988996341825,
+      "evidence": {
+        "variant_ms": {
+          "spread": 31.81996406055987,
+          "folded": 28.061988996341825
+        }
+      },
+      "reason": "folded kept (spread gain -13.4% < 2.0%)",
+      "block": 1024,
+      "flow_id": "batch-folded",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "variant": "folded",
+        "batch": 64
+      }
+    },
+    {
+      "N": 4096,
+      "batch": 64,
+      "direction": "dif",
+      "incumbent_ms": 30.419391114264727,
+      "incumbent_block": 1024,
+      "challenger_ms": 26.749324053525925,
+      "evidence": {
+        "variant_ms": {
+          "spread": 30.419391114264727,
+          "folded": 26.749324053525925
+        }
+      },
+      "reason": "folded kept (spread gain -13.7% < 2.0%)",
+      "block": 1024,
+      "flow_id": "batch-folded",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "variant": "folded",
+        "batch": 64
+      }
+    },
+    {
+      "N": 65536,
+      "batch": 4,
+      "direction": "dit",
+      "incumbent_ms": 35.123278852552176,
+      "incumbent_block": 1024,
+      "challenger_ms": 35.796888871118426,
+      "evidence": {
+        "variant_ms": {
+          "spread": 35.123278852552176,
+          "folded": 35.796888871118426
+        }
+      },
+      "reason": "folded kept (spread gain 1.9% < 2.0%)",
+      "block": 1024,
+      "flow_id": "batch-folded",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "variant": "folded",
+        "batch": 4
+      }
+    },
+    {
+      "N": 65536,
+      "batch": 4,
+      "direction": "dif",
+      "incumbent_ms": 34.452071879059076,
+      "incumbent_block": 1024,
+      "challenger_ms": 33.71038706973195,
+      "evidence": {
+        "variant_ms": {
+          "spread": 33.71038706973195,
+          "folded": 34.452071879059076
+        }
+      },
+      "reason": "spread beats folded by 2.2% (>= 2.0%)",
+      "block": 1024,
+      "flow_id": "batch-spread",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "variant": "spread",
+        "batch": 4
+      }
+    },
+    {
+      "N": 65536,
+      "batch": 16,
+      "direction": "dit",
+      "incumbent_ms": 140.93386102467775,
+      "incumbent_block": 1024,
+      "challenger_ms": 136.7185020353645,
+      "evidence": {
+        "variant_ms": {
+          "spread": 136.7185020353645,
+          "folded": 140.93386102467775
+        }
+      },
+      "reason": "spread beats folded by 3.0% (>= 2.0%)",
+      "block": 1024,
+      "flow_id": "batch-spread",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "variant": "spread",
+        "batch": 16
+      }
+    },
+    {
+      "N": 65536,
+      "batch": 16,
+      "direction": "dif",
+      "incumbent_ms": 136.2219420261681,
+      "incumbent_block": 1024,
+      "challenger_ms": 132.42284883745015,
+      "evidence": {
+        "variant_ms": {
+          "spread": 132.42284883745015,
+          "folded": 136.2219420261681
+        }
+      },
+      "reason": "spread beats folded by 2.8% (>= 2.0%)",
+      "block": 1024,
+      "flow_id": "batch-spread",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "variant": "spread",
+        "batch": 16
+      }
+    },
+    {
+      "N": 65536,
+      "batch": 64,
+      "direction": "dit",
+      "incumbent_ms": 557.9841891303658,
+      "incumbent_block": 1024,
+      "challenger_ms": 556.7784050945193,
+      "evidence": {
+        "variant_ms": {
+          "spread": 557.9841891303658,
+          "folded": 556.7784050945193
+        }
+      },
+      "reason": "folded kept (spread gain -0.2% < 2.0%)",
+      "block": 1024,
+      "flow_id": "batch-folded",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "variant": "folded",
+        "batch": 64
+      }
+    },
+    {
+      "N": 65536,
+      "batch": 64,
+      "direction": "dif",
+      "incumbent_ms": 536.9629089254886,
+      "incumbent_block": 1024,
+      "challenger_ms": 536.5288378670812,
+      "evidence": {
+        "variant_ms": {
+          "spread": 536.9629089254886,
+          "folded": 536.5288378670812
+        }
+      },
+      "reason": "folded kept (spread gain -0.1% < 2.0%)",
+      "block": 1024,
+      "flow_id": "batch-folded",
+      "flow_realization": "global-stage",
+      "processing_unit": "radix2-scalar",
+      "params": {
+        "variant": "folded",
+        "batch": 64
+      }
+    },
+    {
+      "N": 1024,
+      "batch": 16,
+      "direction": "dif",
+      "incumbent_ms": 1.6873572603799403,
+      "incumbent_block": 256,
+      "challenger_ms": 0.7124278927221894,
+      "block": 256,
+      "evidence": {
+        "incumbent": "incumbent_m4_folded",
+        "sessions": 3,
+        "protocol_id": "batch-release-v1:focus:plan-reuse:interleave:correctness-first:3sess:p11",
+        "focus_paths": [
+          "results/p800/bootstrap-2026-10-18-prh-final/.staging/batch_focus_a/summary.json",
+          "results/p800/bootstrap-2026-10-18-prh-final/.staging/batch_focus_b/summary.json"
+        ],
+        "challenger": "m2_t128_rows16",
+        "gain_pct": 57.78,
+        "challenger_ms": 0.7124278927221894
+      },
+      "reason": "focus challenger m2_t128_rows16 beats stable incumbent incumbent_m4_folded by 57.8% (>= 2.0%) across 3 sessions",
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "variant": "spread",
+        "tile": 128,
+        "rows": 16,
+        "batch": 16
+      }
+    },
+    {
+      "N": 1024,
+      "batch": 16,
+      "direction": "dit",
+      "incumbent_ms": 1.757368736434728,
+      "incumbent_block": 256,
+      "challenger_ms": 0.6965707871131599,
+      "block": 256,
+      "evidence": {
+        "incumbent": "m4_spread",
+        "sessions": 3,
+        "protocol_id": "batch-release-v1:focus:plan-reuse:interleave:correctness-first:3sess:p11",
+        "focus_paths": [
+          "results/p800/bootstrap-2026-10-18-prh-final/.staging/batch_focus_a/summary.json",
+          "results/p800/bootstrap-2026-10-18-prh-final/.staging/batch_focus_b/summary.json"
+        ],
+        "challenger": "m2_t128_rows16",
+        "gain_pct": 60.36,
+        "challenger_ms": 0.6965707871131599
+      },
+      "reason": "focus challenger m2_t128_rows16 beats stable incumbent m4_spread by 60.4% (>= 2.0%) across 3 sessions",
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "variant": "spread",
+        "tile": 128,
+        "rows": 16,
+        "batch": 16
+      }
+    },
+    {
+      "N": 1024,
+      "batch": 64,
+      "direction": "dif",
+      "incumbent_ms": 5.918606068007648,
+      "incumbent_block": 256,
+      "challenger_ms": 2.301167754922062,
+      "block": 256,
+      "evidence": {
+        "incumbent": "incumbent_m4_folded",
+        "sessions": 3,
+        "protocol_id": "batch-release-v1:focus:plan-reuse:interleave:correctness-first:3sess:p11",
+        "focus_paths": [
+          "results/p800/bootstrap-2026-10-18-prh-final/.staging/batch_focus_a/summary.json",
+          "results/p800/bootstrap-2026-10-18-prh-final/.staging/batch_focus_b/summary.json"
+        ],
+        "challenger": "m2_t128_rows16",
+        "gain_pct": 61.12,
+        "challenger_ms": 2.301167754922062
+      },
+      "reason": "focus challenger m2_t128_rows16 beats stable incumbent incumbent_m4_folded by 61.1% (>= 2.0%) across 3 sessions",
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "variant": "spread",
+        "tile": 128,
+        "rows": 16,
+        "batch": 64
+      }
+    },
+    {
+      "N": 1024,
+      "batch": 64,
+      "direction": "dit",
+      "incumbent_ms": 6.09135878039524,
+      "incumbent_block": 256,
+      "challenger_ms": 2.2456658771261573,
+      "block": 256,
+      "evidence": {
+        "incumbent": "incumbent_m4_folded",
+        "sessions": 3,
+        "protocol_id": "batch-release-v1:focus:plan-reuse:interleave:correctness-first:3sess:p11",
+        "focus_paths": [
+          "results/p800/bootstrap-2026-10-18-prh-final/.staging/batch_focus_a/summary.json",
+          "results/p800/bootstrap-2026-10-18-prh-final/.staging/batch_focus_b/summary.json"
+        ],
+        "challenger": "m2_t128_rows16",
+        "gain_pct": 63.13,
+        "challenger_ms": 2.2456658771261573
+      },
+      "reason": "focus challenger m2_t128_rows16 beats stable incumbent incumbent_m4_folded by 63.1% (>= 2.0%) across 3 sessions",
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "variant": "spread",
+        "tile": 128,
+        "rows": 16,
+        "batch": 64
+      }
+    },
+    {
+      "N": 2048,
+      "batch": 16,
+      "direction": "dif",
+      "incumbent_ms": 3.3912297221831977,
+      "incumbent_block": 256,
+      "challenger_ms": 1.5680475044064224,
+      "block": 256,
+      "evidence": {
+        "incumbent": "incumbent_m4_folded",
+        "sessions": 3,
+        "protocol_id": "batch-release-v1:focus:plan-reuse:interleave:correctness-first:3sess:p11",
+        "focus_paths": [
+          "results/p800/bootstrap-2026-10-18-prh-final/.staging/batch_focus_a/summary.json",
+          "results/p800/bootstrap-2026-10-18-prh-final/.staging/batch_focus_b/summary.json"
+        ],
+        "challenger": "m2_t128_rows16",
+        "gain_pct": 53.76,
+        "challenger_ms": 1.5680475044064224
+      },
+      "reason": "focus challenger m2_t128_rows16 beats stable incumbent incumbent_m4_folded by 53.8% (>= 2.0%) across 3 sessions",
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "variant": "spread",
+        "tile": 128,
+        "rows": 16,
+        "batch": 16
+      }
+    },
+    {
+      "N": 2048,
+      "batch": 16,
+      "direction": "dit",
+      "incumbent_ms": 3.4835622645914555,
+      "incumbent_block": 256,
+      "challenger_ms": 1.554537273477763,
+      "block": 256,
+      "evidence": {
+        "incumbent": "incumbent_m4_folded",
+        "sessions": 3,
+        "protocol_id": "batch-release-v1:focus:plan-reuse:interleave:correctness-first:3sess:p11",
+        "focus_paths": [
+          "results/p800/bootstrap-2026-10-18-prh-final/.staging/batch_focus_a/summary.json",
+          "results/p800/bootstrap-2026-10-18-prh-final/.staging/batch_focus_b/summary.json"
+        ],
+        "challenger": "m2_t128_rows4",
+        "gain_pct": 55.38,
+        "challenger_ms": 1.554537273477763
+      },
+      "reason": "focus challenger m2_t128_rows4 beats stable incumbent incumbent_m4_folded by 55.4% (>= 2.0%) across 3 sessions",
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "variant": "spread",
+        "tile": 128,
+        "rows": 4,
+        "batch": 16
+      }
+    },
+    {
+      "N": 2048,
+      "batch": 64,
+      "direction": "dif",
+      "incumbent_ms": 12.04779144609347,
+      "incumbent_block": 256,
+      "challenger_ms": 5.069534003268927,
+      "block": 256,
+      "evidence": {
+        "incumbent": "incumbent_m4_folded",
+        "sessions": 3,
+        "protocol_id": "batch-release-v1:focus:plan-reuse:interleave:correctness-first:3sess:p11",
+        "focus_paths": [
+          "results/p800/bootstrap-2026-10-18-prh-final/.staging/batch_focus_a/summary.json",
+          "results/p800/bootstrap-2026-10-18-prh-final/.staging/batch_focus_b/summary.json"
+        ],
+        "challenger": "m2_t128_rows16",
+        "gain_pct": 57.92,
+        "challenger_ms": 5.069534003268927
+      },
+      "reason": "focus challenger m2_t128_rows16 beats stable incumbent incumbent_m4_folded by 57.9% (>= 2.0%) across 3 sessions",
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "variant": "spread",
+        "tile": 128,
+        "rows": 16,
+        "batch": 64
+      }
+    },
+    {
+      "N": 2048,
+      "batch": 64,
+      "direction": "dit",
+      "incumbent_ms": 12.468497734516859,
+      "incumbent_block": 256,
+      "challenger_ms": 4.969597503077239,
+      "block": 256,
+      "evidence": {
+        "incumbent": "incumbent_m4_folded",
+        "sessions": 3,
+        "protocol_id": "batch-release-v1:focus:plan-reuse:interleave:correctness-first:3sess:p11",
+        "focus_paths": [
+          "results/p800/bootstrap-2026-10-18-prh-final/.staging/batch_focus_a/summary.json",
+          "results/p800/bootstrap-2026-10-18-prh-final/.staging/batch_focus_b/summary.json"
+        ],
+        "challenger": "m2_t128_rows16",
+        "gain_pct": 60.14,
+        "challenger_ms": 4.969597503077239
+      },
+      "reason": "focus challenger m2_t128_rows16 beats stable incumbent incumbent_m4_folded by 60.1% (>= 2.0%) across 3 sessions",
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "variant": "spread",
+        "tile": 128,
+        "rows": 16,
+        "batch": 64
+      }
+    },
+    {
+      "N": 64,
+      "batch": 1,
+      "direction": "dit",
+      "transform_type": "c2c",
+      "transform_direction": "forward",
+      "normalization": "backward",
+      "incumbent_ms": 0.4615611396729946,
+      "incumbent_block": 1024,
+      "challenger_ms": 0.1555359922349453,
+      "block": 1024,
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "rows": 8,
+        "tile": 64,
+        "batch": 1
+      },
+      "executed": "fft_dit_matrix",
+      "evidence": {
+        "incumbent": "matrix-incumbent",
+        "challenger": "oracle:m2_dit_t64",
+        "gain_pct": 66.302,
+        "challenger_ms": 0.1555359922349453,
+        "sessions": 3,
+        "protocol_id": "semantic-matrix-v1:plan-reuse:interleave:correctness-first",
+        "semantic": "c2c-forward",
+        "source": "semantic-matrix confirmation",
+        "executed": "fft_dit_matrix"
+      },
+      "reason": "independent matrix confirmation (c2c-forward): oracle:m2_dit_t64 beats incumbent by 66.3% (>= 2.0%) over 3 sessions; exact semantic key ('c2c', 'forward', 'backward')"
+    },
+    {
+      "N": 64,
+      "batch": 1,
+      "direction": "dit",
+      "transform_type": "c2c",
+      "transform_direction": "inverse",
+      "normalization": "backward",
+      "incumbent_ms": 0.5211788229644299,
+      "incumbent_block": 1024,
+      "challenger_ms": 0.28391415253281593,
+      "block": 1024,
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "rows": 8,
+        "tile": 64,
+        "batch": 1
+      },
+      "executed": "fft_dit_matrix",
+      "evidence": {
+        "incumbent": "matrix-incumbent",
+        "challenger": "oracle:m2_dit_t64",
+        "gain_pct": 45.525,
+        "challenger_ms": 0.28391415253281593,
+        "sessions": 3,
+        "protocol_id": "semantic-matrix-v1:plan-reuse:interleave:correctness-first",
+        "semantic": "c2c-inverse",
+        "source": "semantic-matrix confirmation",
+        "executed": "fft_dit_matrix"
+      },
+      "reason": "independent matrix confirmation (c2c-inverse): oracle:m2_dit_t64 beats incumbent by 45.5% (>= 2.0%) over 3 sessions; exact semantic key ('c2c', 'inverse', 'backward')"
+    },
+    {
+      "N": 64,
+      "batch": 1,
+      "direction": "dit",
+      "transform_type": "r2c",
+      "transform_direction": "forward",
+      "normalization": "backward",
+      "incumbent_ms": 0.48531987704336643,
+      "incumbent_block": 1024,
+      "challenger_ms": 0.189146026968956,
+      "block": 1024,
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "rows": 8,
+        "tile": 64,
+        "batch": 1
+      },
+      "executed": "fft_dit_matrix",
+      "evidence": {
+        "incumbent": "matrix-incumbent",
+        "challenger": "oracle:m2_dit_t64",
+        "gain_pct": 61.027,
+        "challenger_ms": 0.189146026968956,
+        "sessions": 3,
+        "protocol_id": "semantic-matrix-v1:plan-reuse:interleave:correctness-first",
+        "semantic": "r2c",
+        "source": "semantic-matrix confirmation",
+        "executed": "fft_dit_matrix"
+      },
+      "reason": "independent matrix confirmation (r2c): oracle:m2_dit_t64 beats incumbent by 61.0% (>= 2.0%) over 3 sessions; exact semantic key ('r2c', 'forward', 'backward')"
+    },
+    {
+      "N": 64,
+      "batch": 1,
+      "direction": "dit",
+      "transform_type": "c2r",
+      "transform_direction": "inverse",
+      "normalization": "backward",
+      "incumbent_ms": 0.7590139284729958,
+      "incumbent_block": 1024,
+      "challenger_ms": 0.45238109305500984,
+      "block": 1024,
+      "flow_id": "dedicated-c2r-hermitian-v1",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "real_flow": "dedicated-c2r-hermitian-v1",
+        "rows": 8,
+        "tile": 64,
+        "batch": 1
+      },
+      "executed": "fft_dit_matrix",
+      "evidence": {
+        "incumbent": "matrix-incumbent",
+        "challenger": "oracle:h_dit_t64",
+        "gain_pct": 40.399,
+        "challenger_ms": 0.45238109305500984,
+        "sessions": 3,
+        "protocol_id": "semantic-matrix-v1:plan-reuse:interleave:correctness-first",
+        "semantic": "c2r",
+        "source": "semantic-matrix confirmation",
+        "executed": "fft_dit_matrix"
+      },
+      "reason": "independent matrix confirmation (c2r): oracle:h_dit_t64 beats incumbent by 40.4% (>= 2.0%) over 3 sessions; exact semantic key ('c2r', 'inverse', 'backward')"
+    },
+    {
+      "N": 1024,
+      "batch": 16,
+      "direction": "dit",
+      "transform_type": "c2c",
+      "transform_direction": "forward",
+      "normalization": "backward",
+      "incumbent_ms": 1.8376808147877455,
+      "incumbent_block": 256,
+      "challenger_ms": 0.9009409695863724,
+      "block": 256,
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "rows": 8,
+        "tile": 64,
+        "variant": "spread",
+        "batch": 16
+      },
+      "executed": "fft_dif_matrix_batch",
+      "evidence": {
+        "incumbent": "matrix-incumbent",
+        "challenger": "oracle:m2_dif_t64",
+        "gain_pct": 50.974,
+        "challenger_ms": 0.9009409695863724,
+        "sessions": 3,
+        "protocol_id": "semantic-matrix-v1:plan-reuse:interleave:correctness-first",
+        "semantic": "c2c-forward",
+        "source": "semantic-matrix confirmation",
+        "executed": "fft_dif_matrix_batch"
+      },
+      "reason": "independent matrix confirmation (c2c-forward): oracle:m2_dif_t64 beats incumbent by 51.0% (>= 2.0%) over 3 sessions; exact semantic key ('c2c', 'forward', 'backward')"
+    },
+    {
+      "N": 1024,
+      "batch": 16,
+      "direction": "dit",
+      "transform_type": "c2c",
+      "transform_direction": "inverse",
+      "normalization": "backward",
+      "incumbent_ms": 1.9192600157111883,
+      "incumbent_block": 256,
+      "challenger_ms": 0.9702900424599648,
+      "block": 256,
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "rows": 8,
+        "tile": 64,
+        "variant": "spread",
+        "batch": 16
+      },
+      "executed": "fft_dit_matrix_batch",
+      "evidence": {
+        "incumbent": "matrix-incumbent",
+        "challenger": "oracle:m2_dit_t64",
+        "gain_pct": 49.445,
+        "challenger_ms": 0.9702900424599648,
+        "sessions": 3,
+        "protocol_id": "semantic-matrix-v1:plan-reuse:interleave:correctness-first",
+        "semantic": "c2c-inverse",
+        "source": "semantic-matrix confirmation",
+        "executed": "fft_dit_matrix_batch"
+      },
+      "reason": "independent matrix confirmation (c2c-inverse): oracle:m2_dit_t64 beats incumbent by 49.4% (>= 2.0%) over 3 sessions; exact semantic key ('c2c', 'inverse', 'backward')"
+    },
+    {
+      "N": 1024,
+      "batch": 16,
+      "direction": "dit",
+      "transform_type": "r2c",
+      "transform_direction": "forward",
+      "normalization": "backward",
+      "incumbent_ms": 1.9065011292696,
+      "incumbent_block": 256,
+      "challenger_ms": 0.687076011672616,
+      "block": 256,
+      "flow_id": "dedicated-r2c-pack-v1",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "real_flow": "dedicated-r2c-pack-v1",
+        "rows": 8,
+        "tile": 64,
+        "variant": "spread",
+        "batch": 16
+      },
+      "executed": "fft_dif_matrix_batch",
+      "evidence": {
+        "incumbent": "matrix-incumbent",
+        "challenger": "oracle:h_dif_t64",
+        "gain_pct": 63.961,
+        "challenger_ms": 0.687076011672616,
+        "sessions": 3,
+        "protocol_id": "semantic-matrix-v1:plan-reuse:interleave:correctness-first",
+        "semantic": "r2c",
+        "source": "semantic-matrix confirmation",
+        "executed": "fft_dif_matrix_batch"
+      },
+      "reason": "independent matrix confirmation (r2c): oracle:h_dif_t64 beats incumbent by 64.0% (>= 2.0%) over 3 sessions; exact semantic key ('r2c', 'forward', 'backward')"
+    },
+    {
+      "N": 1024,
+      "batch": 16,
+      "direction": "dit",
+      "transform_type": "c2r",
+      "transform_direction": "inverse",
+      "normalization": "backward",
+      "incumbent_ms": 2.368481131270528,
+      "incumbent_block": 256,
+      "challenger_ms": 0.7440841291099787,
+      "block": 256,
+      "flow_id": "dedicated-c2r-hermitian-v1",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "real_flow": "dedicated-c2r-hermitian-v1",
+        "rows": 8,
+        "tile": 64,
+        "variant": "spread",
+        "batch": 16
+      },
+      "executed": "fft_dif_matrix_batch",
+      "evidence": {
+        "incumbent": "matrix-incumbent",
+        "challenger": "oracle:h_dif_t64",
+        "gain_pct": 68.584,
+        "challenger_ms": 0.7440841291099787,
+        "sessions": 3,
+        "protocol_id": "semantic-matrix-v1:plan-reuse:interleave:correctness-first",
+        "semantic": "c2r",
+        "source": "semantic-matrix confirmation",
+        "executed": "fft_dif_matrix_batch"
+      },
+      "reason": "independent matrix confirmation (c2r): oracle:h_dif_t64 beats incumbent by 68.6% (>= 2.0%) over 3 sessions; exact semantic key ('c2r', 'inverse', 'backward')"
+    },
+    {
+      "N": 1024,
+      "batch": 64,
+      "direction": "dit",
+      "transform_type": "c2c",
+      "transform_direction": "forward",
+      "normalization": "backward",
+      "incumbent_ms": 6.247268989682198,
+      "incumbent_block": 256,
+      "challenger_ms": 2.9714980628341436,
+      "block": 256,
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "rows": 8,
+        "tile": 64,
+        "variant": "spread",
+        "batch": 64
+      },
+      "executed": "fft_dit_matrix_batch",
+      "evidence": {
+        "incumbent": "matrix-incumbent",
+        "challenger": "oracle:m2_dit_t64",
+        "gain_pct": 52.435,
+        "challenger_ms": 2.9714980628341436,
+        "sessions": 3,
+        "protocol_id": "semantic-matrix-v1:plan-reuse:interleave:correctness-first",
+        "semantic": "c2c-forward",
+        "source": "semantic-matrix confirmation",
+        "executed": "fft_dit_matrix_batch"
+      },
+      "reason": "independent matrix confirmation (c2c-forward): oracle:m2_dit_t64 beats incumbent by 52.4% (>= 2.0%) over 3 sessions; exact semantic key ('c2c', 'forward', 'backward')"
+    },
+    {
+      "N": 1024,
+      "batch": 64,
+      "direction": "dit",
+      "transform_type": "c2c",
+      "transform_direction": "inverse",
+      "normalization": "backward",
+      "incumbent_ms": 6.455986062064767,
+      "incumbent_block": 256,
+      "challenger_ms": 3.0524360481649637,
+      "block": 256,
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "rows": 8,
+        "tile": 64,
+        "variant": "spread",
+        "batch": 64
+      },
+      "executed": "fft_dit_matrix_batch",
+      "evidence": {
+        "incumbent": "matrix-incumbent",
+        "challenger": "oracle:m2_dit_t64",
+        "gain_pct": 52.719,
+        "challenger_ms": 3.0524360481649637,
+        "sessions": 3,
+        "protocol_id": "semantic-matrix-v1:plan-reuse:interleave:correctness-first",
+        "semantic": "c2c-inverse",
+        "source": "semantic-matrix confirmation",
+        "executed": "fft_dit_matrix_batch"
+      },
+      "reason": "independent matrix confirmation (c2c-inverse): oracle:m2_dit_t64 beats incumbent by 52.7% (>= 2.0%) over 3 sessions; exact semantic key ('c2c', 'inverse', 'backward')"
+    },
+    {
+      "N": 1024,
+      "batch": 64,
+      "direction": "dit",
+      "transform_type": "r2c",
+      "transform_direction": "forward",
+      "normalization": "backward",
+      "incumbent_ms": 6.472534965723753,
+      "incumbent_block": 256,
+      "challenger_ms": 1.6842549666762352,
+      "block": 256,
+      "flow_id": "dedicated-r2c-pack-v1",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "real_flow": "dedicated-r2c-pack-v1",
+        "rows": 8,
+        "tile": 64,
+        "variant": "spread",
+        "batch": 64
+      },
+      "executed": "fft_dif_matrix_batch",
+      "evidence": {
+        "incumbent": "matrix-incumbent",
+        "challenger": "oracle:h_dif_t64",
+        "gain_pct": 73.978,
+        "challenger_ms": 1.6842549666762352,
+        "sessions": 3,
+        "protocol_id": "semantic-matrix-v1:plan-reuse:interleave:correctness-first",
+        "semantic": "r2c",
+        "source": "semantic-matrix confirmation",
+        "executed": "fft_dif_matrix_batch"
+      },
+      "reason": "independent matrix confirmation (r2c): oracle:h_dif_t64 beats incumbent by 74.0% (>= 2.0%) over 3 sessions; exact semantic key ('r2c', 'forward', 'backward')"
+    },
+    {
+      "N": 1024,
+      "batch": 64,
+      "direction": "dit",
+      "transform_type": "c2r",
+      "transform_direction": "inverse",
+      "normalization": "backward",
+      "incumbent_ms": 6.8671368062496185,
+      "incumbent_block": 256,
+      "challenger_ms": 1.6095871105790138,
+      "block": 256,
+      "flow_id": "dedicated-c2r-hermitian-v1",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "real_flow": "dedicated-c2r-hermitian-v1",
+        "rows": 8,
+        "tile": 64,
+        "variant": "spread",
+        "batch": 64
+      },
+      "executed": "fft_dif_matrix_batch",
+      "evidence": {
+        "incumbent": "matrix-incumbent",
+        "challenger": "oracle:h_dif_t64",
+        "gain_pct": 76.561,
+        "challenger_ms": 1.6095871105790138,
+        "sessions": 3,
+        "protocol_id": "semantic-matrix-v1:plan-reuse:interleave:correctness-first",
+        "semantic": "c2r",
+        "source": "semantic-matrix confirmation",
+        "executed": "fft_dif_matrix_batch"
+      },
+      "reason": "independent matrix confirmation (c2r): oracle:h_dif_t64 beats incumbent by 76.6% (>= 2.0%) over 3 sessions; exact semantic key ('c2r', 'inverse', 'backward')"
+    },
+    {
+      "N": 1024,
+      "batch": 256,
+      "direction": "dit",
+      "transform_type": "c2c",
+      "transform_direction": "forward",
+      "normalization": "backward",
+      "incumbent_ms": 23.766323924064636,
+      "incumbent_block": 1024,
+      "challenger_ms": 10.657317005097866,
+      "block": 1024,
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "rows": 8,
+        "tile": 64,
+        "variant": "spread",
+        "batch": 256
+      },
+      "executed": "fft_dif_matrix_batch",
+      "evidence": {
+        "incumbent": "matrix-incumbent",
+        "challenger": "oracle:m2_dif_t64",
+        "gain_pct": 55.158,
+        "challenger_ms": 10.657317005097866,
+        "sessions": 3,
+        "protocol_id": "semantic-matrix-v1:plan-reuse:interleave:correctness-first",
+        "semantic": "c2c-forward",
+        "source": "semantic-matrix confirmation",
+        "executed": "fft_dif_matrix_batch"
+      },
+      "reason": "independent matrix confirmation (c2c-forward): oracle:m2_dif_t64 beats incumbent by 55.2% (>= 2.0%) over 3 sessions; exact semantic key ('c2c', 'forward', 'backward')"
+    },
+    {
+      "N": 1024,
+      "batch": 256,
+      "direction": "dit",
+      "transform_type": "c2c",
+      "transform_direction": "inverse",
+      "normalization": "backward",
+      "incumbent_ms": 23.83923204615712,
+      "incumbent_block": 1024,
+      "challenger_ms": 10.715165873989463,
+      "block": 1024,
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "rows": 8,
+        "tile": 64,
+        "variant": "spread",
+        "batch": 256
+      },
+      "executed": "fft_dif_matrix_batch",
+      "evidence": {
+        "incumbent": "matrix-incumbent",
+        "challenger": "oracle:m2_dif_t64",
+        "gain_pct": 55.052,
+        "challenger_ms": 10.715165873989463,
+        "sessions": 3,
+        "protocol_id": "semantic-matrix-v1:plan-reuse:interleave:correctness-first",
+        "semantic": "c2c-inverse",
+        "source": "semantic-matrix confirmation",
+        "executed": "fft_dif_matrix_batch"
+      },
+      "reason": "independent matrix confirmation (c2c-inverse): oracle:m2_dif_t64 beats incumbent by 55.1% (>= 2.0%) over 3 sessions; exact semantic key ('c2c', 'inverse', 'backward')"
+    },
+    {
+      "N": 1024,
+      "batch": 256,
+      "direction": "dit",
+      "transform_type": "r2c",
+      "transform_direction": "forward",
+      "normalization": "backward",
+      "incumbent_ms": 24.357681162655354,
+      "incumbent_block": 1024,
+      "challenger_ms": 5.511125084012747,
+      "block": 1024,
+      "flow_id": "dedicated-r2c-pack-v1",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "real_flow": "dedicated-r2c-pack-v1",
+        "rows": 8,
+        "tile": 64,
+        "variant": "spread",
+        "batch": 256
+      },
+      "executed": "fft_dif_matrix_batch",
+      "evidence": {
+        "incumbent": "matrix-incumbent",
+        "challenger": "oracle:h_dif_t64",
+        "gain_pct": 77.374,
+        "challenger_ms": 5.511125084012747,
+        "sessions": 3,
+        "protocol_id": "semantic-matrix-v1:plan-reuse:interleave:correctness-first",
+        "semantic": "r2c",
+        "source": "semantic-matrix confirmation",
+        "executed": "fft_dif_matrix_batch"
+      },
+      "reason": "independent matrix confirmation (r2c): oracle:h_dif_t64 beats incumbent by 77.4% (>= 2.0%) over 3 sessions; exact semantic key ('r2c', 'forward', 'backward')"
+    },
+    {
+      "N": 1024,
+      "batch": 256,
+      "direction": "dit",
+      "transform_type": "c2r",
+      "transform_direction": "inverse",
+      "normalization": "backward",
+      "incumbent_ms": 24.391941027715802,
+      "incumbent_block": 1024,
+      "challenger_ms": 5.5450748186558485,
+      "block": 1024,
+      "flow_id": "dedicated-c2r-hermitian-v1",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "real_flow": "dedicated-c2r-hermitian-v1",
+        "rows": 8,
+        "tile": 64,
+        "variant": "spread",
+        "batch": 256
+      },
+      "executed": "fft_dif_matrix_batch",
+      "evidence": {
+        "incumbent": "matrix-incumbent",
+        "challenger": "oracle:h_dif_t64",
+        "gain_pct": 77.267,
+        "challenger_ms": 5.5450748186558485,
+        "sessions": 3,
+        "protocol_id": "semantic-matrix-v1:plan-reuse:interleave:correctness-first",
+        "semantic": "c2r",
+        "source": "semantic-matrix confirmation",
+        "executed": "fft_dif_matrix_batch"
+      },
+      "reason": "independent matrix confirmation (c2r): oracle:h_dif_t64 beats incumbent by 77.3% (>= 2.0%) over 3 sessions; exact semantic key ('c2r', 'inverse', 'backward')"
+    },
+    {
+      "N": 2048,
+      "batch": 16,
+      "direction": "dit",
+      "transform_type": "c2c",
+      "transform_direction": "forward",
+      "normalization": "backward",
+      "incumbent_ms": 3.555406117811799,
+      "incumbent_block": 256,
+      "challenger_ms": 1.7671238165348768,
+      "block": 256,
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "rows": 8,
+        "tile": 64,
+        "variant": "spread",
+        "batch": 16
+      },
+      "executed": "fft_dit_matrix_batch",
+      "evidence": {
+        "incumbent": "matrix-incumbent",
+        "challenger": "oracle:m2_dit_t64",
+        "gain_pct": 50.298,
+        "challenger_ms": 1.7671238165348768,
+        "sessions": 3,
+        "protocol_id": "semantic-matrix-v1:plan-reuse:interleave:correctness-first",
+        "semantic": "c2c-forward",
+        "source": "semantic-matrix confirmation",
+        "executed": "fft_dit_matrix_batch"
+      },
+      "reason": "independent matrix confirmation (c2c-forward): oracle:m2_dit_t64 beats incumbent by 50.3% (>= 2.0%) over 3 sessions; exact semantic key ('c2c', 'forward', 'backward')"
+    },
+    {
+      "N": 2048,
+      "batch": 16,
+      "direction": "dit",
+      "transform_type": "c2c",
+      "transform_direction": "inverse",
+      "normalization": "backward",
+      "incumbent_ms": 3.6931531503796577,
+      "incumbent_block": 256,
+      "challenger_ms": 1.8721409142017365,
+      "block": 256,
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "rows": 8,
+        "tile": 64,
+        "variant": "spread",
+        "batch": 16
+      },
+      "executed": "fft_dif_matrix_batch",
+      "evidence": {
+        "incumbent": "matrix-incumbent",
+        "challenger": "oracle:m2_dif_t64",
+        "gain_pct": 49.308,
+        "challenger_ms": 1.8721409142017365,
+        "sessions": 3,
+        "protocol_id": "semantic-matrix-v1:plan-reuse:interleave:correctness-first",
+        "semantic": "c2c-inverse",
+        "source": "semantic-matrix confirmation",
+        "executed": "fft_dif_matrix_batch"
+      },
+      "reason": "independent matrix confirmation (c2c-inverse): oracle:m2_dif_t64 beats incumbent by 49.3% (>= 2.0%) over 3 sessions; exact semantic key ('c2c', 'inverse', 'backward')"
+    },
+    {
+      "N": 2048,
+      "batch": 16,
+      "direction": "dit",
+      "transform_type": "r2c",
+      "transform_direction": "forward",
+      "normalization": "backward",
+      "incumbent_ms": 3.6351741291582584,
+      "incumbent_block": 256,
+      "challenger_ms": 1.1539349798113108,
+      "block": 256,
+      "flow_id": "dedicated-r2c-pack-v1",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "real_flow": "dedicated-r2c-pack-v1",
+        "rows": 8,
+        "tile": 64,
+        "variant": "spread",
+        "batch": 16
+      },
+      "executed": "fft_dif_matrix_batch",
+      "evidence": {
+        "incumbent": "matrix-incumbent",
+        "challenger": "oracle:h_dif_t64",
+        "gain_pct": 68.256,
+        "challenger_ms": 1.1539349798113108,
+        "sessions": 3,
+        "protocol_id": "semantic-matrix-v1:plan-reuse:interleave:correctness-first",
+        "semantic": "r2c",
+        "source": "semantic-matrix confirmation",
+        "executed": "fft_dif_matrix_batch"
+      },
+      "reason": "independent matrix confirmation (r2c): oracle:h_dif_t64 beats incumbent by 68.3% (>= 2.0%) over 3 sessions; exact semantic key ('r2c', 'forward', 'backward')"
+    },
+    {
+      "N": 2048,
+      "batch": 16,
+      "direction": "dit",
+      "transform_type": "c2r",
+      "transform_direction": "inverse",
+      "normalization": "backward",
+      "incumbent_ms": 4.112853901460767,
+      "incumbent_block": 256,
+      "challenger_ms": 1.208124915137887,
+      "block": 256,
+      "flow_id": "dedicated-c2r-hermitian-v1",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "real_flow": "dedicated-c2r-hermitian-v1",
+        "rows": 8,
+        "tile": 64,
+        "variant": "spread",
+        "batch": 16
+      },
+      "executed": "fft_dif_matrix_batch",
+      "evidence": {
+        "incumbent": "matrix-incumbent",
+        "challenger": "oracle:h_dif_t64",
+        "gain_pct": 70.626,
+        "challenger_ms": 1.208124915137887,
+        "sessions": 3,
+        "protocol_id": "semantic-matrix-v1:plan-reuse:interleave:correctness-first",
+        "semantic": "c2r",
+        "source": "semantic-matrix confirmation",
+        "executed": "fft_dif_matrix_batch"
+      },
+      "reason": "independent matrix confirmation (c2r): oracle:h_dif_t64 beats incumbent by 70.6% (>= 2.0%) over 3 sessions; exact semantic key ('c2r', 'inverse', 'backward')"
+    },
+    {
+      "N": 2048,
+      "batch": 64,
+      "direction": "dit",
+      "transform_type": "c2c",
+      "transform_direction": "forward",
+      "normalization": "backward",
+      "incumbent_ms": 12.666685041040182,
+      "incumbent_block": 256,
+      "challenger_ms": 6.057793973013759,
+      "block": 256,
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "rows": 8,
+        "tile": 64,
+        "variant": "spread",
+        "batch": 64
+      },
+      "executed": "fft_dit_matrix_batch",
+      "evidence": {
+        "incumbent": "matrix-incumbent",
+        "challenger": "oracle:m2_dit_t64",
+        "gain_pct": 52.175,
+        "challenger_ms": 6.057793973013759,
+        "sessions": 3,
+        "protocol_id": "semantic-matrix-v1:plan-reuse:interleave:correctness-first",
+        "semantic": "c2c-forward",
+        "source": "semantic-matrix confirmation",
+        "executed": "fft_dit_matrix_batch"
+      },
+      "reason": "independent matrix confirmation (c2c-forward): oracle:m2_dit_t64 beats incumbent by 52.2% (>= 2.0%) over 3 sessions; exact semantic key ('c2c', 'forward', 'backward')"
+    },
+    {
+      "N": 2048,
+      "batch": 64,
+      "direction": "dit",
+      "transform_type": "c2c",
+      "transform_direction": "inverse",
+      "normalization": "backward",
+      "incumbent_ms": 12.8125820774585,
+      "incumbent_block": 256,
+      "challenger_ms": 6.0207839123904705,
+      "block": 256,
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "rows": 8,
+        "tile": 64,
+        "variant": "spread",
+        "batch": 64
+      },
+      "executed": "fft_dit_matrix_batch",
+      "evidence": {
+        "incumbent": "matrix-incumbent",
+        "challenger": "oracle:m2_dit_t64",
+        "gain_pct": 53.009,
+        "challenger_ms": 6.0207839123904705,
+        "sessions": 3,
+        "protocol_id": "semantic-matrix-v1:plan-reuse:interleave:correctness-first",
+        "semantic": "c2c-inverse",
+        "source": "semantic-matrix confirmation",
+        "executed": "fft_dit_matrix_batch"
+      },
+      "reason": "independent matrix confirmation (c2c-inverse): oracle:m2_dit_t64 beats incumbent by 53.0% (>= 2.0%) over 3 sessions; exact semantic key ('c2c', 'inverse', 'backward')"
+    },
+    {
+      "N": 2048,
+      "batch": 64,
+      "direction": "dit",
+      "transform_type": "r2c",
+      "transform_direction": "forward",
+      "normalization": "backward",
+      "incumbent_ms": 12.64777616597712,
+      "incumbent_block": 256,
+      "challenger_ms": 3.632653970271349,
+      "block": 256,
+      "flow_id": "dedicated-r2c-pack-v1",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "real_flow": "dedicated-r2c-pack-v1",
+        "rows": 8,
+        "tile": 64,
+        "variant": "spread",
+        "batch": 64
+      },
+      "executed": "fft_dif_matrix_batch",
+      "evidence": {
+        "incumbent": "matrix-incumbent",
+        "challenger": "oracle:h_dif_t64",
+        "gain_pct": 71.278,
+        "challenger_ms": 3.632653970271349,
+        "sessions": 3,
+        "protocol_id": "semantic-matrix-v1:plan-reuse:interleave:correctness-first",
+        "semantic": "r2c",
+        "source": "semantic-matrix confirmation",
+        "executed": "fft_dif_matrix_batch"
+      },
+      "reason": "independent matrix confirmation (r2c): oracle:h_dif_t64 beats incumbent by 71.3% (>= 2.0%) over 3 sessions; exact semantic key ('r2c', 'forward', 'backward')"
+    },
+    {
+      "N": 2048,
+      "batch": 64,
+      "direction": "dit",
+      "transform_type": "c2r",
+      "transform_direction": "inverse",
+      "normalization": "backward",
+      "incumbent_ms": 13.095925794914365,
+      "incumbent_block": 256,
+      "challenger_ms": 3.4808970522135496,
+      "block": 256,
+      "flow_id": "dedicated-c2r-hermitian-v1",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "real_flow": "dedicated-c2r-hermitian-v1",
+        "rows": 8,
+        "tile": 64,
+        "variant": "spread",
+        "batch": 64
+      },
+      "executed": "fft_dif_matrix_batch",
+      "evidence": {
+        "incumbent": "matrix-incumbent",
+        "challenger": "oracle:h_dif_t64",
+        "gain_pct": 73.42,
+        "challenger_ms": 3.4808970522135496,
+        "sessions": 3,
+        "protocol_id": "semantic-matrix-v1:plan-reuse:interleave:correctness-first",
+        "semantic": "c2r",
+        "source": "semantic-matrix confirmation",
+        "executed": "fft_dif_matrix_batch"
+      },
+      "reason": "independent matrix confirmation (c2r): oracle:h_dif_t64 beats incumbent by 73.4% (>= 2.0%) over 3 sessions; exact semantic key ('c2r', 'inverse', 'backward')"
+    }
+  ]
+}
