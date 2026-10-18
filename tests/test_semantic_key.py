@@ -225,3 +225,61 @@ def test_plan_fft_records_the_queried_semantics():
     assert p.transform_direction == "inverse"
     assert p.fallback is False
     assert p.params == {"variant": "spread", "batch": 256}
+
+
+# --- runner closure (issue #8 P1-A) --------------------------------------
+
+def _matrix_semantic_entry(executed, **over):
+    """A semantic entry measured on the matrix-resident family."""
+    return _semantic_entry(
+        "c2c", "forward",
+        flow_id="local-fused-tile", flow_realization="matrix-resident",
+        processing_unit="dense-dot-fft64",
+        params={"tile": 64, "rows": 8, "batch": 256, "variant": "spread"},
+        executed=executed, **over)
+
+
+def test_executed_contract_allows_orientation_flip_within_family():
+    # a DIF winner inside the dit-locked matrix is legal: the measured
+    # runner is authoritative, only family + batch tier are contracted
+    e = _matrix_semantic_entry("fft_dif_matrix_batch")
+    assert entry_contract_violations(e) == []
+
+
+def test_executed_contract_rejects_illegal_runners():
+    for bad in ("fft_dit_matrix",    # non-batch runner at batch=256
+                "fft_dit_fused",     # runner of a different family
+                "not_a_runner"):
+        e = _matrix_semantic_entry(bad)
+        assert any("executed" in v
+                   for v in entry_contract_violations(e)), bad
+
+
+def test_executed_contract_absent_field_is_legal_for_legacy_entries():
+    # legacy entries carry no executed field: the contract only fires
+    # when the field is present
+    assert entry_contract_violations(_base_entry()) == []
+
+
+def test_select_populates_executed_and_plan_fft_deploys_it():
+    entry = _matrix_semantic_entry("fft_dif_matrix_batch")
+    table = _table([entry])
+    s = _select(table)
+    assert s.source == "table"
+    assert s.executed == "fft_dif_matrix_batch"
+    p = plan_fft("dit", 1024, batch=256, profile_hash=PROFILE,
+                 table=table, env_hash=ENV)
+    # deploys the measured DIF runner, NOT the dit-locked name that
+    # _dispatch would derive from direction
+    assert p.executed == "fft_dif_matrix_batch"
+    assert p.fallback is False
+
+
+def test_legacy_entry_dispatches_by_direction():
+    table = _table([_base_entry()])
+    s = _select(table)
+    assert s.source == "table"
+    assert s.executed is None
+    p = plan_fft("dit", 1024, batch=256, profile_hash=PROFILE,
+                 table=table, env_hash=ENV)
+    assert p.executed == "fft_dit_batch"

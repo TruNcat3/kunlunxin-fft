@@ -195,15 +195,27 @@ def composition_select(direction: str, n: int, batch: int = 1,
                        precision: str = "fp32",
                        profile_hash: str | None = None,
                        env_hash: str | None = "auto",
-                       table: dict | None = None) -> dict | None:
+                       table: dict | None = None,
+                       transform_type: str = "c2c",
+                       transform_direction: str = "forward",
+                       normalization: str = "backward") -> dict | None:
     """Exact-shape composition verdict, or ``None`` (fail closed).
 
     Mirrors :func:`src.xpu.selector.select` fail-closed rules: no
     composition without a verifiable profile/env binding; every
     mismatch returns ``None`` so the butterfly table path decides.
     ``None`` also for DIF (the decomposition flow is DIT-only).
+
+    Semantic gate (issue #8 P1-B): a promoted composition entry is a
+    measured winner of one semantic — c2c forward with backward
+    normalization. Inverse / R2C / C2R queries (and any other norm)
+    never inherit a forward composition: they fail closed here so the
+    semantic selector decides.
     """
     if direction != "dit":
+        return None
+    if (transform_type, transform_direction, normalization) != (
+            "c2c", "forward", "backward"):
         return None
     if table is None:
         table = load_composition_table()

@@ -53,12 +53,16 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from src.xpu.manifest_contract import (  # noqa: E402
+    SEMANTIC_MATRIX_PROTOCOL,
+    cases_sha256,
+)
+
 # The matrix locks the FFT decomposition direction (issue #8 scope:
 # decomposition stability). Builders reading entry geometry source it
 # from here so table rows and run code can never disagree.
 DIRECTION = "dit"
-PROTOCOL_ID = ("semantic-matrix-v1:plan-reuse:interleave:"
-               "correctness-first")
+PROTOCOL_ID = SEMANTIC_MATRIX_PROTOCOL
 TIMING_SCOPE = ("api wall time (dispatch+alloc+layout+sync), ms; "
                 "tiers: plan_creation / steady / one_shot / e2e")
 SEMANTICS = ("c2c-forward", "c2c-inverse", "r2c", "c2r")
@@ -656,7 +660,11 @@ def _aggregate(out_dir, cases, trials, warmup, sessions, manifest=None):
     if manifest is not None:
         # WP0 integration (issue #8): summary.json embeds the same
         # manifest as manifest.json so strict validation/stamping of a
-        # directory artifact works on summary.json alone.
+        # directory artifact works on summary.json alone. The embedded
+        # copy also binds the cases array (P1-C): a summary edited
+        # after stamping fails the strict gate.
+        manifest = dict(manifest)
+        manifest["cases_sha256"] = cases_sha256(cases_out)
         summary["manifest"] = manifest
     (Path(out_dir) / "summary.json").write_text(
         json.dumps(summary, indent=2) + "\n")

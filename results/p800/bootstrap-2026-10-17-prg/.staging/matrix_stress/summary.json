@@ -161,6 +161,7 @@
     "kernel_time_status": "not collected: this stack exposes reliable sync API wall time; device/kernel timers unavailable",
     "source_hash": "746261d30f46afac93f7afe891940eaa0558d348",
     "toolchain": "python 3.10.18 + semantic-matrix-v1",
-    "result_sha256": "c3a2a1e90680c8f34ae0711175771a52889eef2a954ffd38ac65a86e59a59888"
+    "result_sha256": "c3a2a1e90680c8f34ae0711175771a52889eef2a954ffd38ac65a86e59a59888",
+    "cases_sha256": "eaffa0b225f1b074f59d3053d9f3dedf034e4cabc1232674676830b3f63c2a0a"
   }
 }

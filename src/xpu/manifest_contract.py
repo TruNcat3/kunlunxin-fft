@@ -259,6 +259,26 @@ def rows_sha256(payload: dict) -> str:
     return hashlib.sha256(blob.encode()).hexdigest()
 
 
+# Semantic-matrix protocol id (issue #8 PR-G): single-sourced here so
+# the runner, the builder's strict gate and the manifest validator can
+# never drift. The summary's ``cases`` array is bound into the
+# manifest by :func:`cases_sha256` at stamp time.
+SEMANTIC_MATRIX_PROTOCOL = ("semantic-matrix-v1:plan-reuse:interleave:"
+                            "correctness-first")
+
+
+def cases_sha256(cases) -> str:
+    """Deterministic hash binding a matrix summary's ``cases`` array.
+
+    Stamped into the manifest at calibration time and re-checked by
+    the strict output gate: a summary whose cases array is edited
+    after stamping (or replaced wholesale) fails closed (issue #8
+    P1-C).
+    """
+    blob = json.dumps(cases, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(blob.encode()).hexdigest()
+
+
 def validate_benchmark_output(summary_or_dir, strict: bool = False
                               ) -> list[str]:
     """Aggregate manifest + raw-session failures for one run output.
@@ -319,6 +339,24 @@ def validate_benchmark_output(summary_or_dir, strict: bool = False
                 failures.append(
                     f"{base.name}: result_sha256 mismatch "
                     f"(manifest {want[:12]}… != evidence {got[:12]}…)")
+        # Matrix summaries bind their cases array (issue #8 P1-C): the
+        # manifest must carry a cases_sha256 that matches the payload.
+        if _get(manifest, "protocol_id") == SEMANTIC_MATRIX_PROTOCOL:
+            cases = payload.get("cases")
+            stamp = _get(manifest, "cases_sha256")
+            if not isinstance(cases, list):
+                failures.append(
+                    f"{summary_path.name}: matrix summary has no cases "
+                    "array")
+            elif stamp is None:
+                failures.append(
+                    f"{summary_path.name}: matrix manifest missing "
+                    "cases_sha256")
+            elif stamp != cases_sha256(cases):
+                failures.append(
+                    f"{summary_path.name}: cases_sha256 mismatch "
+                    f"(manifest {stamp[:12]}… != payload "
+                    f"{cases_sha256(cases)[:12]}…)")
     return failures
 
 

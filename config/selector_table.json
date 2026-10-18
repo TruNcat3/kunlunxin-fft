@@ -1010,6 +1010,7 @@
         "variant": "spread",
         "batch": 256
       },
+      "executed": "fft_dif_matrix_batch",
       "evidence": {
         "incumbent": "matrix-incumbent",
         "challenger": "oracle:m2_dif_t64",
@@ -1018,7 +1019,8 @@
         "sessions": 3,
         "protocol_id": "semantic-matrix-v1:plan-reuse:interleave:correctness-first",
         "semantic": "c2c-forward",
-        "source": "semantic-matrix confirmation"
+        "source": "semantic-matrix confirmation",
+        "executed": "fft_dif_matrix_batch"
       },
       "reason": "independent matrix confirmation (c2c-forward): oracle:m2_dif_t64 beats incumbent by 54.9% (>= 2.0%) over 3 sessions; exact semantic key ('c2c', 'forward', 'backward')"
     },
@@ -1042,6 +1044,7 @@
         "variant": "spread",
         "batch": 256
       },
+      "executed": "fft_dif_matrix_batch",
       "evidence": {
         "incumbent": "matrix-incumbent",
         "challenger": "oracle:m2_dif_t64",
@@ -1050,7 +1053,8 @@
         "sessions": 3,
         "protocol_id": "semantic-matrix-v1:plan-reuse:interleave:correctness-first",
         "semantic": "c2c-inverse",
-        "source": "semantic-matrix confirmation"
+        "source": "semantic-matrix confirmation",
+        "executed": "fft_dif_matrix_batch"
       },
       "reason": "independent matrix confirmation (c2c-inverse): oracle:m2_dif_t64 beats incumbent by 54.9% (>= 2.0%) over 3 sessions; exact semantic key ('c2c', 'inverse', 'backward')"
     },
@@ -1074,6 +1078,7 @@
         "variant": "spread",
         "batch": 256
       },
+      "executed": "fft_dif_matrix_batch",
       "evidence": {
         "incumbent": "matrix-incumbent",
         "challenger": "oracle:m2_dif_t64",
@@ -1082,7 +1087,8 @@
         "sessions": 3,
         "protocol_id": "semantic-matrix-v1:plan-reuse:interleave:correctness-first",
         "semantic": "r2c",
-        "source": "semantic-matrix confirmation"
+        "source": "semantic-matrix confirmation",
+        "executed": "fft_dif_matrix_batch"
       },
       "reason": "independent matrix confirmation (r2c): oracle:m2_dif_t64 beats incumbent by 53.1% (>= 2.0%) over 3 sessions; exact semantic key ('r2c', 'forward', 'backward')"
     },
@@ -1106,6 +1112,7 @@
         "variant": "spread",
         "batch": 256
       },
+      "executed": "fft_dif_matrix_batch",
       "evidence": {
         "incumbent": "matrix-incumbent",
         "challenger": "oracle:m2_dif_t64",
@@ -1114,7 +1121,8 @@
         "sessions": 3,
         "protocol_id": "semantic-matrix-v1:plan-reuse:interleave:correctness-first",
         "semantic": "c2r",
-        "source": "semantic-matrix confirmation"
+        "source": "semantic-matrix confirmation",
+        "executed": "fft_dif_matrix_batch"
       },
       "reason": "independent matrix confirmation (c2r): oracle:m2_dif_t64 beats incumbent by 52.1% (>= 2.0%) over 3 sessions; exact semantic key ('c2r', 'inverse', 'backward')"
     }

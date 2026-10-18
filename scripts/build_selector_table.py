@@ -535,16 +535,99 @@ def build_batch_entries(run, guard=GUARD_PCT, threshold=1e-4, rejections=None):
     return entries
 
 
+def _crosscheck_matrix_run(path, man, cases, rows) -> None:
+    """Raw evidence must be the exact source of the summary (issue #8 P1-C).
+
+    Fail-closed artifact integrity, independent of the per-cell
+    business gates: the builder trusts the raw sessions, never the
+    summary. Refuses when the manifest declares a dirty tree, when any
+    measured contender's steady-trial completeness is broken
+    (< trials per declared session), or when any summary field
+    (medians, MADs, oracle winner, regret, session count) disagrees
+    with a recomputation from the raw samples.
+    """
+    if man.get("dirty") in (True, "True"):
+        raise ConfigError(
+            f"matrix run {path}: manifest.dirty="
+            f"{man.get('dirty')!r}; final evidence must come from a "
+            "clean tree")
+    trials = int(man["trials"])
+    sessions = int(man["sessions"])
+    steady = {}          # (label, candidate) -> [row, ...] in file order
+    dropped = set()      # (label, candidate) with a non-ok steady row
+    for r in rows:
+        if r.get("tier") != sm.TIER_STEADY:
+            continue
+        key = (r.get("label"), str(r.get("candidate") or ""))
+        if r.get("status") != "ok" or r.get("api_ms") is None:
+            dropped.add(key)
+            continue
+        steady.setdefault(key, []).append(r)
+    for key, rs in sorted(steady.items()):
+        if key in dropped:
+            continue
+        per = {}
+        for r in rs:
+            s = r.get("session")
+            per[s] = per.get(s, 0) + 1
+        if len(per) != sessions or any(c != trials for c in per.values()):
+            raise ConfigError(
+                f"matrix run {path}: {key[0]}/{key[1]} steady trial "
+                f"completeness broken (per-session {dict(sorted(per.items(), key=lambda kv: str(kv[0])))}, "
+                f"declared {trials}x{sessions}); refusing to build")
+    for case in cases:
+        label = case.get("label")
+        med, mad = {}, {}
+        for (lab, cand), rs in steady.items():
+            if lab != label or not cand.startswith(
+                    ("incumbent", "selector", "oracle:", "vendor")):
+                continue
+            xs = [r["api_ms"] for r in rs]
+            med[cand] = sm._median(xs)
+            mad[cand] = sm._mad(xs)
+        oracle_keys = [k for k in med if k.startswith("oracle:")]
+        oracle = min((med[k] for k in oracle_keys), default=None)
+        oracle_name = (min(oracle_keys, key=lambda k: med[k])
+                       if oracle_keys else None)
+        sel = med.get("selector")
+        want = {
+            "selector_ms": sel,
+            "incumbent_ms": med.get("incumbent"),
+            "vendor_ms": med.get("vendor"),
+            "oracle_ms": oracle,
+            "oracle_candidate": oracle_name,
+            "selector_mad_ms": mad.get("selector"),
+            "incumbent_mad_ms": mad.get("incumbent"),
+            "vendor_mad_ms": mad.get("vendor"),
+            "oracle_mad_ms": (min((mad[k] for k in oracle_keys),
+                                  default=None)
+                              if oracle_keys else None),
+            "selector_regret": ((sel / oracle - 1.0)
+                                if (sel and oracle) else None),
+            "sessions_with_data": len({
+                r.get("session") for r in steady.get(
+                    (label, "selector"), [])}),
+        }
+        for field, recomputed in want.items():
+            if case.get(field) != recomputed:
+                raise ConfigError(
+                    f"matrix run {path}: summary/raw disagree on "
+                    f"{label}.{field}: summary={case.get(field)!r} "
+                    f"raw-recompute={recomputed!r}; refusing "
+                    "(stale or tampered artifact)")
+
+
 def _load_matrix(path: str, rejections) -> dict:
     """Load one semantic-matrix run directory (issue #8 PR-G).
 
     Fail-closed artifact gates: the directory must pass the strict
-    output gate (embedded manifest + raw sessions + result_sha256,
-    stamped by the calibration stage), its protocol must be the matrix
-    protocol this builder trusts, and it must meet the issue's
-    confirmation floor (>= 3 sessions x >= 30 trials). Untrusted
-    artifacts raise ConfigError; per-cell business gates live in
-    :func:`build_matrix_entries`.
+    output gate (embedded manifest + raw sessions + result_sha256 +
+    cases_sha256, stamped by the calibration stage), its protocol must
+    be the matrix protocol this builder trusts, it must meet the
+    issue's confirmation floor (>= 3 sessions x >= 30 trials), and the
+    summary must agree with a recomputation from the raw sessions
+    (P1-C). Untrusted artifacts raise ConfigError; per-cell business
+    gates live in :func:`build_matrix_entries`.
     """
     problems = validate_benchmark_output(path, strict=True)
     if problems:
@@ -589,8 +672,10 @@ def _load_matrix(path: str, rejections) -> dict:
                 rows.append(json.loads(line))
     if not rows:
         raise ConfigError(f"matrix run {path}: no raw session rows")
+    cases = payload.get("cases") or []
+    _crosscheck_matrix_run(path, man, cases, rows)
     return {"path": path, "manifest": man,
-            "cases": payload.get("cases") or [], "rows": rows}
+            "cases": cases, "rows": rows}
 
 
 def _check_matrix_consistency(matrix_runs, profile_hash) -> None:
@@ -714,6 +799,25 @@ def build_matrix_entries(matrix_runs, guard=GUARD_PCT, threshold=1e-4,
                 continue
             block = int(next(iter(blocks)))
 
+            # Runner closure (issue #8 P1-A): the measured winner's
+            # runner must be present and identical across every steady
+            # sample; it is recorded end-to-end so dispatch deploys
+            # exactly what was measured (a DIF winner inside the
+            # dit-locked matrix deploys the DIF runner).
+            execs = {r.get("executed") for r in w_steady}
+            if None in execs or len(execs) != 1:
+                rej(f"winner {winner} executed runner missing/inconsistent "
+                    f"across sessions {sorted(map(str, execs))}; no entry")
+                continue
+            executed = next(iter(execs))
+            attribs = {
+                (r.get("flow_id"), r.get("flow_realization"),
+                 r.get("processing_unit")) for r in w_steady}
+            if len(attribs) != 1:
+                rej(f"winner {winner} flow attribution differs across "
+                    f"samples; no entry")
+                continue
+
             def _lower(p):
                 return {k: v for k, v in (p or {}).items()
                         if k not in _PARAM_META_KEYS}
@@ -754,6 +858,7 @@ def build_matrix_entries(matrix_runs, guard=GUARD_PCT, threshold=1e-4,
                 "challenger_ms": orc, "block": block,
                 "flow_id": flow_id, "flow_realization": real,
                 "processing_unit": unit, "params": params,
+                "executed": executed,
                 "evidence": {
                     "incumbent": "matrix-incumbent",
                     "challenger": winner,
@@ -763,6 +868,7 @@ def build_matrix_entries(matrix_runs, guard=GUARD_PCT, threshold=1e-4,
                     "protocol_id": man.get("protocol_id"),
                     "semantic": sem,
                     "source": "semantic-matrix confirmation",
+                    "executed": executed,
                 },
                 "reason": (
                     f"independent matrix confirmation ({sem}): {winner} "

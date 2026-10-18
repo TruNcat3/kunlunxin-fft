@@ -116,6 +116,31 @@ def test_selection_fail_closed_matrix():
         env_hash=None, table=table) is None
 
 
+def test_semantic_gate_only_default_triple_matches():
+    # issue #8 P1-B: a composition entry is a measured winner of one
+    # semantic — c2c + forward + backward; every other semantic fails
+    # closed so the butterfly table/selector decides.
+    table = _valid_table()
+    assert comp.composition_select(
+        "dit", 2048, 16, profile_hash="p" * 16,
+        env_hash="e" * 16, table=table) is not None
+    for kw in ({"transform_type": "c2c",
+                "transform_direction": "inverse",
+                "normalization": "backward"},
+               {"transform_type": "c2c",
+                "transform_direction": "forward",
+                "normalization": "ortho"},
+               {"transform_type": "r2c",
+                "transform_direction": "forward",
+                "normalization": "backward"},
+               {"transform_type": "c2r",
+                "transform_direction": "inverse",
+                "normalization": "backward"}):
+        assert comp.composition_select(
+            "dit", 2048, 16, profile_hash="p" * 16,
+            env_hash="e" * 16, table=table, **kw) is None, kw
+
+
 def test_contract_violations_catch_tampering():
     # clean table has no violations
     assert comp.table_violations(_valid_table()) == []
@@ -189,13 +214,16 @@ def test_plan_fft_composition_wiring(monkeypatch):
     # honest attribution: composition, never resident kernel
     assert "composition" in plan.processing_unit
 
-    # inverse semantics ride the same composition plan
+    # inverse / non-default-norm semantics never inherit the
+    # composition plan (issue #8 P1-B): only c2c+forward+backward
+    # matches a promoted composition entry
     inv = plan_fft("dit", 2048, 16, profile_hash="p" * 16,
                    env_hash="e" * 16, transform_direction="inverse",
-                   norm="ortho")
-    assert inv.selection_source == "composition"
-    assert inv.transform_direction == "inverse"
-    assert inv.norm == "ortho"
+                   norm="backward")
+    assert inv.selection_source != "composition"
+    ortho = plan_fft("dit", 2048, 16, profile_hash="p" * 16,
+                     env_hash="e" * 16, norm="ortho")
+    assert ortho.selection_source != "composition"
 
     # real-compat path never takes the composition plan
     r2c = plan_fft("dit", 2048, 16, profile_hash="p" * 16,

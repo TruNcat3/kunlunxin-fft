@@ -321,6 +321,12 @@ def plan_fft(direction: str, n: int, batch: int = 1, precision: str = "fp32",
     executor wraps the lowering (conjugate in/out + epilogue scale for
     inverse, pack/crop for real transforms) -- the wrapper is part of
     the measured path of that semantic's confirmation rows.
+
+    Runner closure (issue #8 P1-A): a table entry carrying an
+    ``executed`` field deploys exactly that runner — the measured
+    winner recorded end-to-end, even when its orientation differs from
+    the entry's locked decomposition direction; legacy entries without
+    the field dispatch via the direction-implied runner table.
     """
     # None means "the type's locked direction" (r2c forward, c2r
     # inverse, c2c forward); an explicit value is validated against the
@@ -333,11 +339,16 @@ def plan_fft(direction: str, n: int, batch: int = 1, precision: str = "fp32",
     # Exact-shape promoted composition (PR-E) outranks the butterfly
     # table for its one shape; c2c only — the real-compat path keeps
     # the butterfly lowering. Fail closed to the butterfly path.
+    # composition_select also gates on the queried semantic (issue #8
+    # P1-B: only c2c+forward+backward may match a composition entry).
     if transform_type == "c2c":
         comp = composition_select(direction, n, batch=batch,
                                   precision=precision,
                                   profile_hash=profile_hash,
-                                  env_hash=env_hash)
+                                  env_hash=env_hash,
+                                  transform_type=transform_type,
+                                  transform_direction=transform_direction,
+                                  normalization=norm)
         if comp is not None:
             return _composition_plan(comp, n, batch, direction,
                                      precision, transform_direction,
@@ -358,7 +369,10 @@ def plan_fft(direction: str, n: int, batch: int = 1, precision: str = "fp32",
         if compat:
             plan = _with_compat(plan, compat)
         return plan
-    name = _dispatch(sel)
+    # Dispatch honors the measured runner recorded end-to-end on the
+    # entry (issue #8 P1-A); legacy entries without the field keep the
+    # direction-implied runner table.
+    name = sel.executed or _dispatch(sel)
     if name is None:
         plan = _m0_plan(
             n, batch, direction, precision,

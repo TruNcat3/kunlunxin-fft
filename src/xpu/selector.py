@@ -62,6 +62,35 @@ TABLE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
 # per-trial medians.
 GUARD_PCT = 2.0
 
+# Runner names each (flow_realization, processing_unit) family may name
+# via a table entry's optional ``executed`` field (issue #8 P1-A). The
+# measured winner's runner is recorded end-to-end and dispatch honors
+# it; these maps are the contract that the name belongs to the entry's
+# own flow family, at the entry's own batch tier. Orientation (dit/dif
+# may differ from the entry's locked ``direction`` — that is exactly
+# the measured reality the field exists to close (a DIF winner inside
+# a dit-locked matrix must deploy the DIF runner, never a renamed
+# DIT). Static on purpose: src.xpu.runner imports torch, which the
+# host-side contract must never pull in.
+_SINGLE_RUNNERS = {
+    ("global-stage", "radix2-scalar"): frozenset({"fft_dit", "fft_dif"}),
+    ("global-stage", "radix4-scalar"): frozenset(
+        {"fft_dit_radix4", "fft_dif_radix4"}),
+    ("matrix-resident", "dense-dot-fft64"): frozenset(
+        {"fft_dit_matrix", "fft_dif_matrix"}),
+    ("fused-inplace", "radix2-scalar"): frozenset({"fft_dit_fused"}),
+    ("grouped-boundary", "composite-linear-map"): frozenset(
+        {"fft_dit_grouped", "fft_dif_grouped"}),
+}
+_BATCH_RUNNERS = {
+    ("global-stage", "radix2-scalar"): frozenset(
+        {"fft_dit_batch", "fft_dif_batch"}),
+    ("global-stage", "radix4-scalar"): frozenset(
+        {"fft_dit_radix4_batch", "fft_dif_radix4_batch"}),
+    ("matrix-resident", "dense-dot-fft64"): frozenset(
+        {"fft_dit_matrix_batch", "fft_dif_matrix_batch"}),
+}
+
 
 def _candidate_from_entry(entry: dict):
     """Shared schema-v2 ``Candidate`` for one frozen table entry.
@@ -186,6 +215,26 @@ def entry_contract_violations(entry: dict) -> list[str]:
         bad.append(f"batch {params['batch']!r} not in {sp.batch_candidates}")
     if "radix" in params and params["radix"] not in sp.radix:
         bad.append(f"radix {params['radix']!r} not in {sp.radix}")
+    # Runner closure (issue #8 P1-A): an entry carrying ``executed``
+    # must name a legal runner of its own (flow_realization,
+    # processing_unit) family at its own batch tier. Orientation may
+    # differ from the locked ``direction`` (the measured winner is
+    # authoritative); anything outside the family is a contract break.
+    executed = entry.get("executed")
+    if executed is not None:
+        fam = (real, unit)
+        if fam not in _SINGLE_RUNNERS:
+            bad.append(
+                f"executed {executed!r}: no known runner family for "
+                f"(flow_realization={real!r}, processing_unit={unit!r})")
+        else:
+            b = int(params.get("batch") or entry.get("batch") or 1)
+            allowed = (_BATCH_RUNNERS if b > 1 else _SINGLE_RUNNERS
+                       ).get(fam, frozenset())
+            if executed not in allowed:
+                bad.append(
+                    f"executed {executed!r} not a legal runner of "
+                    f"{fam} at batch={b} (allowed: {sorted(allowed)})")
     if bad:
         return bad
 
@@ -249,6 +298,10 @@ class Selection:
     params: dict = field(default_factory=dict)
     incumbent_ms: float | None = None
     challenger_ms: float | None = None
+    # Measured winner's runner recorded end-to-end on the entry
+    # (issue #8 P1-A); None for legacy entries, which dispatch by
+    # direction via the runner table.
+    executed: str | None = None
 
     @property
     def selected(self) -> bool:
@@ -429,6 +482,7 @@ def select(direction: str, n: int, batch: int = 1, precision: str = "fp32",
             params=dict(e.get("params") or {}),
             incumbent_ms=e.get("incumbent_ms"),
             challenger_ms=e.get("challenger_ms"),
+            executed=e.get("executed"),
         )
     return _abstain(n, direction, batch, precision,
                     f"no measured entry for N={n} batch={batch} "

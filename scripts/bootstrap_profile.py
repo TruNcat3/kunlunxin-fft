@@ -19,9 +19,12 @@ Modes (combinable):
 * ``--calibrate``    run the measuring rounds (hours on real hardware)
 * ``--verify``       strict manifest contract + selector smoke
 * ``--resume``       skip stages already recorded complete in state.json
-* ``--promote``      atomically publish staged artifacts to config/
-                     (WITHOUT this flag production config/ is never
-                     touched, even if every stage succeeded)
+                     (verify is never skipped)
+* ``--promote``      publish staged artifacts to config/ — implies a
+                     fresh verify, re-checks the current bytes against
+                     the recorded hashes and refuses any post-verify
+                     drift (WITHOUT this flag production config/ is
+                     never touched, even if every stage succeeded)
 
 Everything is written under ``--output`` staging first; a failed stage
 keeps its logs and partial results for ``--resume`` but never publishes.
@@ -37,6 +40,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
@@ -156,6 +160,33 @@ def should_skip(state: dict, stage: str, resume: bool) -> bool:
     return bool(resume and stage in state["completed"])
 
 
+def _sha256_file(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def staging_artifact_hashes(staging: Path) -> dict:
+    """SHA-256 of every staged artifact promote must see unchanged.
+
+    The verify stage records this map; ``--promote`` re-computes it and
+    refuses when any byte drifted after verify (issue #8 P1-D: a
+    ``--resume`` that silently re-publishes a modified staging is a
+    verification bypass).
+    """
+    hashes: dict = {}
+    for p in sorted(staging.glob("confirm_*.json")):
+        if p.name.endswith(".progress.json"):
+            continue
+        hashes[p.name] = _sha256_file(p)
+    for pattern in ("batch_*/summary.json", "matrix_*/summary.json"):
+        for p in sorted(staging.glob(pattern)):
+            hashes[str(p.relative_to(staging))] = _sha256_file(p)
+    for name in ("selector_table.json", "calibration.json"):
+        p = staging / name
+        if p.is_file():
+            hashes[name] = _sha256_file(p)
+    return hashes
+
+
 def run_cmd(cmd: list[str], device: str, log_dir: Path,
             tag: str) -> int:
     """Run one stage command, tee-ing output to a log file."""
@@ -201,13 +232,21 @@ def stamp_result_hashes(out: Path) -> list[str]:
         if not isinstance(man, dict):
             failures.append(f"{path.name}: no manifest to stamp")
             continue
-        from src.xpu.manifest_contract import rows_sha256
+        from src.xpu.manifest_contract import (
+            SEMANTIC_MATRIX_PROTOCOL,
+            cases_sha256,
+            rows_sha256,
+        )
         man.setdefault("source_hash", source_hash)
         if (path.name == "summary.json"
                 and list(path.parent.glob("raw_session*.jsonl"))):
             man["result_sha256"] = result_sha256(path.parent)
         elif "rows" in payload:
             man["result_sha256"] = rows_sha256(payload)
+        if (man.get("protocol_id") == SEMANTIC_MATRIX_PROTOCOL
+                and isinstance(payload.get("cases"), list)):
+            # matrix summaries bind their cases array (issue #8 P1-C)
+            man["cases_sha256"] = cases_sha256(payload["cases"])
         try:
             tmp = path.with_suffix(path.suffix + ".tmp")
             tmp.write_text(json.dumps(payload, indent=2) + "\n")
@@ -292,6 +331,53 @@ def verify_bundle(out: Path, env_hash: str | None,
                 f"verify: exact-key select for "
                 f"N{entry['N']}B{entry['batch']} resolved a different "
                 f"entry (params/block mismatch)")
+    # Measured-vs-deployed runner closure (issue #8 P1-A): an entry
+    # carrying ``executed`` must deploy exactly that runner through
+    # plan_fft; legacy entries' challenger orientation token must
+    # agree with the direction the entry claims (the runner direction
+    # dispatch derives). Covers DIT/DIF and B=1/batched via the full
+    # entry loop.
+    from src.xpu.entry import plan_fft
+    for entry in table.get("entries", []):
+        try:
+            plan = plan_fft(
+                direction=entry["direction"], n=entry["N"],
+                batch=entry["batch"], precision=table["precision"],
+                profile_hash=table["profile_hash"], table=table,
+                env_hash=env_hash,
+                transform_type=entry.get("transform_type", "c2c"),
+                transform_direction=entry.get(
+                    "transform_direction", "forward"),
+                norm=entry.get("normalization", "backward"))
+        except Exception as e:  # noqa: BLE001
+            failures.append(
+                f"verify: plan_fft(N{entry['N']}B{entry['batch']}) "
+                f"raised {e}")
+            continue
+        if plan.selection_source == "composition":
+            # exact-shape composition outranks the butterfly table by
+            # design; its runner is composition's own contract.
+            continue
+        if "executed" in entry:
+            if plan.executed != entry["executed"]:
+                failures.append(
+                    f"verify: N{entry['N']}B{entry['batch']} "
+                    f"direction={entry['direction']}: deployed runner "
+                    f"{plan.executed!r} != measured "
+                    f"{entry['executed']!r}")
+        else:
+            challenger = str(
+                (entry.get("evidence") or {}).get("challenger") or "")
+            token = ("dif" if "_dif" in challenger else
+                     "dit" if "_dit" in challenger else None)
+            if token is not None and (
+                    token != entry["direction"]
+                    or f"fft_{token}" not in (plan.executed or "")):
+                failures.append(
+                    f"verify: N{entry['N']}B{entry['batch']} legacy "
+                    f"challenger {challenger!r} implies {token} but "
+                    f"direction={entry['direction']!r} deploys "
+                    f"{plan.executed!r}")
     # Out-of-matrix abstention still works.
     try:
         sel = select(direction="dit", n=3000, batch=1,
@@ -307,22 +393,114 @@ def verify_bundle(out: Path, env_hash: str | None,
     return failures
 
 
-def promote(staging: Path, table_src: Path | None = None,
+def promote(staging: Path, state: dict | None = None,
+            table_src: Path | None = None,
             calib_src: Path | None = None) -> list[str]:
-    """Atomically publish staged artifacts; production path only here."""
+    """Publish staged artifacts only after a fresh, un-drifted verify.
+
+    Fail-closed (issue #8 P1-D): promote never trusts a prior
+    ``--verify`` from an earlier invocation — it re-runs the full
+    host-side gate on the current bytes, re-checks
+    profile/env/commit/dirty/contract, and only then replaces
+    production in one rollback-capable transaction. ``state`` must
+    carry the verify stage's recorded artifact hashes; a mismatch
+    (any byte changed after verify) refuses the promote.
+    """
+    from src.xpu.config import DeviceProfile, git_commit
+    from src.xpu.envcheck import current_env_hash
+    from src.xpu.selector import load_table
+
     failures: list[str] = []
+    if state is None or not isinstance(state.get("verified"), dict):
+        return ["promote: no fresh verify result in state (run with "
+                "--verify/--promote so the verify stage records its "
+                "hashes)"]
+    recorded = state["verified"].get("hashes")
+    if not isinstance(recorded, dict):
+        return ["promote: state verified record lacks artifact hashes"]
+    current = staging_artifact_hashes(staging)
+    if current != recorded:
+        drift = sorted(
+            set(current) ^ set(recorded)
+            | {k for k in set(current) & set(recorded)
+               if current[k] != recorded[k]})
+        return ["promote: staged artifacts changed after verify "
+                f"({', '.join(drift[:6]) or 'unknown drift'}); "
+                "re-run verify"]
+    failures += [f"promote: {f}"
+                 for f in verify_bundle(staging, current_env_hash())]
     table_src = table_src or (staging / "selector_table.json")
     calib_src = calib_src or (staging / "calibration.json")
     if not table_src.is_file():
         failures.append(f"promote: staged table missing: {table_src}")
-    else:
-        tmp = PRODUCTION_TABLE.with_suffix(".json.promote-tmp")
-        tmp.write_bytes(table_src.read_bytes())
-        os.replace(tmp, PRODUCTION_TABLE)
-    if calib_src.is_file():
-        tmp = PRODUCTION_CALIBRATION.with_suffix(".json.promote-tmp")
-        tmp.write_bytes(calib_src.read_bytes())
-        os.replace(tmp, PRODUCTION_CALIBRATION)
+        return failures
+    try:
+        table = load_table(str(table_src))
+    except Exception as e:  # noqa: BLE001
+        failures.append(f"promote: staged table does not load: {e}")
+        return failures
+    try:
+        live_profile = DeviceProfile.load().hash()
+    except Exception as e:  # noqa: BLE001
+        failures.append(f"promote: live device profile unreadable: {e}")
+        live_profile = None
+    if live_profile is not None and table.get("profile_hash") != live_profile:
+        failures.append(
+            f"promote: staged profile_hash {table.get('profile_hash')!r} "
+            f"!= live {live_profile!r}")
+    commit = git_commit()
+    for p in (sorted(staging.glob("batch_*/summary.json"))
+              + sorted(staging.glob("matrix_*/summary.json"))
+              + [q for q in staging.glob("confirm_*.json")
+                 if not q.name.endswith(".progress.json")]):
+        try:
+            man = json.loads(p.read_text()).get("manifest") or {}
+        except (OSError, json.JSONDecodeError) as e:
+            failures.append(f"promote: {p.name} unreadable: {e}")
+            continue
+        if man.get("dirty") is not False:
+            failures.append(
+                f"promote: {p.name} manifest.dirty={man.get('dirty')!r}; "
+                "evidence must come from a clean tree")
+        if commit != "unknown" and man.get("commit") != commit:
+            failures.append(
+                f"promote: {p.name} manifest.commit={man.get('commit')!r} "
+                f"!= current {commit!r}; re-measure at HEAD")
+    if failures:
+        return failures
+    # --- transactional publish ---------------------------------------
+    table_bytes = table_src.read_bytes()
+    calib_bytes = (calib_src.read_bytes() if calib_src.is_file()
+                   else None)
+    targets = [(PRODUCTION_TABLE, table_bytes)]
+    if calib_bytes is not None:
+        targets.append((PRODUCTION_CALIBRATION, calib_bytes))
+    backups = {dst: dst.read_bytes() for dst, _ in targets
+               if dst.is_file()}
+    tmps = []
+    try:
+        for dst, data in targets:
+            tmp = dst.with_suffix(dst.suffix + ".promote-tmp")
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            tmp.write_bytes(data)
+            tmps.append((tmp, dst))
+        for tmp, dst in tmps:
+            os.replace(tmp, dst)
+    except OSError as e:
+        for dst, data in backups.items():
+            try:
+                restore = dst.with_suffix(dst.suffix + ".promote-restore")
+                restore.write_bytes(data)
+                os.replace(restore, dst)
+            except OSError:
+                pass  # best-effort rollback; originals kept in memory
+        for tmp, _ in tmps:
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+        failures.append(
+            f"promote: publish failed, production restored: {e}")
     return failures
 
 
@@ -349,8 +527,9 @@ def main() -> int:
     ap.add_argument("--resume", action="store_true",
                     help="skip stages already complete in state.json")
     ap.add_argument("--promote", action="store_true",
-                    help="atomically publish staged table+calibration "
-                         "to config/ (only after verify passes)")
+                    help="publish staged table+calibration to config/ "
+                         "(implies --verify; re-verifies the current "
+                         "bytes and refuses any post-verify drift)")
     args = ap.parse_args()
 
     out: Path = args.output
@@ -365,7 +544,9 @@ def main() -> int:
         stages = ["probe", "check"]
         if args.calibrate:
             stages += ["calibrate", "build"]
-        if args.verify:
+        if args.verify or args.promote:
+            # --promote implies a fresh verify (issue #8 P1-D): the
+            # old "promote without --verify" bypass is gone.
             stages += ["verify"]
 
     def _fail(stage: str, code: int, detail: str = "") -> int:
@@ -380,7 +561,9 @@ def main() -> int:
         return 1
 
     for stage in stages:
-        if should_skip(state, stage, args.resume):
+        # verify is never skippable (issue #8 P1-D): a --resume that
+        # skips it would let an unverified or drifted staging promote.
+        if stage != "verify" and should_skip(state, stage, args.resume):
             print(f"[skip] {stage} (already complete, --resume)")
             continue
         print(f"[stage] {stage}")
@@ -454,6 +637,11 @@ def main() -> int:
             if failures:
                 return _fail(stage, 1,
                              "; ".join(failures[:6]))
+            # record the verified bytes: promote re-checks these hashes
+            # and refuses on any post-verify drift (issue #8 P1-D)
+            state["verified"] = {
+                "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "hashes": staging_artifact_hashes(staging)}
         mark_complete(state, stage)
         state.pop("failures", None)
         save_state(out, state)
@@ -463,11 +651,7 @@ def main() -> int:
         return 0
 
     if args.promote:
-        if args.verify and "verify" not in state["completed"]:
-            print("promote refused: verify has not passed",
-                  file=sys.stderr)
-            return 1
-        failures = promote(staging)
+        failures = promote(staging, state=state)
         if failures:
             print(format_failures(failures, "promote"), file=sys.stderr)
             return 1

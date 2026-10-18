@@ -265,10 +265,22 @@ def test_state_roundtrip_and_resume(tmp_path):
     assert not bp.should_skip(reloaded, "check", resume=True)
 
 
-def test_promote_only_touches_production_when_called(tmp_path, monkeypatch):
+def _minimal_staged_table():
+    return {
+        "profile_hash": "a78b86793c7142a0",
+        "precision": "fp32",
+        "guard_pct": 2.0,
+        "env_hash": "e" * 16,
+        "entries": [],
+    }
+
+
+def _promote_fixture(tmp_path, monkeypatch, *, table_text=None,
+                     verify_failures=None):
+    """Redirected production targets + a staged table + fresh state."""
     import bootstrap_profile as bp
-    # redirect production targets into tmp so the real config/ is never
-    # at risk even if the test misbehaves
+    monkeypatch.setattr(bp, "verify_bundle",
+                        lambda *a, **k: list(verify_failures or []))
     monkeypatch.setattr(bp, "PRODUCTION_TABLE",
                         tmp_path / "config" / "selector_table.json")
     monkeypatch.setattr(bp, "PRODUCTION_CALIBRATION",
@@ -276,24 +288,41 @@ def test_promote_only_touches_production_when_called(tmp_path, monkeypatch):
     prod = bp.PRODUCTION_TABLE
     prod.parent.mkdir(parents=True, exist_ok=True)
     prod.write_text('{"published": "old"}')
-    old_bytes = prod.read_bytes()
-
     staging = tmp_path / "staging"
     staging.mkdir()
     staged = staging / "selector_table.json"
-    staged.write_text('{"published": "new"}')
+    staged.write_text(table_text if table_text is not None
+                      else json.dumps(_minimal_staged_table()))
+    state = {"verified": {"hashes": bp.staging_artifact_hashes(staging)}}
+    return bp, prod, staging, state
+
+
+def test_promote_only_touches_production_when_called(tmp_path, monkeypatch):
+    bp, prod, staging, state = _promote_fixture(tmp_path, monkeypatch)
+    old_bytes = prod.read_bytes()
 
     # no promote call: production bytes unchanged
     assert prod.read_bytes() == old_bytes
 
-    failures = bp.promote(staging)
+    failures = bp.promote(staging, state=state)
     assert failures == []
-    assert json.loads(prod.read_text())["published"] == "new"
+    assert json.loads(prod.read_text())["precision"] == "fp32"
     # atomic: no tmp residue
     assert not list(prod.parent.glob("*.promote-tmp"))
 
 
 def test_promote_missing_staged_table_fails(tmp_path, monkeypatch):
+    bp, prod, staging, state = _promote_fixture(
+        tmp_path, monkeypatch, table_text="")
+    # overwrite with nothing: remove the staged table
+    (staging / "selector_table.json").unlink()
+    state["verified"]["hashes"] = bp.staging_artifact_hashes(staging)
+    failures = bp.promote(staging, state=state)
+    assert failures and "staged table missing" in failures[0]
+    assert prod.read_text() == '{"published": "old"}'
+
+
+def test_promote_refuses_without_fresh_verify(tmp_path, monkeypatch):
     import bootstrap_profile as bp
     monkeypatch.setattr(bp, "PRODUCTION_TABLE",
                         tmp_path / "config" / "selector_table.json")
@@ -304,9 +333,72 @@ def test_promote_missing_staged_table_fails(tmp_path, monkeypatch):
     prod.write_text('{"published": "old"}')
     staging = tmp_path / "staging"
     staging.mkdir()
-    failures = bp.promote(staging)
-    assert failures and "staged table missing" in failures[0]
+    failures = bp.promote(staging, state=None)
+    assert failures and "no fresh verify" in failures[0]
     assert prod.read_text() == '{"published": "old"}'
+
+
+def test_promote_refuses_on_post_verify_drift(tmp_path, monkeypatch):
+    bp, prod, staging, state = _promote_fixture(tmp_path, monkeypatch)
+    # simulate a --resume that modified staging after verify
+    state["verified"]["hashes"] = {"selector_table.json": "0" * 64}
+    failures = bp.promote(staging, state=state)
+    assert failures and "changed after verify" in failures[0]
+    assert prod.read_text() == '{"published": "old"}'
+
+
+def test_promote_reruns_verify_and_refuses_on_failure(tmp_path, monkeypatch):
+    # promote never trusts a prior verify: it re-runs the gate on the
+    # current bytes and refuses on any failure (issue #8 P1-D)
+    bp, prod, staging, state = _promote_fixture(
+        tmp_path, monkeypatch, verify_failures=["verify: boom"])
+    failures = bp.promote(staging, state=state)
+    assert any("verify: boom" in f for f in failures)
+    assert prod.read_text() == '{"published": "old"}'
+
+
+def test_promote_refuses_dirty_evidence(tmp_path, monkeypatch):
+    import run_semantic_matrix as sm
+    from src.xpu.config import git_commit
+    bp, prod, staging, state = _promote_fixture(tmp_path, monkeypatch)
+    mdir = staging / "matrix_stress"
+    mdir.mkdir()
+    man = {"commit": git_commit(), "dirty": True}
+    (mdir / "summary.json").write_text(json.dumps(
+        {"manifest": man, "cases": [], "protocol_id": sm.PROTOCOL_ID}))
+    state["verified"]["hashes"] = bp.staging_artifact_hashes(staging)
+    failures = bp.promote(staging, state=state)
+    assert any("dirty" in f for f in failures)
+    assert prod.read_text() == '{"published": "old"}'
+
+
+def test_promote_transactional_restore_on_replace_failure(tmp_path,
+                                                          monkeypatch):
+    bp, prod, staging, state = _promote_fixture(tmp_path, monkeypatch)
+    (staging / "calibration.json").write_text('{"cal": "new"}')
+    calib_prod = bp.PRODUCTION_CALIBRATION
+    calib_prod.write_text('{"cal": "old"}')
+    state["verified"]["hashes"] = bp.staging_artifact_hashes(staging)
+    old_table = prod.read_bytes()
+    old_calib = calib_prod.read_bytes()
+
+    import os as _os
+    real_replace = _os.replace
+    calls = {"n": 0}
+
+    def flaky(src, dst, *a, **k):
+        calls["n"] += 1
+        if calls["n"] == 2:   # fail the second publish replace only
+            raise OSError("disk full")
+        return real_replace(src, dst, *a, **k)
+
+    monkeypatch.setattr(_os, "replace", flaky)
+    failures = bp.promote(staging, state=state)
+    assert any("restored" in f for f in failures)
+    # both production targets rolled back to their pre-promote bytes
+    assert prod.read_bytes() == old_table
+    assert calib_prod.read_bytes() == old_calib
+    assert not list(prod.parent.glob("*.promote-tmp"))
 
 
 def test_failed_stage_keeps_staging_and_records_state(tmp_path):
