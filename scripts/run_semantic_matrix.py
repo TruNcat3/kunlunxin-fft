@@ -56,6 +56,7 @@ if str(ROOT) not in sys.path:
 from src.xpu.manifest_contract import (  # noqa: E402
     SEMANTIC_MATRIX_PROTOCOL,
     cases_sha256,
+    result_sha256,
 )
 
 # The matrix locks the FFT decomposition direction (issue #8 scope:
@@ -89,6 +90,23 @@ SCOPES = {
     # default confirmation scope (WP1 step 2 -> exact-key promotion).
     "stress": [(1024, 256)],
 }
+
+
+def _scope_cells(scope):
+    """Unique (N, batch) schedule for a scope, order-preserving.
+
+    ``all`` concatenates main+apps+large and the OFDM/radar proxy shapes
+    sit in both main and apps (issue #8 domain bookkeeping). Without
+    dedupe each shared cell is measured twice per session and emits
+    duplicate (session, label, trial, candidate) raw keys, which the
+    strict manifest gate rejects -- found by the post-promote
+    full-domain confirmation run.
+    """
+    if scope == "all":
+        raw = SCOPES["main"] + SCOPES["apps"] + SCOPES["large"]
+    else:
+        raw = SCOPES[scope]
+    return list(dict.fromkeys(raw))
 
 
 def _median(xs):
@@ -723,13 +741,6 @@ def _write_figures(out_dir, summary):
     return out
 
 
-def _rows_sha256(out_dir):
-    h = hashlib.sha256()
-    for name in sorted(Path(out_dir).glob("raw_session*.jsonl")):
-        h.update(name.read_bytes())
-    return h.hexdigest()
-
-
 def _write_snapshot(out_dir, release_id, manifest, env, args, cases):
     snap = ROOT / "results" / "p800" / "releases" / release_id
     if snap.exists():
@@ -737,7 +748,9 @@ def _write_snapshot(out_dir, release_id, manifest, env, args, cases):
                          f"{snap}")
     snap.mkdir(parents=True)
     manifest = dict(manifest)
-    manifest["result_sha256"] = _rows_sha256(out_dir)
+    # same hash function validate_benchmark_output recomputes (the
+    # former local bytes-only variant diverged and failed the gate)
+    manifest["result_sha256"] = result_sha256(out_dir)
     if "source_hash" not in manifest:
         manifest["source_hash"] = _git("rev-parse", "HEAD")
     (snap / "manifest.json").write_text(
@@ -782,10 +795,7 @@ def main():
                     help=argparse.SUPPRESS)
     args = ap.parse_args()
 
-    if args.scope == "all":
-        cases = (SCOPES["main"] + SCOPES["apps"] + SCOPES["large"])
-    else:
-        cases = SCOPES[args.scope]
+    cases = _scope_cells(args.scope)
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -854,6 +864,17 @@ def main():
 
     summary = _aggregate(out_dir, cases, args.trials, args.warmup,
                          args.sessions, manifest=man)
+    # Issue #8 P1-C strict gate: bind the raw evidence hash with the
+    # same manifest_contract.result_sha256 the validator recomputes,
+    # into both the standalone manifest.json and the summary's
+    # embedded manifest copy (the snapshot below inherits it).
+    res = result_sha256(out_dir)
+    man["result_sha256"] = res
+    summary["manifest"]["result_sha256"] = res
+    (out_dir / "manifest.json").write_text(
+        json.dumps(man, indent=2, sort_keys=True) + "\n")
+    (out_dir / "summary.json").write_text(
+        json.dumps(summary, indent=2, sort_keys=True) + "\n")
     m = summary["metrics"]
     print(f"cases={len(summary['cases'])} "
           f"win/tie/loss={m['win']}/{m['tie']}/{m['loss']} "

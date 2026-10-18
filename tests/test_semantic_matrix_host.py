@@ -16,7 +16,10 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import run_semantic_matrix as sm  # noqa: E402
-from src.xpu.manifest_contract import validate_manifest  # noqa: E402
+from src.xpu.manifest_contract import (  # noqa: E402
+    validate_benchmark_output,
+    validate_manifest,
+)
 
 
 def _row(label, candidate, tier, api_ms=None, status="ok", **kw):
@@ -199,7 +202,7 @@ def test_snapshot_manifest_passes_strict_contract(tmp_path, monkeypatch):
     snap = sm._write_snapshot(out, "rid2", man, {}, None, ["N64B1"])
     stamped = json.loads((snap / "manifest.json").read_text())
     assert validate_manifest(stamped, strict=True) == []
-    assert stamped["result_sha256"] == sm._rows_sha256(out)
+    assert stamped["result_sha256"] == sm.result_sha256(out)
     # snapshot raw is gzip'd but byte-identical after decompression
     import gzip as _gz
     with _gz.open(snap / "raw_session0.jsonl.gz", "rb") as f:
@@ -260,3 +263,69 @@ def test_oracle_plans_carry_attribution_and_executed():
     flows = {p.flow_id for p in plans}
     assert flows <= {"batch-spread", "batch-folded",
                      "local-fused-tile", "baseline-global-stage"}
+
+
+def test_scope_cells_all_dedupes_shared_shapes():
+    """issue #8: ``--scope all`` must schedule each cell exactly once.
+
+    main and apps both list the OFDM/radar proxy shapes; scheduling them
+    twice emits duplicate raw trial keys and the strict manifest gate
+    rejects the run (found by the post-promote full-domain run).
+    """
+    cells = sm._scope_cells("all")
+    assert len(cells) == len(set(cells))
+    # order-preserving first occurrence wins for the shared shapes
+    shared = [(1024, 16), (1024, 64), (2048, 16), (2048, 64)]
+    for shape in shared:
+        assert cells.count(shape) == 1
+        assert cells.index(shape) == (
+            sm.SCOPES["main"] + sm.SCOPES["apps"]
+            + sm.SCOPES["large"]).index(shape)
+    # main + apps + large counted with overlap removed: 24+6+6-4
+    assert len(cells) == 32
+    # every scope schedules unique cells too
+    for scope in sm.SCOPES:
+        sc = sm._scope_cells(scope)
+        assert len(sc) == len(set(sc))
+
+
+def test_aggregate_stamp_and_strict_gate(tmp_path):
+    """Issue #8 P1-C: a matrix run output passes the strict gate only
+    when manifest.json and summary.json both carry result_sha256 bound
+    with manifest_contract.result_sha256 over the raw sessions."""
+    rows = _sem_rows("N64B1:c2c-forward", 0.3, 0.9, 1.2, 0.28)
+    _write_raw(tmp_path, rows)
+    man = {
+        "commit": "a" * 40, "dirty": False, "device": "d",
+        "driver": "515.58", "profile_hash": "p" * 16,
+        "env_hash": "e" * 16, "toolchain": "python",
+        "protocol_id": sm.PROTOCOL_ID,
+        "timing_scope": sm.TIMING_SCOPE,
+        "selection_semantics": "correctness-first",
+        "warmup": 1, "trials": 3, "sessions": 1, "seed_base": 1234,
+        "candidates": ["incumbent", "selector", "oracle:*", "vendor"],
+        "shapes": ["N64B1:c2c-forward"], "error_threshold": 1e-4,
+        "repro_command": "python scripts/run_semantic_matrix.py",
+        "gm_bytes_kind": "analytical estimate only",
+        "kernel_time_status": "not collected",
+        "source_hash": "b" * 40,
+    }
+    summary = sm._aggregate(tmp_path, [(64, 1)], 3, 1, 1, manifest=man)
+    # what run_semantic_matrix.main stamps after aggregation
+    res = sm.result_sha256(tmp_path)
+    man["result_sha256"] = res
+    summary["manifest"]["result_sha256"] = res
+    (tmp_path / "manifest.json").write_text(
+        json.dumps(man, indent=2, sort_keys=True) + "\n")
+    (tmp_path / "summary.json").write_text(
+        json.dumps(summary, indent=2, sort_keys=True) + "\n")
+    assert validate_manifest(
+        json.loads((tmp_path / "manifest.json").read_text()),
+        strict=True) == []
+    assert validate_benchmark_output(tmp_path, strict=True) == []
+    # without the stamp the strict gate must fail (the bug this guards)
+    summary["manifest"].pop("result_sha256")
+    (tmp_path / "summary.json").write_text(
+        json.dumps(summary, indent=2, sort_keys=True) + "\n")
+    assert any("result_sha256" in f
+               for f in validate_benchmark_output(tmp_path, strict=True))
