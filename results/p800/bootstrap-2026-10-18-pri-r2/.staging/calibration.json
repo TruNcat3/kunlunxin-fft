@@ -1,0 +1,128 @@
+{
+  "baseline_costs": {
+    "cuda_synchronize_ms": 0.008899485692381859,
+    "d2d_64mib_ms": 0.072688446380198,
+    "d2d_gib_per_s": 859.8340329506125,
+    "d2h_64mib_ms": 37.135923048481345,
+    "d2h_gib_per_s": 1.683006503390412,
+    "h2d_64mib_ms": 6.7919474095106125,
+    "h2d_gib_per_s": 9.20207360741378,
+    "timing_protocol": "warmup then N trials, wall time with explicit torch.cuda.synchronize(), median",
+    "torch_mm_1024_fp32_ms": 0.0433996319770813,
+    "torch_mm_gflops": 49481.60963977884,
+    "triton_launch_ms": 0.02604397013783455,
+    "triton_launch_ms_g1024": 12.20728293992579,
+    "vendor_fft_b64n2048_ms": 0.6082530599087477
+  },
+  "env": {
+    "device_model": 3,
+    "driver": "515.58",
+    "max_shared_mem": 262144,
+    "multiprocessor_count": 12,
+    "torch": "2.9.0+cu129",
+    "triton": "3.0.0",
+    "xhpc": "20770323",
+    "xpytorch": "XMLIR--bc1b1dc6f-dev+2026032411",
+    "xre": "5.13.0.0"
+  },
+  "env_hash": "6b50bd316032c0fe",
+  "kind": "p800-calibration",
+  "profile_hash": "e72eb352dffb26fd",
+  "resource_constraints": {
+    "observed": {
+      "device_count": 1,
+      "multi_processor_count": 8,
+      "name": "GPU",
+      "total_memory_bytes": 103079215104
+    },
+    "static": {
+      "clusters": 12,
+      "cores_per_cluster": 64,
+      "hbm_gib": 96,
+      "shared_mem_bytes": 262144,
+      "xpu_arch": 3
+    }
+  },
+  "schema_version": 1,
+  "vendor_reprobe": [
+    {
+      "N": 16,
+      "batch": 1,
+      "status": "ok"
+    },
+    {
+      "N": 1024,
+      "batch": 16,
+      "status": "ok"
+    },
+    {
+      "N": 2048,
+      "batch": 64,
+      "status": "ok"
+    },
+    {
+      "N": 4096,
+      "batch": 16,
+      "status": "unsupported: RuntimeError: [NOT IMPLEMENTED]: error code= 4(at /home/agent/xpytorch/workspace/8ba19c15-fc11-4377-85f3-84daf8eaab09/XMLIR/python/torch_xmlir/csrc/aten_capture/eager_customized/fft_fft.cpp:40)"
+    },
+    {
+      "N": 16384,
+      "batch": 1,
+      "status": "unsupported: RuntimeError: [NOT IMPLEMENTED]: error code= 4(at /home/agent/xpytorch/workspace/8ba19c15-fc11-4377-85f3-84daf8eaab09/XMLIR/python/torch_xmlir/csrc/aten_capture/eager_customized/fft_fft.cpp:40)"
+    },
+    {
+      "N": 65536,
+      "batch": 1,
+      "status": "unsupported: RuntimeError: [NOT IMPLEMENTED]: error code= 4(at /home/agent/xpytorch/workspace/8ba19c15-fc11-4377-85f3-84daf8eaab09/XMLIR/python/torch_xmlir/csrc/aten_capture/eager_customized/fft_fft.cpp:40)"
+    },
+    {
+      "N": 1048576,
+      "batch": 1,
+      "status": "unsupported: RuntimeError: [NOT IMPLEMENTED]: error code= 4(at /home/agent/xpytorch/workspace/8ba19c15-fc11-4377-85f3-84daf8eaab09/XMLIR/python/torch_xmlir/csrc/aten_capture/eager_customized/fft_fft.cpp:40)"
+    }
+  ],
+  "verified_paths": [
+    {
+      "detail": null,
+      "path": "triton-elementwise-launch",
+      "status": "ok"
+    },
+    {
+      "detail": "max_rel_error=1.30e-07",
+      "path": "m0-global-stage-dit-n64-b1",
+      "status": "ok"
+    },
+    {
+      "detail": "max_rel_error=1.35e-07",
+      "path": "m0-global-stage-batch-folded-n64-b4",
+      "status": "ok"
+    },
+    {
+      "detail": "max_rel_error=2.44e-07",
+      "path": "m2-matrix-batch-spread-n64-b4",
+      "status": "ok"
+    },
+    {
+      "detail": "max_rel_error=1.55e-07",
+      "path": "m5-radix4-batch-spread-n64-b4",
+      "status": "ok"
+    },
+    {
+      "detail": "max_rel_error=2.08e-07",
+      "path": "m2-packet-td2-n64-b4",
+      "status": "ok"
+    }
+  ],
+  "versions": {
+    "cuda_visible_devices": "0",
+    "device": "kunlunxin-p800",
+    "device_code_path": "triton -> xmlir -> xpu instructions",
+    "device_profile_hash": "a78b86793c7142a0",
+    "driver": "515.58",
+    "git_dirty": false,
+    "git_rev": "3a57d1a69bee9eb3e512781bf2e11d37b8abcdd0",
+    "python": "3.10.18",
+    "torch": "2.9.0+cu129",
+    "triton": "3.0.0"
+  }
+}

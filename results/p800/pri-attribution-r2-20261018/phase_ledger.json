@@ -1,0 +1,607 @@
+{
+ "cells": [
+  {
+   "batch_fill": [],
+   "cell": "N64B64:c2c-forward",
+   "launches": {
+    "incumbent": {
+     "available": true,
+     "efficiency": "scalar-radix2",
+     "estimate": true,
+     "executed": "fft_dit_batch",
+     "family": "incumbent_m4_folded",
+     "flops": 73728.0,
+     "gm_bytes": 393216,
+     "kind": "analytic estimate (cost_model.axes + real-compat op list)",
+     "launches": 6,
+     "real_compat_ops": []
+    },
+    "selector": {
+     "available": true,
+     "efficiency": "dot-matrix",
+     "estimate": true,
+     "executed": "fft_dit_matrix_batch",
+     "family": "m2_batch",
+     "flops": 524288.0,
+     "gm_bytes": 393216,
+     "kind": "analytic estimate (cost_model.axes + real-compat op list)",
+     "launches": 2,
+     "real_compat_ops": []
+    }
+   },
+   "phases": {
+    "incumbent": {
+     "errors": [],
+     "inter_phase_host_overhead_ms": 0.04117658827453863,
+     "kind": "fresh measured (phase timers; extra synchronize added)",
+     "note": "attribution mode: each phase is bracketed by synchronize(); NOT comparable to headline protocol timings (ledger off there)",
+     "phase_order": [
+      "plan-validate",
+      "core-invoke",
+      "epilogue-scale"
+     ],
+     "phase_sum_mean_ms": 0.6222608576839168,
+     "phases": {
+      "core-invoke": {
+       "calls": 30,
+       "max_ms": 0.6137881428003311,
+       "mean_ms": 0.6037985362733403,
+       "p50_ms": 0.6048380164429545
+      },
+      "epilogue-scale": {
+       "calls": 30,
+       "max_ms": 0.009400071576237679,
+       "mean_ms": 0.007841518769661585,
+       "p50_ms": 0.007844530045986176
+      },
+      "plan-validate": {
+       "calls": 30,
+       "max_ms": 0.01902901567518711,
+       "mean_ms": 0.010620802640914917,
+       "p50_ms": 0.010049552656710148
+      }
+     },
+     "sync_added": true,
+     "trial_wall_mean_ms": 0.6634374459584554,
+     "trial_wall_p50_ms": 0.6658465135842562,
+     "trials": 30
+    },
+    "plan_creation": {
+     "kind": "fresh measured (host plan resolution, no device)",
+     "mean_ms": 0.15164073556661606,
+     "reps": 5
+    },
+    "selector": {
+     "errors": [],
+     "inter_phase_host_overhead_ms": 0.037906326663990825,
+     "kind": "fresh measured (phase timers; extra synchronize added)",
+     "note": "attribution mode: each phase is bracketed by synchronize(); NOT comparable to headline protocol timings (ledger off there)",
+     "phase_order": [
+      "plan-validate",
+      "core-invoke",
+      "epilogue-scale"
+     ],
+     "phase_sum_mean_ms": 0.19095357662687698,
+     "phases": {
+      "core-invoke": {
+       "calls": 30,
+       "max_ms": 0.18543587066233158,
+       "mean_ms": 0.1738083160792788,
+       "p50_ms": 0.17264601774513721
+      },
+      "epilogue-scale": {
+       "calls": 30,
+       "max_ms": 0.008280156180262566,
+       "mean_ms": 0.007500840971867244,
+       "p50_ms": 0.007414957508444786
+      },
+      "plan-validate": {
+       "calls": 30,
+       "max_ms": 0.02347910776734352,
+       "mean_ms": 0.009644419575730959,
+       "p50_ms": 0.009119976311922073
+      }
+     },
+     "sync_added": true,
+     "trial_wall_mean_ms": 0.2288599032908678,
+     "trial_wall_p50_ms": 0.22682046983391047,
+     "trials": 30
+    },
+    "vendor": {
+     "available": true,
+     "kind": "fresh measured (vendor host API wall; single call, extra synchronize added)",
+     "note": "vendor has no exposed internal phases on this stack",
+     "trials": 30,
+     "wall_mean_ms": 0.019939492146174114,
+     "wall_p50_ms": 0.019628903828561306
+    }
+   },
+   "summary_context": {
+    "incumbent_ms": 0.6610259879380465,
+    "kind": "summary-derived (release summary medians)",
+    "selector_ms": 0.19552605226635933,
+    "selector_source": "table",
+    "vendor_ms": 0.031139003112912178
+   }
+  },
+  {
+   "batch_fill": [],
+   "cell": "N64B64:r2c",
+   "launches": {
+    "incumbent": {
+     "available": true,
+     "efficiency": "scalar-radix2",
+     "estimate": true,
+     "executed": "fft_dit_batch",
+     "family": "incumbent_m4_folded",
+     "flops": 73728.0,
+     "gm_bytes": 393216,
+     "kind": "analytic estimate (cost_model.axes + real-compat op list)",
+     "launches": 6,
+     "real_compat_ops": [
+      {
+       "in_bytes": 32768,
+       "kind": "analytic estimate",
+       "op": "real-input-pack (torch.complex)",
+       "out_bytes": 32768
+      },
+      {
+       "in_bytes": 32768,
+       "kind": "analytic estimate",
+       "op": "half-spectrum crop (slice+contiguous)",
+       "out_bytes": 8448
+      },
+      {
+       "in_bytes": 32768,
+       "kind": "analytic estimate",
+       "note": "skipped at runtime when scale == 1.0",
+       "op": "normalization epilogue (scale)",
+       "out_bytes": 32768
+      }
+     ]
+    },
+    "selector": {
+     "available": true,
+     "efficiency": "dot-matrix",
+     "estimate": true,
+     "executed": "fft_dit_matrix_batch",
+     "family": "m2_batch",
+     "flops": 524288.0,
+     "gm_bytes": 393216,
+     "kind": "analytic estimate (cost_model.axes + real-compat op list)",
+     "launches": 2,
+     "real_compat_ops": [
+      {
+       "in_bytes": 32768,
+       "kind": "analytic estimate",
+       "op": "real-input-pack (torch.complex)",
+       "out_bytes": 32768
+      },
+      {
+       "in_bytes": 32768,
+       "kind": "analytic estimate",
+       "op": "half-spectrum crop (slice+contiguous)",
+       "out_bytes": 8448
+      },
+      {
+       "in_bytes": 32768,
+       "kind": "analytic estimate",
+       "note": "skipped at runtime when scale == 1.0",
+       "op": "normalization epilogue (scale)",
+       "out_bytes": 32768
+      }
+     ]
+    }
+   },
+   "phases": {
+    "incumbent": {
+     "errors": [],
+     "inter_phase_host_overhead_ms": 0.05790383244554198,
+     "kind": "fresh measured (phase timers; extra synchronize added)",
+     "note": "attribution mode: each phase is bracketed by synchronize(); NOT comparable to headline protocol timings (ledger off there)",
+     "phase_order": [
+      "plan-validate",
+      "real-input-pack",
+      "core-invoke",
+      "epilogue-scale",
+      "half-spectrum-crop"
+     ],
+     "phase_sum_mean_ms": 0.6990028079599142,
+     "phases": {
+      "core-invoke": {
+       "calls": 30,
+       "max_ms": 0.6028981879353523,
+       "mean_ms": 0.591125440162917,
+       "p50_ms": 0.5913270870223641
+      },
+      "epilogue-scale": {
+       "calls": 30,
+       "max_ms": 0.017069047316908836,
+       "mean_ms": 0.007970204266409079,
+       "p50_ms": 0.0075249699875712395
+      },
+      "half-spectrum-crop": {
+       "calls": 30,
+       "max_ms": 0.06869900971651077,
+       "mean_ms": 0.059437425807118416,
+       "p50_ms": 0.059278449043631554
+      },
+      "plan-validate": {
+       "calls": 30,
+       "max_ms": 0.018069054931402206,
+       "mean_ms": 0.0104907201603055,
+       "p50_ms": 0.009870156645774841
+      },
+      "real-input-pack": {
+       "calls": 30,
+       "max_ms": 0.037588877603411674,
+       "mean_ms": 0.029979017563164234,
+       "p50_ms": 0.029569491744041443
+      }
+     },
+     "sync_added": true,
+     "trial_wall_mean_ms": 0.7569066404054562,
+     "trial_wall_p50_ms": 0.7581940153613687,
+     "trials": 30
+    },
+    "plan_creation": {
+     "kind": "fresh measured (host plan resolution, no device)",
+     "mean_ms": 0.03363722935318947,
+     "reps": 5
+    },
+    "selector": {
+     "errors": [],
+     "inter_phase_host_overhead_ms": 0.05659838983168203,
+     "kind": "fresh measured (phase timers; extra synchronize added)",
+     "note": "attribution mode: each phase is bracketed by synchronize(); NOT comparable to headline protocol timings (ledger off there)",
+     "phase_order": [
+      "plan-validate",
+      "real-input-pack",
+      "core-invoke",
+      "epilogue-scale",
+      "half-spectrum-crop"
+     ],
+     "phase_sum_mean_ms": 0.27739701326936483,
+     "phases": {
+      "core-invoke": {
+       "calls": 30,
+       "max_ms": 0.19000587053596973,
+       "mean_ms": 0.17599472776055336,
+       "p50_ms": 0.1748169306665659
+      },
+      "epilogue-scale": {
+       "calls": 30,
+       "max_ms": 0.007849885150790215,
+       "mean_ms": 0.007394577066103618,
+       "p50_ms": 0.007360009476542473
+      },
+      "half-spectrum-crop": {
+       "calls": 30,
+       "max_ms": 0.059169018641114235,
+       "mean_ms": 0.0554124436651667,
+       "p50_ms": 0.055533950217068195
+      },
+      "plan-validate": {
+       "calls": 30,
+       "max_ms": 0.010470161214470863,
+       "mean_ms": 0.009677768684923649,
+       "p50_ms": 0.009604496881365776
+      },
+      "real-input-pack": {
+       "calls": 30,
+       "max_ms": 0.030328985303640366,
+       "mean_ms": 0.028917496092617512,
+       "p50_ms": 0.02882443368434906
+      }
+     },
+     "sync_added": true,
+     "trial_wall_mean_ms": 0.33399540310104686,
+     "trial_wall_p50_ms": 0.33239286858588457,
+     "trials": 30
+    },
+    "vendor": {
+     "available": true,
+     "kind": "fresh measured (vendor host API wall; single call, extra synchronize added)",
+     "note": "vendor has no exposed internal phases on this stack",
+     "trials": 30,
+     "wall_mean_ms": 0.018637914520998795,
+     "wall_p50_ms": 0.01835485454648733
+    }
+   },
+   "summary_context": {
+    "incumbent_ms": 0.7008849643170834,
+    "kind": "summary-derived (release summary medians)",
+    "selector_ms": 0.25718496181070805,
+    "selector_source": "table",
+    "vendor_ms": 0.031569041311740875
+   }
+  },
+  {
+   "batch_fill": [],
+   "cell": "N128B64:c2c-forward",
+   "launches": {
+    "incumbent": {
+     "available": true,
+     "efficiency": "scalar-radix2",
+     "estimate": true,
+     "executed": "fft_dit_batch",
+     "family": "incumbent_m4_folded",
+     "flops": 172032.0,
+     "gm_bytes": 917504,
+     "kind": "analytic estimate (cost_model.axes + real-compat op list)",
+     "launches": 7,
+     "real_compat_ops": []
+    },
+    "selector": {
+     "available": true,
+     "efficiency": "dot-matrix",
+     "estimate": true,
+     "executed": "fft_dit_matrix_batch",
+     "family": "m2_batch",
+     "flops": 1073152.0,
+     "gm_bytes": 917504,
+     "kind": "analytic estimate (cost_model.axes + real-compat op list)",
+     "launches": 3,
+     "real_compat_ops": []
+    }
+   },
+   "phases": {
+    "incumbent": {
+     "errors": [],
+     "inter_phase_host_overhead_ms": 0.04664990119636059,
+     "kind": "fresh measured (phase timers; extra synchronize added)",
+     "note": "attribution mode: each phase is bracketed by synchronize(); NOT comparable to headline protocol timings (ledger off there)",
+     "phase_order": [
+      "plan-validate",
+      "core-invoke",
+      "epilogue-scale"
+     ],
+     "phase_sum_mean_ms": 1.1568081021929781,
+     "phases": {
+      "core-invoke": {
+       "calls": 30,
+       "max_ms": 3.0633769929409027,
+       "mean_ms": 1.1379084006572764,
+       "p50_ms": 1.0638029780238867
+      },
+      "epilogue-scale": {
+       "calls": 30,
+       "max_ms": 0.023159896954894066,
+       "mean_ms": 0.008261514206727346,
+       "p50_ms": 0.0077500008046627045
+      },
+      "plan-validate": {
+       "calls": 30,
+       "max_ms": 0.026830006390810013,
+       "mean_ms": 0.010638187328974405,
+       "p50_ms": 0.010060030035674572
+      }
+     },
+     "sync_added": true,
+     "trial_wall_mean_ms": 1.2034580033893387,
+     "trial_wall_p50_ms": 1.123051973991096,
+     "trials": 30
+    },
+    "plan_creation": {
+     "kind": "fresh measured (host plan resolution, no device)",
+     "mean_ms": 0.1637046691030264,
+     "reps": 5
+    },
+    "selector": {
+     "errors": [],
+     "inter_phase_host_overhead_ms": 0.042341696098446735,
+     "kind": "fresh measured (phase timers; extra synchronize added)",
+     "note": "attribution mode: each phase is bracketed by synchronize(); NOT comparable to headline protocol timings (ledger off there)",
+     "phase_order": [
+      "plan-validate",
+      "core-invoke",
+      "epilogue-scale"
+     ],
+     "phase_sum_mean_ms": 0.5881378116707008,
+     "phases": {
+      "core-invoke": {
+       "calls": 30,
+       "max_ms": 0.5983579903841019,
+       "mean_ms": 0.5704945030932626,
+       "p50_ms": 0.5700779147446156
+      },
+      "epilogue-scale": {
+       "calls": 30,
+       "max_ms": 0.008429866284132004,
+       "mean_ms": 0.007780129089951515,
+       "p50_ms": 0.007734517566859722
+      },
+      "plan-validate": {
+       "calls": 30,
+       "max_ms": 0.01056981272995472,
+       "mean_ms": 0.009863179487486681,
+       "p50_ms": 0.009834999218583107
+      }
+     },
+     "sync_added": true,
+     "trial_wall_mean_ms": 0.6304795077691475,
+     "trial_wall_p50_ms": 0.6289969896897674,
+     "trials": 30
+    },
+    "vendor": {
+     "available": true,
+     "kind": "fresh measured (vendor host API wall; single call, extra synchronize added)",
+     "note": "vendor has no exposed internal phases on this stack",
+     "trials": 30,
+     "wall_mean_ms": 0.024733180180191994,
+     "wall_p50_ms": 0.024734996259212494
+    }
+   },
+   "summary_context": {
+    "incumbent_ms": 1.1218579020351171,
+    "kind": "summary-derived (release summary medians)",
+    "selector_ms": 0.6291971076279879,
+    "selector_source": "table",
+    "vendor_ms": 0.03674905747175217
+   }
+  },
+  {
+   "batch_fill": [
+    {
+     "N": 2048,
+     "conclusion_scope": "per-point wall time from summary medians; fill proxy only \u2014 no worker/wave hardware counters exist on this stack",
+     "kind": "summary-derived (release summary medians)",
+     "points": [
+      {
+       "B": 16,
+       "selector_ms": 0.3033941611647606,
+       "selector_us_per_point": 0.009258855016014422,
+       "vendor_ms": 0.6667759735137224,
+       "vendor_us_per_point": 0.020348387863577955
+      },
+      {
+       "B": 64,
+       "selector_ms": 5.863556871190667,
+       "selector_us_per_point": 0.04473538872673544,
+       "vendor_ms": 0.6817050743848085,
+       "vendor_us_per_point": 0.005200996966436833
+      },
+      {
+       "B": 256,
+       "selector_ms": 21.914728917181492,
+       "selector_us_per_point": 0.04179902823864268,
+       "vendor_ms": 1.4663790352642536,
+       "vendor_us_per_point": 0.002796896048096187
+      }
+     ],
+     "poor_batch_fill": true,
+     "selector_per_point_growth_smallest_to_largest_B": 4.5144921446923725,
+     "semantic": "c2c-forward",
+     "vendor_per_point_growth_smallest_to_largest_B": 0.1374504981351577
+    }
+   ],
+   "cell": "N2048B256:c2c-forward",
+   "launches": {
+    "incumbent": {
+     "available": true,
+     "efficiency": "scalar-radix2",
+     "estimate": true,
+     "executed": "fft_dit_batch",
+     "family": "incumbent_m4_folded",
+     "flops": 17301504.0,
+     "gm_bytes": 92274688,
+     "kind": "analytic estimate (cost_model.axes + real-compat op list)",
+     "launches": 11,
+     "real_compat_ops": []
+    },
+    "selector": {
+     "available": true,
+     "efficiency": "dot-matrix",
+     "estimate": true,
+     "executed": "fft_dit_matrix_batch",
+     "family": "m2_batch",
+     "flops": 74973184.0,
+     "gm_bytes": 92274688,
+     "kind": "analytic estimate (cost_model.axes + real-compat op list)",
+     "launches": 7,
+     "real_compat_ops": []
+    }
+   },
+   "phases": {
+    "incumbent": {
+     "errors": [],
+     "inter_phase_host_overhead_ms": 0.11559042613953352,
+     "kind": "fresh measured (phase timers; extra synchronize added)",
+     "note": "attribution mode: each phase is bracketed by synchronize(); NOT comparable to headline protocol timings (ledger off there)",
+     "phase_order": [
+      "plan-validate",
+      "core-invoke",
+      "epilogue-scale"
+     ],
+     "phase_sum_mean_ms": 49.540174628297486,
+     "phases": {
+      "core-invoke": {
+       "calls": 30,
+       "max_ms": 50.25063897483051,
+       "mean_ms": 49.50863953369359,
+       "p50_ms": 49.5582235744223
+      },
+      "epilogue-scale": {
+       "calls": 30,
+       "max_ms": 0.029039103537797928,
+       "mean_ms": 0.011887509996692339,
+       "p50_ms": 0.010660034604370594
+      },
+      "plan-validate": {
+       "calls": 30,
+       "max_ms": 0.04544900730252266,
+       "mean_ms": 0.0196475846072038,
+       "p50_ms": 0.01796905416995287
+      }
+     },
+     "sync_added": true,
+     "trial_wall_mean_ms": 49.65576505443702,
+     "trial_wall_p50_ms": 49.7033498249948,
+     "trials": 30
+    },
+    "plan_creation": {
+     "kind": "fresh measured (host plan resolution, no device)",
+     "mean_ms": 0.22044964134693146,
+     "reps": 5
+    },
+    "selector": {
+     "errors": [],
+     "inter_phase_host_overhead_ms": 0.08022550027817843,
+     "kind": "fresh measured (phase timers; extra synchronize added)",
+     "note": "attribution mode: each phase is bracketed by synchronize(); NOT comparable to headline protocol timings (ledger off there)",
+     "phase_order": [
+      "plan-validate",
+      "core-invoke",
+      "epilogue-scale"
+     ],
+     "phase_sum_mean_ms": 21.210791822522875,
+     "phases": {
+      "core-invoke": {
+       "calls": 30,
+       "max_ms": 21.3954069186002,
+       "mean_ms": 21.187189461973805,
+       "p50_ms": 21.183026023209095
+      },
+      "epilogue-scale": {
+       "calls": 30,
+       "max_ms": 0.010529067367315292,
+       "mean_ms": 0.009361476016541323,
+       "p50_ms": 0.009345007129013538
+      },
+      "plan-validate": {
+       "calls": 30,
+       "max_ms": 0.017940066754817963,
+       "mean_ms": 0.014240884532531103,
+       "p50_ms": 0.01399940811097622
+      }
+     },
+     "sync_added": true,
+     "trial_wall_mean_ms": 21.291017322801054,
+     "trial_wall_p50_ms": 21.283354028128088,
+     "trials": 30
+    },
+    "vendor": {
+     "available": true,
+     "kind": "fresh measured (vendor host API wall; single call, extra synchronize added)",
+     "note": "vendor has no exposed internal phases on this stack",
+     "trials": 30,
+     "wall_mean_ms": 1.4080511095623176,
+     "wall_p50_ms": 1.4057409716770053
+    }
+   },
+   "summary_context": {
+    "incumbent_ms": 50.02492805942893,
+    "kind": "summary-derived (release summary medians)",
+    "selector_ms": 21.914728917181492,
+    "selector_source": "table",
+    "vendor_ms": 1.4663790352642536
+   }
+  }
+ ],
+ "meta": {
+  "commit": "78308014ab9e3d71394a18fba07b68906ca4cf37",
+  "generated": "2026-10-19T00:31:14.051539+00:00",
+  "protocol_id": "semantic-matrix-v1:plan-reuse:interleave:correctness-first",
+  "summary": "results/p800/pri-postpromote-20261018/summary.json"
+ }
+}
