@@ -25,6 +25,7 @@ device stack).
 
 from __future__ import annotations
 
+import gzip
 import hashlib
 import json
 from pathlib import Path
@@ -132,20 +133,49 @@ def canonical_label(value) -> str:
     return str(value).replace(":", "_")
 
 
+def _raw_paths(raw_dir: Path):
+    """Raw session files under ``raw_dir``: plain ``.jsonl`` preferred,
+    gzip ``.jsonl.gz`` when the plain session is absent (issue #8 PR-J
+    A2: release snapshots store gzip'd raw as canonical evidence)."""
+    plain = sorted(Path(raw_dir).glob("raw_session*.jsonl"))
+    if plain:
+        return plain
+    return sorted(Path(raw_dir).glob("raw_session*.jsonl.gz"))
+
+
+def _open_raw(path: Path):
+    if str(path).endswith(".gz"):
+        return gzip.open(path, "rt")
+    return open(path)
+
+
+def _logical_raw_name(path: Path) -> str:
+    name = path.name
+    return name[:-3] if name.endswith(".gz") else name
+
+
 def _iter_raw_rows(raw_dir: Path):
-    """Yield (path, line_no, row) for every raw session row."""
-    for path in sorted(raw_dir.glob("raw_session*.jsonl")):
-        with open(path) as f:
-            for line_no, line in enumerate(f, 1):
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    row = json.loads(line)
-                except json.JSONDecodeError as e:
-                    yield path, line_no, {"__decode_error__": str(e)}
-                    continue
-                yield path, line_no, row
+    """Yield (path, line_no, row) for every raw session row.
+
+    Reads both plain and gzip raw sessions; an unreadable/corrupt
+    archive yields an ``__decode_error__`` row so strict validation
+    fails closed instead of silently missing rows.
+    """
+    for path in _raw_paths(raw_dir):
+        try:
+            with _open_raw(path) as f:
+                for line_no, line in enumerate(f, 1):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        row = json.loads(line)
+                    except json.JSONDecodeError as e:
+                        yield path, line_no, {"__decode_error__": str(e)}
+                        continue
+                    yield path, line_no, row
+        except (OSError, EOFError) as e:
+            yield path, 0, {"__decode_error__": f"unreadable raw: {e}"}
 
 
 def validate_raw_sessions(raw_dir: Path, manifest: dict,
@@ -244,11 +274,22 @@ def validate_raw_sessions(raw_dir: Path, manifest: dict,
 
 
 def result_sha256(raw_dir: Path) -> str:
-    """Deterministic hash over raw_session*.jsonl contents (sorted)."""
+    """Deterministic hash over raw sessions (sorted).
+
+    Canonical form is ``(logical filename, raw session bytes)``: a gzip
+    snapshot hashes under its logical ``raw_sessionN.jsonl`` name over
+    the decompressed bytes, so the plain source directory and the
+    immutable ``.jsonl.gz`` snapshot produce the identical digest
+    (issue #8 PR-J A2).
+    """
     h = hashlib.sha256()
-    for path in sorted(Path(raw_dir).glob("raw_session*.jsonl")):
-        h.update(path.name.encode())
-        h.update(path.read_bytes())
+    for path in _raw_paths(raw_dir):
+        h.update(_logical_raw_name(path).encode())
+        if str(path).endswith(".gz"):
+            with gzip.open(path, "rb") as f:
+                h.update(f.read())
+        else:
+            h.update(path.read_bytes())
     return h.hexdigest()
 
 
@@ -306,8 +347,7 @@ def validate_benchmark_output(summary_or_dir, strict: bool = False
         return [f"{summary_path}: summary has no manifest"]
     failures = [f"{summary_path.name}: {m}"
                 for m in validate_manifest(manifest, strict=strict)]
-    has_raw = (raw_dir.is_dir()
-               and bool(list(raw_dir.glob("raw_session*.jsonl"))))
+    has_raw = raw_dir.is_dir() and bool(_raw_paths(raw_dir))
     if has_raw:
         failures += [f"{base.name}/{m}"
                      for m in validate_raw_sessions(raw_dir, manifest,
@@ -333,9 +373,15 @@ def validate_benchmark_output(summary_or_dir, strict: bool = False
                 "result_sha256")
         else:
             want = _get(manifest, "result_sha256")
-            got = (result_sha256(raw_dir) if has_raw
-                   else rows_sha256(payload))
-            if want != got:
+            try:
+                got = (result_sha256(raw_dir) if has_raw
+                       else rows_sha256(payload))
+            except (OSError, EOFError) as e:
+                # a corrupt gzip archive must fail closed as a
+                # validation failure, never crash the gate
+                failures.append(f"{base.name}: unreadable raw archive: {e}")
+                got = None
+            if got is not None and want != got:
                 failures.append(
                     f"{base.name}: result_sha256 mismatch "
                     f"(manifest {want[:12]}… != evidence {got[:12]}…)")

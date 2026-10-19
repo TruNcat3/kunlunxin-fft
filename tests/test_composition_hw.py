@@ -122,22 +122,48 @@ def test_composition_forward_b1_rank1(monkeypatch):
 
 
 def test_composition_inverse_and_norms(monkeypatch):
+    """P1-B semantic contract on device (issue #8 PR-J A3).
+
+    Inverse queries never inherit the composition plan under any norm,
+    and neither do forward queries with a non-backward norm; the
+    fail-closed fallback output must stay numerically correct across
+    repeated execution of the same plan instance (plan reuse).
+    """
     table = _table((1024, 4, 0.10, 0.50))
     monkeypatch.setattr(comp, "load_composition_table",
                         lambda path=comp.TABLE_PATH: table)
     x = _input(1024, 4)
     xn = x.detach().cpu().numpy().astype(np.complex128)
+    n = 1024
     cases = [
         ("backward", np.fft.ifft(xn, axis=-1)),
         ("ortho", np.fft.ifft(xn, norm="ortho", axis=-1)),
-        ("forward", np.fft.ifft(xn, axis=-1) * 1024),  # inverse*1 = N-scaled
+        ("forward", np.fft.ifft(xn, axis=-1) * n),  # inverse, N-scaled
     ]
     for norm, ref in cases:
-        plan = plan_fft("dit", 1024, 4, profile_hash=PROF, env_hash=ENV,
+        plan = plan_fft("dit", n, 4, profile_hash=PROF, env_hash=ENV,
                         transform_direction="inverse", norm=norm)
-        assert plan.selection_source == "composition"
-        y = execute_fft_plan(plan, x)
-        assert _err(y, ref) <= 1e-4, norm
+        assert plan.selection_source != "composition", norm
+        # forward + non-backward norm is equally banned (host contract
+        # tests/test_composition.py::test_plan_fft_composition_wiring)
+        if norm != "backward":
+            fwd = plan_fft("dit", n, 4, profile_hash=PROF, env_hash=ENV,
+                           norm=norm)
+            assert fwd.selection_source != "composition", norm
+        prev = None
+        for i in range(3):
+            y = execute_fft_plan(plan, x)   # repeated exec, same plan
+            assert _err(y, ref) <= 1e-4, f"{norm} exec{i}"
+            if prev is not None:
+                # plan reuse: same ExecutionPlan instance, stable
+                # output (device lacks complex eq kernel -> compare on
+                # host, like every other numeric check here)
+                a = y.detach().cpu().numpy()
+                b = prev.detach().cpu().numpy()
+                scale = max(float(np.abs(a).max()), 1.0)
+                assert np.abs(a - b).max() <= 1e-6 * scale, \
+                    f"plan reuse unstable: {norm}"
+            prev = y
 
 
 def test_composition_c2c_only_boundary(monkeypatch):

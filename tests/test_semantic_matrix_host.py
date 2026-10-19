@@ -199,10 +199,22 @@ def test_snapshot_manifest_passes_strict_contract(tmp_path, monkeypatch):
         "kernel_time_status": "not collected",
         "source_hash": "b" * 40,
     }
+    # mirror main(): aggregate + stamp both manifests, then the writer
+    # strict-validates the finished snapshot (issue #8 PR-J A2)
+    summary = sm._aggregate(out, [(64, 1)], 3, 5, 1, manifest=man)
+    res = sm.result_sha256(out)
+    man["result_sha256"] = res
+    summary["manifest"]["result_sha256"] = res
+    man["cases_sha256"] = summary["manifest"]["cases_sha256"]
+    (out / "manifest.json").write_text(json.dumps(man))
+    (out / "summary.json").write_text(json.dumps(summary))
     snap = sm._write_snapshot(out, "rid2", man, {}, None, ["N64B1"])
     stamped = json.loads((snap / "manifest.json").read_text())
     assert validate_manifest(stamped, strict=True) == []
     assert stamped["result_sha256"] == sm.result_sha256(out)
+    emb = json.loads((snap / "summary.json").read_text())["manifest"]
+    assert stamped["cases_sha256"] == emb["cases_sha256"]
+    assert validate_benchmark_output(snap, strict=True) == []
     # snapshot raw is gzip'd but byte-identical after decompression
     import gzip as _gz
     with _gz.open(snap / "raw_session0.jsonl.gz", "rb") as f:
@@ -393,3 +405,56 @@ def test_winner_block_plans_tolerate_composition_block_none():
     assert [p.block for p in plans] == [256, 512, 1024, 2048]
     assert [p.params["oracle_name"] for p in plans] == [
         "winner-b256", "winner-b512", "winner-b1024", "winner-b2048"]
+
+
+def test_previous_deployed_column_and_dispositions(tmp_path):
+    """Issue #8 PR-J A1: same-session previous-deployed comparison."""
+    rows = []
+    for lbl, prev_ms, sel_ms in (
+            ("N64B1:c2c-forward", 0.4, 0.4),   # parity
+            ("N64B1:c2c-inverse", 0.4, 0.5),   # +25% -> regression
+    ):
+        rows += _sem_rows(lbl, sel_ms, 2.0, 1.2, sel_ms * 0.9)
+        for i in range(3):
+            rows.append(_row(lbl, "previous-deployed", "steady", prev_ms,
+                             trial=i, selection_source="table"))
+    _write_raw(tmp_path, rows)
+    summary = sm._aggregate(tmp_path, _cases(), 3, 1, 1)
+    by = {c["label"]: c for c in summary["cases"]}
+    fwd = by["N64B1:c2c-forward"]
+    assert fwd["previous_deployed_ms"] == 0.4
+    assert abs(fwd["selector_vs_previous"]) < 1e-9
+    assert fwd["previous_deployed_source"] == "table"
+    assert fwd["regression_reason"] is None
+    inv = by["N64B1:c2c-inverse"]
+    assert abs(inv["selector_vs_previous"] - 0.25) < 1e-9
+    assert "slower than legal previous" in inv["regression_reason"]
+    m = summary["metrics"]
+    assert m["previous_cells_measured"] == 2
+    assert m["previous_regressions_gt_2pct"] == ["N64B1:c2c-inverse"]
+    # full disposition table written for every cell
+    import csv as _csv
+    with open(tmp_path / "regression_vs_previous.csv") as f:
+        out = list(_csv.reader(f))
+    assert out[0][:3] == ["label", "semantic", "N"]
+    assert len(out) == 1 + 8  # 2 shapes x 4 semantics + header
+    # pre-registered intentional semantic-correction cells
+    reason = sm._previous_regression_reason(
+        "N2048B16", "c2c-inverse", {"selector_vs_previous": None})
+    assert "intentional semantic correction" in reason
+    assert sm._previous_regression_reason(
+        "N64B1", "r2c", {"selector_vs_previous": 0.01}) is None
+
+
+def test_previous_selector_source_is_pinned_commit():
+    """A1: previous table comes from the fixed pre-issue commit, and
+    its bytes hash to the reviewed digest (never the working tree)."""
+    import hashlib
+    import subprocess
+    raw = subprocess.check_output(
+        ["git", "show",
+         f"{sm.PREVIOUS_SELECTOR_COMMIT}:config/selector_table.json"],
+        cwd=ROOT)
+    assert hashlib.sha256(raw).hexdigest() == (
+        "acc1f21c9c93fe20589993f22589ccc24e5b08db05be29d63321d9b63a6b5449")
+    assert sm.PREVIOUS_SELECTOR_COMMIT.startswith("54260cf")

@@ -10,6 +10,7 @@ Covers the review acceptance:
 * the verify bundle fails closed on env mismatch.
 """
 
+import gzip
 import json
 import sys
 from pathlib import Path
@@ -22,6 +23,8 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from src.xpu.manifest_contract import (  # noqa: E402
     REQUIRED_MANIFEST_KEYS,
+    SEMANTIC_MATRIX_PROTOCOL,
+    cases_sha256,
     format_failures,
     result_sha256,
     rows_sha256,
@@ -603,3 +606,116 @@ def test_exact_key_smoke_fails_legacy_tier_mismatch(tmp_path, monkeypatch):
 
     failures = _run_smoke(table, select_impl, tmp_path, monkeypatch)
     assert any("resolved a different entry" in f for f in failures)
+
+
+# ------------- gzip release snapshots (issue #8 PR-J A2) -----------------
+
+def _write_gzip_raw(out_dir, rows_by_session):
+    for s, rows in rows_by_session.items():
+        with gzip.open(out_dir / f"raw_session{s}.jsonl.gz", "wt") as f:
+            for r in rows:
+                f.write(json.dumps(r) + "\n")
+
+
+def _write_plain_raw(out_dir, rows_by_session):
+    for s, rows in rows_by_session.items():
+        with open(out_dir / f"raw_session{s}.jsonl", "w") as f:
+            for r in rows:
+                f.write(json.dumps(r) + "\n")
+
+
+def _stamp_dir(out_dir, manifest, cases=None):
+    summary_path = Path(out_dir) / "summary.json"
+    payload = {"manifest": dict(manifest)}
+    if cases is not None:
+        payload["cases"] = cases
+    summary_path.write_text(json.dumps(payload))
+    payload["manifest"]["result_sha256"] = result_sha256(Path(out_dir))
+    if cases is not None:
+        payload["manifest"]["cases_sha256"] = cases_sha256(cases)
+    summary_path.write_text(json.dumps(payload))
+    return summary_path
+
+
+def test_gzip_snapshot_hash_matches_plain_and_strict_passes(tmp_path):
+    man = dict(_valid_manifest(), sessions=2)
+    rows = {s: [_valid_row(session=s, trial=i) for i in range(2)]
+            for s in (0, 1)}
+    plain, gz = tmp_path / "plain", tmp_path / "gz"
+    plain.mkdir()
+    gz.mkdir()
+    _write_plain_raw(plain, rows)
+    _write_gzip_raw(gz, rows)
+    # canonical hash: logical name + decompressed bytes -> identical
+    assert result_sha256(plain) == result_sha256(gz)
+    assert _stamp_dir(plain, man) is not None
+    assert _stamp_dir(gz, man) is not None
+    assert validate_benchmark_output(plain, strict=True) == []
+    assert validate_benchmark_output(gz, strict=True) == []
+
+
+def test_gzip_missing_session_fails_strict(tmp_path):
+    man = dict(_valid_manifest(), sessions=2)
+    rows = {0: [_valid_row(session=0, trial=i) for i in range(2)]}
+    _write_gzip_raw(tmp_path, rows)
+    summary = _stamp_dir(tmp_path, man)
+    failures = validate_benchmark_output(summary, strict=True)
+    assert any("missing sessions" in f for f in failures)
+
+
+def test_gzip_corrupt_archive_fails_strict_without_crash(tmp_path):
+    man = _valid_manifest()
+    rows = {0: [_valid_row(session=0, trial=i) for i in range(2)]}
+    _write_gzip_raw(tmp_path, rows)
+    summary = _stamp_dir(tmp_path, man)
+    (tmp_path / "raw_session0.jsonl.gz").write_bytes(b"not a gzip stream")
+    failures = validate_benchmark_output(summary, strict=True)
+    assert failures
+    assert any("unreadable" in f or "invalid JSON" in f for f in failures)
+
+
+def test_gzip_tampered_row_fails_strict(tmp_path):
+    man = _valid_manifest()
+    rows = {0: [_valid_row(session=0, trial=i) for i in range(2)]}
+    _write_gzip_raw(tmp_path, rows)
+    summary = _stamp_dir(tmp_path, man)
+    rows[0].append(_valid_row(session=0, trial=99))
+    _write_gzip_raw(tmp_path, rows)
+    failures = validate_benchmark_output(summary, strict=True)
+    assert any("result_sha256 mismatch" in f for f in failures)
+
+
+def test_gzip_matrix_cases_drift_fails_strict(tmp_path):
+    man = dict(_valid_manifest(), protocol_id=SEMANTIC_MATRIX_PROTOCOL)
+    rows = {0: [_valid_row(session=0, trial=i) for i in range(2)]}
+    for r in rows[0]:
+        r["protocol_id"] = SEMANTIC_MATRIX_PROTOCOL
+    _write_gzip_raw(tmp_path, rows)
+    cases = [{"label": "N1024B16_dit", "selector_ms": 0.5}]
+    summary = _stamp_dir(tmp_path, man, cases=cases)
+    assert validate_benchmark_output(summary, strict=True) == []
+    payload = json.loads(summary.read_text())
+    payload["cases"] = cases + [{"label": "N8B1_dit", "selector_ms": 1.0}]
+    summary.write_text(json.dumps(payload))
+    failures = validate_benchmark_output(summary, strict=True)
+    assert any("cases_sha256 mismatch" in f for f in failures)
+
+
+def test_committed_release_snapshots_strict_validate():
+    """Post-P1-C release snapshots must strict-validate in place
+    (issue #8 PR-J A2: gzip raw discovered, hashes canonical)."""
+    checked = 0
+    for snap in sorted((ROOT / "results" / "p800" / "releases").glob("*")):
+        summary_path = snap / "summary.json"
+        if not summary_path.is_file():
+            continue
+        payload = json.loads(summary_path.read_text())
+        man = payload.get("manifest", {})
+        if not ({"cases_sha256", "result_sha256"} <= set(man)):
+            # pre-contract archive (missing hash stamps / pre-dedupe
+            # raw): strict=False tier covers these, out of this gate
+            continue
+        failures = validate_benchmark_output(snap, strict=True)
+        assert not failures, f"{snap.name}: {failures}"
+        checked += 1
+    assert checked >= 1, "no post-P1-C release snapshot found to validate"

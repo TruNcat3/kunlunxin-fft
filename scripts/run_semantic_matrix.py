@@ -56,7 +56,9 @@ if str(ROOT) not in sys.path:
 from src.xpu.manifest_contract import (  # noqa: E402
     SEMANTIC_MATRIX_PROTOCOL,
     cases_sha256,
+    format_failures,
     result_sha256,
+    validate_benchmark_output,
 )
 
 # The matrix locks the FFT decomposition direction (issue #8 scope:
@@ -114,6 +116,27 @@ SCOPES = {
             (4096, 16), (4096, 64), (16384, 16),
             (65536, 16), (65536, 64)],
 }
+
+
+# Previous production selector: the frozen table as of the last commit
+# BEFORE issue #8 started (v2 snapshot commit) — read from git, never
+# from the working tree. Issue #8 PR-J A1: release confirmation needs a
+# same-session previous-deployed contender, not a cross-day join.
+PREVIOUS_SELECTOR_COMMIT = "54260cf9f2dfda5dc830f749c2debf4101d59d48"
+PREVIOUS_TABLE_FILE = "previous_selector_table.json"
+PREVIOUS_CANDIDATE = "previous-deployed"
+# Cells whose PREVIOUS deployed behavior was the (now P1-B-forbidden)
+# forward-composition inheritance — pre-registered exceptions that may
+# never be re-enabled for speed (issue #8 PR-J A1).
+PRE_INTENTIONAL_CORRECTIONS = {
+    ("N2048B16", "c2c-inverse"),
+    ("N2048B16", "r2c"),
+    ("N2048B16", "c2r"),
+}
+INTENTIONAL_REASON = (
+    "intentional semantic correction: previous deployed inherited the "
+    "c2c-forward composition plan for this semantic; P1-B forbids it "
+    "(never re-enabled)")
 
 
 def _scope_cells(scope):
@@ -445,7 +468,7 @@ def _row(session, case_label, semantic, contender, tier, trial, **kw):
 
 
 def run_case(session, n, b, semantic, trials, warmup, seed, table,
-             raw, e2e_trials, one_shot_trials):
+             previous_table, raw, e2e_trials, one_shot_trials):
     import torch
     from src.xpu.entry import execute_fft_plan, run_fft
     from src.xpu.config import DeviceProfile
@@ -472,6 +495,15 @@ def run_case(session, n, b, semantic, trials, warmup, seed, table,
                                (lambda p=incumbent: execute_fft_plan(p, x)))
     contenders["selector"] = (selector,
                               (lambda p=selector: execute_fft_plan(p, x)))
+    if previous_table is not None:
+        # Previous production selector resolved through the CURRENT
+        # contracts (fail-closed: illegal old plans fall back, the
+        # banned inverse-composition path can never re-enter). Same
+        # profile/env binding, interleaved by _timed_steady below.
+        previous = _entry_plan(direction, n, b, semantic, prof,
+                               previous_table)
+        contenders[PREVIOUS_CANDIDATE] = (
+            previous, (lambda p=previous: execute_fft_plan(p, x)))
     if ORACLE_MODE == "winner-block":
         if selector.fallback:
             raise RuntimeError(
@@ -609,9 +641,12 @@ def run_case(session, n, b, semantic, trials, warmup, seed, table,
 
 def run_child(payload):
     session, cases, trials, warmup, seed, out_dir, e2e_trials, \
-        one_shot_trials = payload
+        one_shot_trials = payload[:8]
+    previous_table_path = payload[8] if len(payload) > 8 else None
     from src.xpu.selector import load_table
     table = load_table(str(ROOT / "config" / "selector_table.json"))
+    previous_table = (load_table(str(previous_table_path))
+                      if previous_table_path else None)
     raw_path = Path(out_dir) / f"raw_session{session}.jsonl"
     # per-session seeded interleaving of case order (and semantic
     # order): no session measures the grid in the same sequence
@@ -627,7 +662,8 @@ def run_child(payload):
                 try:
                     run_case(session, n, b, semantic, trials, warmup,
                              seed + session * 10007 + n * 13 + b, table,
-                             rows, e2e_trials, one_shot_trials)
+                             previous_table, rows, e2e_trials,
+                             one_shot_trials)
                 except Exception as e:  # noqa: BLE001
                     rows.append(_row(
                         session, f"N{n}B{b}", semantic, "case", "error",
@@ -637,6 +673,26 @@ def run_child(payload):
                     raw_f.write(json.dumps(r) + "\n")
                 raw_f.flush()
     return raw_path
+
+
+def _previous_regression_reason(case_label, semantic, entry):
+    """Disposition text for the previous-deployed comparison (A1).
+
+    - pre-registered semantic fixes (banned inverse-composition era
+      behavior) always carry the intentional-correction marker;
+    - any other cell slower than the LEGAL previous deployed path by
+      more than 2% is flagged for the review reply (keep old path as
+      fallback unless it was itself a correctness/semantic fix).
+    """
+    key = (case_label, semantic)
+    reg = entry.get("selector_vs_previous")
+    slow = reg is not None and reg > 0.02
+    if key in PRE_INTENTIONAL_CORRECTIONS:
+        return INTENTIONAL_REASON
+    if slow:
+        return ("current selector slower than legal previous deployed "
+                ">2% (candidate: retain previous path as fallback)")
+    return None
 
 
 def _aggregate(out_dir, cases, trials, warmup, sessions, manifest=None):
@@ -682,7 +738,8 @@ def _aggregate(out_dir, cases, trials, warmup, sessions, manifest=None):
             mad = {}
             for (lab, cand, tier), xs in steady.items():
                 if lab == label and cand.startswith(
-                        ("incumbent", "selector", "oracle:", "vendor")):
+                        ("incumbent", "selector", "oracle:", "vendor",
+                         PREVIOUS_CANDIDATE)):
                     med[cand] = _median(xs)
                     mad[cand] = _mad(xs)
             oracle_keys = [k for k in med if k.startswith("oracle:")]
@@ -692,6 +749,11 @@ def _aggregate(out_dir, cases, trials, warmup, sessions, manifest=None):
             sel = med.get("selector")
             inc = med.get("incumbent")
             ven = med.get("vendor")
+            prev = med.get(PREVIOUS_CANDIDATE)
+            # selector_vs_previous > 0: current selector is SLOWER
+            # than the legal previous deployed path (regression).
+            vs_prev = ((sel / prev - 1.0)
+                       if (sel and prev) else None)
             entry = {
                 "label": label, "N": n, "batch": b,
                 "semantic": semantic, "direction": DIRECTION,
@@ -721,6 +783,13 @@ def _aggregate(out_dir, cases, trials, warmup, sessions, manifest=None):
                 "selector_source": meta.get(
                     (label, "selector", TIER_STEADY), {}
                 ).get("params", {}).get("selection_source"),
+                # A1: previous production column (issue #8 review)
+                "previous_deployed_ms": prev,
+                "previous_deployed_mad_ms": mad.get(PREVIOUS_CANDIDATE),
+                "selector_vs_previous": vs_prev,
+                "previous_deployed_source": meta.get(
+                    (label, PREVIOUS_CANDIDATE, TIER_STEADY), {}
+                ).get("params", {}).get("selection_source"),
                 "sessions_with_data": len({
                     r["session"] for r in raw_rows
                     if r["label"] == label
@@ -733,6 +802,8 @@ def _aggregate(out_dir, cases, trials, warmup, sessions, manifest=None):
                      and entry["guard_vs_incumbent"] >= 0.02)
                 if entry["selector_source"] in ("table", "composition")
                 else None)
+            entry["regression_reason"] = _previous_regression_reason(
+                case_label, semantic, entry)
             cases_out.append(entry)
 
     supported = [c for c in cases_out
@@ -748,6 +819,15 @@ def _aggregate(out_dir, cases, trials, warmup, sessions, manifest=None):
                 default=None)
     regrets = [c["selector_regret"] for c in cases_out
                if c["selector_regret"] is not None]
+    prev_measured = sum(1 for c in cases_out
+                        if c.get("previous_deployed_ms") is not None)
+    prev_regressions = [c["label"] for c in cases_out
+                        if (c.get("selector_vs_previous")
+                            is not None
+                            and c["selector_vs_previous"] > 0.02)]
+    intentional = [c["label"] for c in cases_out
+                   if c.get("regression_reason")
+                   and "intentional" in c["regression_reason"]]
     summary = {
         "protocol_id": PROTOCOL_ID,
         "cases": cases_out,
@@ -759,6 +839,9 @@ def _aggregate(out_dir, cases, trials, warmup, sessions, manifest=None):
             "mean_selector_regret": (
                 sum(regrets) / len(regrets) if regrets else None),
             "max_selector_regret": max(regrets, default=None),
+            "previous_cells_measured": prev_measured,
+            "previous_regressions_gt_2pct": prev_regressions,
+            "intentional_semantic_exceptions": intentional,
         },
         "failures": failures,
         "raw_sha256": hashlib.sha256(
@@ -788,6 +871,19 @@ def _aggregate(out_dir, cases, trials, warmup, sessions, manifest=None):
         for c in cases_out:
             f.write(",".join(
                 str(c.get(k)) for k in cols) + "\n")
+    # A1: full previous-deployed disposition table (all cells, not just
+    # regressions) -- required final evidence artifact.
+    import csv as _csv
+    reg_cols = ["label", "semantic", "N", "batch",
+                "previous_deployed_ms", "selector_ms",
+                "selector_vs_previous", "previous_deployed_source",
+                "selector_source", "regression_reason"]
+    with open(Path(out_dir) / "regression_vs_previous.csv", "w",
+              newline="") as f:
+        w = _csv.writer(f)
+        w.writerow(reg_cols)
+        for c in cases_out:
+            w.writerow([c.get(k) for k in reg_cols])
     _write_figures(out_dir, summary)
     return summary
 
@@ -857,10 +953,26 @@ def _write_snapshot(out_dir, release_id, manifest, env, args, cases):
         with gzip.open(snap / (name.name + ".gz"), "wb") as f:
             f.write(name.read_bytes())
     for name in ("summary.json", "summary.csv",
-                 "speedup_vs_vendor.png", "server_report.md"):
+                 "regression_vs_previous.csv", "speedup_vs_vendor.png",
+                 "server_report.md", PREVIOUS_TABLE_FILE):
         src = Path(out_dir) / name
         if src.is_file():
             (snap / name).write_bytes(src.read_bytes())
+    # A2: the finished snapshot must strict-validate immediately --
+    # failure aborts this run. (Also covers a missing summary.json.)
+    failures = validate_benchmark_output(snap, strict=True)
+    if failures:
+        raise SystemExit(
+            "snapshot failed strict validation:\n"
+            + format_failures(failures))
+    # binding fields must agree between top manifest and summary.manifest
+    top = json.loads((snap / "manifest.json").read_text())
+    emb = json.loads((snap / "summary.json").read_text())["manifest"]
+    for key in ("result_sha256", "cases_sha256"):
+        if top.get(key) != emb.get(key):
+            raise SystemExit(
+                f"snapshot binding mismatch for {key}: top "
+                f"{top.get(key)!r} != summary {emb.get(key)!r}")
     return snap
 
 
@@ -889,6 +1001,10 @@ def main():
                     help="candidate set: full round-1 bounded set, or "
                          "the promoted production winner re-blocked "
                          "over the fixed block sweep (PR-I round 2)")
+    ap.add_argument("--previous-table", default=None,
+                    help="path to the frozen previous-deployed selector "
+                         "table for the A1 same-session comparison "
+                         "(child sessions get it from the parent)")
     args = ap.parse_args()
 
     global ORACLE_MODE
@@ -898,6 +1014,18 @@ def main():
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    # A1: materialize the previous deployed table from the fixed pre-
+    # issue commit (never the working tree), bind its hash into the
+    # manifest, and hand the file to every session child. Raw bytes —
+    # no strip, so the sha256 matches the committed blob exactly.
+    previous_bytes = subprocess.check_output(
+        ["git", "show",
+         f"{PREVIOUS_SELECTOR_COMMIT}:config/selector_table.json"],
+        cwd=ROOT)
+    previous_sha256 = hashlib.sha256(previous_bytes).hexdigest()
+    previous_table_path = out_dir / PREVIOUS_TABLE_FILE
+    previous_table_path.write_bytes(previous_bytes)
+
     if args.session is not None:
         # isolated session process: freshly exec'd interpreter, no
         # shared mp Pool (pool teardown deadlocks against the device
@@ -905,7 +1033,8 @@ def main():
         # atexit teardown where the runtime can also hang
         path = run_child((args.session, cases, args.trials, args.warmup,
                           args.seed, str(out_dir), args.e2e_trials,
-                          args.one_shot_trials))
+                          args.one_shot_trials,
+                          args.previous_table))
         print(f"session done: {path}", flush=True)
         os._exit(0)
 
@@ -927,7 +1056,10 @@ def main():
         "trials": args.trials,
         "sessions": args.sessions,
         "seed_base": args.seed,
-        "candidates": ["incumbent", "selector", "oracle:*", "vendor"],
+        "candidates": ["incumbent", "selector", "oracle:*", "vendor",
+                       PREVIOUS_CANDIDATE],
+        "previous_selector_source_commit": PREVIOUS_SELECTOR_COMMIT,
+        "previous_selector_sha256": previous_sha256,
         "oracle_mode": args.oracle_mode,
         "block_sweep": (list(WINNER_BLOCK_SWEEP)
                         if args.oracle_mode == "winner-block" else None),
@@ -957,9 +1089,10 @@ def main():
                  "--warmup", str(args.warmup),
                  "--seed", str(args.seed),
                  "--e2e-trials", str(args.e2e_trials),
-                 "--one-shot-trials", str(args.one_shot_trials),
-                 "--oracle-mode", args.oracle_mode,
-                 "--out", str(out_dir)]
+                  "--one-shot-trials", str(args.one_shot_trials),
+                  "--oracle-mode", args.oracle_mode,
+                  "--previous-table", str(previous_table_path),
+                  "--out", str(out_dir)]
         for s in range(args.sessions):
             cmd = [str(s) if x == "SESSION" else x for x in child]
             subprocess.run(cmd, check=True, timeout=7200)
@@ -974,6 +1107,9 @@ def main():
     res = result_sha256(out_dir)
     man["result_sha256"] = res
     summary["manifest"]["result_sha256"] = res
+    # A2: top manifest carries the same cases binding as the summary's
+    # embedded manifest (strict snapshot validation checks both).
+    man["cases_sha256"] = summary["manifest"]["cases_sha256"]
     (out_dir / "manifest.json").write_text(
         json.dumps(man, indent=2, sort_keys=True) + "\n")
     (out_dir / "summary.json").write_text(
@@ -990,10 +1126,10 @@ def main():
         rid = args.release_id or (
             f"{time.strftime('%Y%m%d-%H%M%S')}-"
             f"{git_commit()[:8]}-semantic-matrix")
+        # _write_snapshot strict-validates the finished artifact; a
+        # failure aborts here (its summary copy is already stamped).
         snap = _write_snapshot(out_dir, rid, man, env, args, cases)
-        (snap / "summary.json").write_text(
-            (out_dir / "summary.json").read_text())
-        print(f"immutable snapshot: {snap}")
+        print(f"immutable snapshot: {snap} (strict-validated OK)")
 
 
 if __name__ == "__main__":
