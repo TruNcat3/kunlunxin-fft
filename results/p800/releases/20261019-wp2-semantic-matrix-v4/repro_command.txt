@@ -1,0 +1,1 @@
+scripts/run_semantic_matrix.py --scope all --sessions 3 --trials 30 --warmup 5 --out results/p800/semantic_matrix_freeze-20261019-v4 --snapshot --release-id 20261019-wp2-semantic-matrix-v4
