@@ -366,13 +366,15 @@ def _winner_block_plans(selector):
     from dataclasses import replace
     plans, seen = [], set()
     for blk in (*WINNER_BLOCK_SWEEP, selector.block):
-        if blk in seen:
+        # composition plans carry block=None (the composed core picks
+        # its own geometry); the fixed sweep still applies.
+        if not isinstance(blk, int) or blk <= 0 or blk in seen:
             continue
         seen.add(blk)
         plans.append(replace(
-            selector, block=int(blk),
+            selector, block=blk,
             params={**(selector.params or {}),
-                    "oracle_name": f"winner-b{int(blk)}"}))
+                    "oracle_name": f"winner-b{blk}"}))
     return plans
 
 

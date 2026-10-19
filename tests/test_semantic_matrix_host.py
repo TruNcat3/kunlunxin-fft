@@ -384,3 +384,12 @@ def test_oracle_mode_defaults_and_calibrate_passthrough():
                      for x in c)][0]
     assert matrix[matrix.index("--oracle-mode") + 1] == "winner-block"
     assert "--scope" in matrix and "pri" in matrix
+
+
+def test_winner_block_plans_tolerate_composition_block_none():
+    """composition plans carry block=None (the composed core picks its
+    geometry); the fixed sweep must still build and measure."""
+    plans = sm._winner_block_plans(_fake_winner_plan(block=None))
+    assert [p.block for p in plans] == [256, 512, 1024, 2048]
+    assert [p.params["oracle_name"] for p in plans] == [
+        "winner-b256", "winner-b512", "winner-b1024", "winner-b2048"]
