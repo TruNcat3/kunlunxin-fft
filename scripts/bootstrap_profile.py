@@ -270,7 +270,24 @@ def verify_bundle(out: Path, env_hash: str | None,
         assert_current_environment,
         load_table,
         select,
+        semantic_key_of,
     )
+
+    def _fallback_claiming(table, entry):
+        """The ``previous_fallbacks`` entry that answers ``entry``'s
+        queried key (issue #8 Option A), or None. Legacy entries are
+        queried under the default c2c/forward/backward triple, exactly
+        as the smoke below does."""
+        sk = semantic_key_of(entry) or (
+            entry.get("transform_type", "c2c"),
+            entry.get("transform_direction", "forward"),
+            entry.get("normalization", "backward"))
+        for f in table.get("previous_fallbacks") or ():
+            if (f["N"] == entry["N"] and f["batch"] == entry["batch"]
+                    and f["direction"] == entry["direction"]
+                    and semantic_key_of(f) == sk):
+                return f
+        return None
 
     failures: list[str] = []
     # 1. Strict manifest contract on every staged run output.
@@ -327,6 +344,21 @@ def verify_bundle(out: Path, env_hash: str | None,
                 f"verify: exact-key select abstained for "
                 f"N{entry['N']}B{entry['batch']} ({sel.reason})")
             continue
+        fb = _fallback_claiming(table, entry)
+        if fb is not None:
+            # Issue #8 Option A: the previous_fallbacks cell outranks
+            # this entry at its own key BY DESIGN (the paired
+            # confirmation measured the old path faster there); the
+            # resolution must be exactly that fallback entry.
+            if (getattr(sel, "entry_tier", "") != "previous-fallback"
+                    or dict(sel.params or {})
+                    != dict(fb.get("params") or {})
+                    or sel.block != fb.get("block")):
+                failures.append(
+                    f"verify: exact-key select for "
+                    f"N{entry['N']}B{entry['batch']} is claimed by a "
+                    "previous_fallbacks cell but did not resolve to it")
+            continue
         # The query must resolve to THIS entry (its params/geometry),
         # not merely to some table hit on the shape.
         if (dict(sel.params or {}) != dict(entry.get("params") or {})
@@ -357,6 +389,35 @@ def verify_bundle(out: Path, env_hash: str | None,
                 f"verify: exact-key select for "
                 f"N{entry['N']}B{entry['batch']} resolved a different "
                 f"entry (params/block mismatch)")
+    # Every declared fallback cell must select ITSELF as a fallback --
+    # tier, geometry and reason (issue #8 Option A). This is what makes
+    # the fallback auditable instead of a silent param diff.
+    for fb in table.get("previous_fallbacks") or []:
+        tag = f"N{fb['N']}B{fb['batch']}"
+        sk = semantic_key_of(fb)
+        if sk is None:
+            failures.append(
+                f"verify: previous_fallbacks cell {tag} has no exact "
+                "semantic triple")
+            continue
+        try:
+            sel = _qsel(fb, *sk)
+        except Exception as e:  # noqa: BLE001
+            failures.append(
+                f"verify: previous_fallbacks cell {tag} {sk} raised {e}")
+            continue
+        if (sel.source != "table"
+                or getattr(sel, "entry_tier", "") != "previous-fallback"
+                or dict(sel.params or {}) != dict(fb.get("params") or {})
+                or sel.block != fb.get("block")):
+            failures.append(
+                f"verify: previous_fallbacks cell {tag} {sk} did not "
+                "select itself as a fallback")
+        elif not str(sel.reason or "").startswith(
+                "previous-deployed per-cell fallback (issue #8):"):
+            failures.append(
+                f"verify: previous_fallbacks cell {tag} {sk} reason "
+                f"lacks the fallback marker: {sel.reason!r}")
     # Measured-vs-deployed runner closure (issue #8 P1-A): an entry
     # carrying ``executed`` must deploy exactly that runner through
     # plan_fft; legacy entries' challenger orientation token must
@@ -364,6 +425,30 @@ def verify_bundle(out: Path, env_hash: str | None,
     # dispatch derives). Covers DIT/DIF and B=1/batched via the full
     # entry loop.
     from src.xpu.entry import plan_fft
+
+    def _check_fallback_plan(plan, fb, note):
+        """A plan resolved through a fallback cell must deploy the
+        fallback geometry, the issue #8 plan marker and the fallback
+        reason -- through plan_fft, not only through select()."""
+        raw = dict(plan.params or {})
+        if raw.pop("previous_fallback", None) is not True:
+            failures.append(
+                f"verify: {note}: fallback plan lacks "
+                "params['previous_fallback'] marker")
+        if raw != dict(fb.get("params") or {}):
+            failures.append(
+                f"verify: {note}: fallback plan params {raw} != "
+                f"fallback entry {fb.get('params')}")
+        if plan.block != fb.get("block"):
+            failures.append(
+                f"verify: {note}: fallback plan block {plan.block} != "
+                f"fallback entry block {fb.get('block')}")
+        if not str(plan.reason or "").startswith(
+                "previous-deployed per-cell fallback (issue #8):"):
+            failures.append(
+                f"verify: {note}: fallback plan reason lacks the "
+                f"marker: {plan.reason!r}")
+
     for entry in table.get("entries", []):
         try:
             plan = plan_fft(
@@ -383,6 +468,14 @@ def verify_bundle(out: Path, env_hash: str | None,
         if plan.selection_source == "composition":
             # exact-shape composition outranks the butterfly table by
             # design; its runner is composition's own contract.
+            continue
+        fb = _fallback_claiming(table, entry)
+        if fb is not None:
+            # Issue #8 Option A: this entry's key belongs to the
+            # fallback cell; the plan must be the fallback's plan.
+            _check_fallback_plan(plan, fb,
+                                 f"N{entry['N']}B{entry['batch']} "
+                                 "entry shadowed by fallback")
             continue
         if "executed" in entry:
             if plan.executed != entry["executed"]:
@@ -404,6 +497,29 @@ def verify_bundle(out: Path, env_hash: str | None,
                     f"challenger {challenger!r} implies {token} but "
                     f"direction={entry['direction']!r} deploys "
                     f"{plan.executed!r}")
+    # The fallback cells themselves must deploy through plan_fft too.
+    for fb in table.get("previous_fallbacks") or []:
+        sk = semantic_key_of(fb)
+        if sk is None:
+            continue  # already failed above
+        try:
+            plan = plan_fft(
+                direction=fb["direction"], n=fb["N"],
+                batch=fb["batch"], precision=table["precision"],
+                profile_hash=table["profile_hash"], table=table,
+                env_hash=env_hash,
+                transform_type=sk[0], transform_direction=sk[1],
+                norm=sk[2])
+        except Exception as e:  # noqa: BLE001
+            failures.append(
+                f"verify: plan_fft(previous_fallbacks N{fb['N']}"
+                f"B{fb['batch']} {sk}) raised {e}")
+            continue
+        if plan.selection_source == "composition":
+            continue
+        _check_fallback_plan(plan, fb,
+                             f"previous_fallbacks N{fb['N']}B{fb['batch']} "
+                             f"{sk}")
     # Out-of-matrix abstention still works.
     try:
         sel = select(direction="dit", n=3000, batch=1,

@@ -257,16 +257,42 @@ def semantic_key_of(entry: dict) -> tuple | None:
             entry.get("normalization"))
 
 
+def is_previous_fallback(table: dict, entry: dict) -> bool:
+    """True when ``entry`` is a declared previous-deployed fallback cell.
+
+    Per-cell fallbacks (issue #8 review3 P1, Option A) live in their own
+    table-level ``previous_fallbacks`` list: profile/env-bound entries
+    carrying the full semantic triple of exactly one cell, outranking
+    the current semantic entry there when the paired confirmation
+    measured the previously deployed path faster. Identity, not key
+    equality, so a look-alike entry in ``entries`` never inherits the
+    tier.
+    """
+    return any(entry is e for e in (table.get("previous_fallbacks") or ()))
+
+
 def find_entry(table: dict, n: int, batch: int, direction: str,
                transform_type: str = "c2c",
                transform_direction: str = "forward",
                normalization: str = "backward") -> dict | None:
-    """Exact semantic-tier entry first, legacy (pre-semantic) fallback.
+    """Previous-deployed fallback cell first, exact semantic tier next,
+    legacy (pre-semantic) fallback last.
 
     Single source of truth shared by :func:`select` and entry's
     incumbent-block lookup, so a plan and its M0 block resolve against
-    the same tier of the table.
+    the same tier of the table. A ``previous_fallbacks`` entry claims
+    its (N, batch, direction, triple) exclusively -- that is the whole
+    point of the per-cell fallback (issue #8): the old deployed path
+    answers one cell's key instead of the current semantic entry that
+    lost the paired confirmation there.
     """
+    for e in table.get("previous_fallbacks") or ():
+        if not (e["N"] == n and e["batch"] == batch
+                and e["direction"] == direction):
+            continue
+        if semantic_key_of(e) == (transform_type, transform_direction,
+                                  normalization):
+            return e
     legacy = None
     for e in table.get("entries", ()):
         if not (e["N"] == n and e["batch"] == batch
@@ -294,7 +320,7 @@ class Selection:
     transform_type: str = "c2c"
     transform_direction: str = "forward"
     normalization: str = "backward"
-    entry_tier: str = "abstain"  # "semantic" | "legacy" | "abstain"
+    entry_tier: str = "abstain"  # "semantic" | "previous-fallback" | "legacy" | "abstain"
     block: int | None = None
     flow_id: str | None = None
     flow_realization: str | None = None
@@ -332,6 +358,29 @@ def load_table(path: str = TABLE_PATH) -> dict:
         for msg in entry_contract_violations(e):
             key = (e.get("N"), e.get("batch"), e.get("direction"))
             violations.append(f"entry {key}: {msg}")
+    # Per-cell fallbacks (issue #8 review3 P1): same shared contract as
+    # entries, plus two rules entries never need -- every fallback MUST
+    # claim one exact semantic triple (a bare legacy entry here would
+    # silently shadow every semantic of the shape) and no two may claim
+    # the same cell key (first-wins would be an unnoticed duplicate).
+    seen_fb: set[tuple] = set()
+    for i, e in enumerate(table.get("previous_fallbacks") or []):
+        key = (e.get("N"), e.get("batch"), e.get("direction"))
+        sk = semantic_key_of(e)
+        if sk is None:
+            violations.append(
+                f"previous_fallbacks[{i}] {key}: missing the exact "
+                "semantic triple (transform_type/transform_direction/"
+                "normalization) a per-cell fallback must claim")
+        else:
+            cell = key + sk
+            if cell in seen_fb:
+                violations.append(
+                    f"previous_fallbacks[{i}] {key} {sk}: duplicate "
+                    "previous_fallbacks cell key")
+            seen_fb.add(cell)
+        for msg in entry_contract_violations(e):
+            violations.append(f"previous_fallbacks[{i}] {key}: {msg}")
     if violations:
         raise ConfigError(
             "selector table violates the shared design space / lowering "
@@ -405,7 +454,9 @@ def select(direction: str, n: int, batch: int = 1, precision: str = "fp32",
     ``(transform_type, transform_direction, normalization)`` answers
     only its exact triple; entries without the fields (legacy) answer
     any semantic as the old deployed path. :func:`find_entry` resolves
-    exact semantic tier first, then legacy, else abstains.
+    a declared ``previous_fallbacks`` cell first (issue #8 Option A),
+    then the exact semantic tier, then legacy, else abstains; a
+    fallback hit reports ``entry_tier="previous-fallback"``.
     """
     table = table if table is not None else load_table()
     if transform_type not in TRANSFORM_TYPES:
@@ -471,11 +522,23 @@ def select(direction: str, n: int, batch: int = 1, precision: str = "fp32",
     e = find_entry(table, n, batch, direction, transform_type,
                    transform_direction, normalization)
     if e is not None:
-        tier = "semantic" if semantic_key_of(e) is not None else "legacy"
+        if is_previous_fallback(table, e):
+            # Issue #8 Option A: the paired confirmation measured the
+            # previously deployed path faster here -- the fallback cell
+            # answers with the old geometry and says so in the reason,
+            # so raw rows and plans are attributable without diffing
+            # params.
+            tier = "previous-fallback"
+            reason = ("previous-deployed per-cell fallback (issue #8): "
+                      + e.get("reason", "measured confirmation winner"))
+        else:
+            tier = ("semantic" if semantic_key_of(e) is not None
+                    else "legacy")
+            reason = e.get("reason", "measured confirmation winner")
         return Selection(
             n=n, direction=direction, batch=batch, precision=precision,
             source="table",
-            reason=e.get("reason", "measured confirmation winner"),
+            reason=reason,
             transform_type=transform_type,
             transform_direction=transform_direction,
             normalization=normalization,

@@ -181,9 +181,13 @@ def test_snapshot_manifest_passes_strict_contract(tmp_path, monkeypatch):
     monkeypatch.setattr(sm, "ROOT", tmp_path)
     out = tmp_path / "out"
     out.mkdir()
+    # complete steady evidence: manifest declares trials=30, so the
+    # strict gate's trial census (issue #8 review4 P2-a) requires all
+    # 30 timed rows for the group it sees
     with open(out / "raw_session0.jsonl", "w") as f:
-        f.write(json.dumps(_row("N64B1:c2c-forward", "selector",
-                                "steady", 0.1)) + "\n")
+        for trial in range(30):
+            f.write(json.dumps(_row("N64B1:c2c-forward", "selector",
+                                    "steady", 0.1, trial=trial)) + "\n")
     man = {
         "commit": "a" * 40, "dirty": False, "device": "d",
         "driver": "515.58", "profile_hash": "p" * 16,
@@ -458,3 +462,55 @@ def test_previous_selector_source_is_pinned_commit():
     assert hashlib.sha256(raw).hexdigest() == (
         "acc1f21c9c93fe20589993f22589ccc24e5b08db05be29d63321d9b63a6b5449")
     assert sm.PREVIOUS_SELECTOR_COMMIT.startswith("54260cf")
+
+
+# ------------- P2 aggregate replay over gzip snapshots (review4 一.2) -----
+
+def test_aggregate_replays_released_gzip_snapshot(tmp_path):
+    """--aggregate-only reads .jsonl.gz through the shared reader and
+    regenerates the released analysis byte-for-byte (issue #8 review4
+    P2-c). Runs against the committed v4 release in a temp copy --
+    immutable evidence is never touched."""
+    import shutil
+
+    from src.xpu.manifest_contract import iter_raw_rows
+
+    release = (ROOT / "results" / "p800" / "releases" /
+               "20261019-wp2-semantic-matrix-v4")
+    if not (release / "summary.json").is_file():
+        pytest.skip("released v4 snapshot not present")
+    copy = tmp_path / "snapshot"
+    shutil.copytree(release, copy)
+    orig = json.loads((copy / "summary.json").read_text())
+    man = orig["manifest"]
+    pairs = []
+    for c in orig["cases"]:
+        if (c["N"], c["batch"]) not in pairs:
+            pairs.append((c["N"], c["batch"]))
+    regen = sm._aggregate(copy, pairs, man["trials"], man["warmup"],
+                          man["sessions"], manifest=man)
+    # the released analysis reproduces from the gzip rows alone
+    # (v4 predates the Option A fallback column: compare the shared keys)
+    strip = lambda cases: [  # noqa: E731
+        {k: v for k, v in c.items() if k != "selector_previous_fallback"}
+        for c in cases]
+    assert strip(regen["cases"]) == strip(orig["cases"])
+    assert all(c["selector_previous_fallback"] is False
+               for c in regen["cases"])   # no fallbacks deployed in v4
+    assert regen["metrics"] == orig["metrics"]
+    assert regen["failures"] == orig["failures"]
+    assert regen["raw_sha256"] == orig["raw_sha256"]
+    # the shared-keys analysis hashes to the released cases_sha256
+    # (the full regen hash differs only by the new fallback column)
+    from src.xpu.manifest_contract import cases_sha256 as _cases_hash
+    assert _cases_hash(strip(regen["cases"])) == \
+        orig["manifest"]["cases_sha256"]
+    assert (regen["manifest"]["cases_sha256"]
+            == _cases_hash(regen["cases"]))
+    # P2-b: the replay now also records the actual oracle candidates
+    observed = sorted(
+        {r["candidate"] for _, _, r in iter_raw_rows(copy)
+         if isinstance(r.get("candidate"), str)
+         and r["candidate"].startswith("oracle:")})
+    assert observed, "v4 evidence must contain oracle candidates"
+    assert regen["manifest"]["oracle_candidates"] == observed

@@ -472,3 +472,136 @@ def test_assert_current_environment_mismatch_raises():
     if not has_torch:
         with pytest.raises(RuntimeError, match="unknown"):
             assert_current_environment(table)
+
+
+# --- previous-deployed per-cell fallback (issue #8 Option A) ------------
+
+# The six paired-confirmation cells (3 shapes x c2c-forward/inverse,
+# direction=dit): v4 measured previous-deployed faster by >2% there.
+FALLBACK_CELLS = [(1024, 16), (1024, 64), (2048, 64)]
+FALLBACK_ROWS = {(1024, 16): 8, (1024, 64): 8, (2048, 64): 16}
+OLD_TABLE_SHA256 = ("acc1f21c9c93fe20589993f22589ccc24e5b08db05be29d63"
+                    "321d9b63a6b5449")
+
+
+def _load_prod():
+    if not TABLE.exists():
+        pytest.skip("selector table not built")
+    return load_table(str(TABLE))
+
+
+def test_production_table_declares_the_six_paired_fallback_cells():
+    t = _load_prod()
+    fbs = t.get("previous_fallbacks") or []
+    keys = {(f["N"], f["batch"], f["direction"], f["transform_type"],
+             f["transform_direction"], f["normalization"]) for f in fbs}
+    expect = {(n, b, "dit", "c2c", td, "backward")
+              for n, b in FALLBACK_CELLS for td in ("forward", "inverse")}
+    assert keys == expect
+    for f in fbs:
+        prov = f.get("previous_fallback_provenance") or {}
+        assert prov.get("issue") == 8
+        # justified by a measured >2% paired regression of the new path
+        assert prov.get("selector_vs_previous", 0) > 0.02
+        assert str(prov.get("source_commit", "")).startswith("54260cf")
+        assert prov.get("source_table_sha256") == OLD_TABLE_SHA256
+        assert prov.get("paired_confirm", "").endswith("-semantic-matrix-v4")
+        assert prov.get("previous_ms") and prov.get("selector_ms")
+
+
+def test_production_fallback_cells_select_and_deploy_the_old_geometry():
+    from src.xpu.entry import plan_fft
+    t = _load_prod()
+    ph, env = t["profile_hash"], t["env_hash"]
+    for n, b in FALLBACK_CELLS:
+        for td in ("forward", "inverse"):
+            s = select("dit", n, batch=b, profile_hash=ph, table=t,
+                       env_hash=env, transform_type="c2c",
+                       transform_direction=td, normalization="backward")
+            assert s.source == "table", (n, b, td)
+            assert s.entry_tier == "previous-fallback", (n, b, td)
+            assert s.params == {"variant": "spread", "tile": 128,
+                                "rows": FALLBACK_ROWS[(n, b)], "batch": b}
+            assert s.block == 256
+            assert s.reason.startswith(
+                "previous-deployed per-cell fallback (issue #8):")
+            assert "previous_fallback" not in s.params
+            p = plan_fft("dit", n, batch=b, profile_hash=ph, table=t,
+                         env_hash=env, transform_type="c2c",
+                         transform_direction=td, norm="backward")
+            assert p.fallback is False
+            raw = dict(p.params)
+            assert raw.pop("previous_fallback") is True
+            assert raw == s.params
+            assert p.executed == "fft_dit_matrix_batch"
+            assert p.reason.startswith(
+                "previous-deployed per-cell fallback (issue #8):")
+
+
+def test_production_fallback_scope_leaves_other_cells_and_semantics():
+    t = _load_prod()
+    ph, env = t["profile_hash"], t["env_hash"]
+    # real transforms at a fallback cell keep their semantic entries
+    for tt, tdir in (("r2c", "forward"), ("c2r", "inverse")):
+        s = select("dit", 1024, batch=16, profile_hash=ph, table=t,
+                   env_hash=env, transform_type=tt,
+                   transform_direction=tdir, normalization="backward")
+        assert s.entry_tier == "semantic", (tt, tdir)
+    # non-backward norms are answered by the legacy tier, not fallback
+    s = select("dit", 1024, batch=16, profile_hash=ph, table=t,
+               env_hash=env, transform_type="c2c",
+               transform_direction="forward", normalization="ortho")
+    assert s.entry_tier == "legacy"
+    # the intentional-correction cell (N2048B16 c2c-inverse) is NOT a
+    # fallback cell: it keeps the new semantic entry
+    s = select("dit", 2048, batch=16, profile_hash=ph, table=t,
+               env_hash=env, transform_type="c2c",
+               transform_direction="inverse", normalization="backward")
+    assert s.entry_tier == "semantic"
+    # dif direction never sees the dit-scoped fallbacks
+    s = select("dif", 1024, batch=16, profile_hash=ph, table=t,
+               env_hash=env)
+    assert s.entry_tier != "previous-fallback"
+    # a cell outside the fallback set keeps its semantic entry
+    s = select("dit", 64, batch=64, profile_hash=ph, table=t,
+               env_hash=env, transform_type="c2c",
+               transform_direction="forward", normalization="backward")
+    assert s.entry_tier in ("semantic", "legacy", "abstain")
+    assert s.entry_tier != "previous-fallback"
+
+
+def _mutated_table_path(tmp_path, mutate):
+    raw = json.loads(TABLE.read_text())
+    mutate(raw)
+    path = tmp_path / "selector_table.json"
+    path.write_text(json.dumps(raw))
+    return str(path)
+
+
+def test_load_table_rejects_fallback_without_semantic_triple(tmp_path):
+    def mutate(raw):
+        fbs = raw.get("previous_fallbacks") or []
+        assert fbs, "production table must declare fallbacks"
+        stripped = dict(fbs[0])
+        for k in ("transform_type", "transform_direction", "normalization"):
+            stripped.pop(k, None)
+        raw["previous_fallbacks"] = [stripped]
+    with pytest.raises(ConfigError, match="semantic triple"):
+        load_table(_mutated_table_path(tmp_path, mutate))
+
+
+def test_load_table_rejects_duplicate_previous_fallback_cells(tmp_path):
+    def mutate(raw):
+        fbs = raw["previous_fallbacks"]
+        raw["previous_fallbacks"] = [fbs[0], fbs[0]]
+    with pytest.raises(ConfigError, match="duplicate"):
+        load_table(_mutated_table_path(tmp_path, mutate))
+
+
+def test_load_table_rejects_fallback_outside_design_space(tmp_path):
+    def mutate(raw):
+        f = dict(raw["previous_fallbacks"][0])
+        f["params"] = {**(f.get("params") or {}), "tile": 48, "rows": 3}
+        raw["previous_fallbacks"] = [f]
+    with pytest.raises(ConfigError, match="design space"):
+        load_table(_mutated_table_path(tmp_path, mutate))

@@ -3005,5 +3005,277 @@
       },
       "reason": "independent matrix confirmation (c2r): oracle:winner-b256 beats incumbent by 72.0% (>= 2.0%) over 3 sessions; exact semantic key ('c2r', 'inverse', 'backward')"
     }
+  ],
+  "previous_fallbacks": [
+    {
+      "N": 1024,
+      "batch": 16,
+      "direction": "dit",
+      "incumbent_ms": 1.7488989687990397,
+      "incumbent_block": 256,
+      "challenger_ms": 0.6969357491470873,
+      "block": 256,
+      "evidence": {
+        "incumbent": "m4_spread",
+        "sessions": 3,
+        "protocol_id": "batch-release-v1:focus:plan-reuse:interleave:correctness-first:3sess:p11",
+        "focus_paths": [
+          "results/p800/batch_focus_a/summary.json",
+          "results/p800/batch_focus_b/summary.json"
+        ],
+        "challenger": "m2_t128_rows8",
+        "gain_pct": 60.15,
+        "challenger_ms": 0.6969357491470873
+      },
+      "reason": "focus challenger m2_t128_rows8 beats stable incumbent m4_spread by 60.2% (>= 2.0%) across 3 sessions",
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "variant": "spread",
+        "tile": 128,
+        "rows": 8,
+        "batch": 16
+      },
+      "transform_type": "c2c",
+      "transform_direction": "forward",
+      "normalization": "backward",
+      "previous_fallback_provenance": {
+        "issue": 8,
+        "policy": "Option A per-cell fallback (review3 P1): the paired 3-session confirmation measured the previous-deployed path faster here >2%; the old geometry answers this cell until a re-confirmation says otherwise",
+        "source_commit": "54260cf9f2dfda5dc830f749c2debf4101d59d48",
+        "source_table_sha256": "acc1f21c9c93fe20589993f22589ccc24e5b08db05be29d63321d9b63a6b5449",
+        "paired_confirm": "results/p800/releases/20261019-wp2-semantic-matrix-v4",
+        "selector_vs_previous": 0.1047468864709169,
+        "selector_ms": 0.8390620350837708,
+        "previous_ms": 0.75950613245368,
+        "regression_reason": "current selector slower than legal previous deployed >2% (candidate: retain previous path as fallback)"
+      }
+    },
+    {
+      "N": 1024,
+      "batch": 16,
+      "direction": "dit",
+      "incumbent_ms": 1.7488989687990397,
+      "incumbent_block": 256,
+      "challenger_ms": 0.6969357491470873,
+      "block": 256,
+      "evidence": {
+        "incumbent": "m4_spread",
+        "sessions": 3,
+        "protocol_id": "batch-release-v1:focus:plan-reuse:interleave:correctness-first:3sess:p11",
+        "focus_paths": [
+          "results/p800/batch_focus_a/summary.json",
+          "results/p800/batch_focus_b/summary.json"
+        ],
+        "challenger": "m2_t128_rows8",
+        "gain_pct": 60.15,
+        "challenger_ms": 0.6969357491470873
+      },
+      "reason": "focus challenger m2_t128_rows8 beats stable incumbent m4_spread by 60.2% (>= 2.0%) across 3 sessions",
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "variant": "spread",
+        "tile": 128,
+        "rows": 8,
+        "batch": 16
+      },
+      "transform_type": "c2c",
+      "transform_direction": "inverse",
+      "normalization": "backward",
+      "previous_fallback_provenance": {
+        "issue": 8,
+        "policy": "Option A per-cell fallback (review3 P1): the paired 3-session confirmation measured the previous-deployed path faster here >2%; the old geometry answers this cell until a re-confirmation says otherwise",
+        "source_commit": "54260cf9f2dfda5dc830f749c2debf4101d59d48",
+        "source_table_sha256": "acc1f21c9c93fe20589993f22589ccc24e5b08db05be29d63321d9b63a6b5449",
+        "paired_confirm": "results/p800/releases/20261019-wp2-semantic-matrix-v4",
+        "selector_vs_previous": 0.17172919716102597,
+        "selector_ms": 0.949622131884098,
+        "previous_ms": 0.8104450535029173,
+        "regression_reason": "current selector slower than legal previous deployed >2% (candidate: retain previous path as fallback)"
+      }
+    },
+    {
+      "N": 1024,
+      "batch": 64,
+      "direction": "dit",
+      "incumbent_ms": 6.092864496167749,
+      "incumbent_block": 256,
+      "challenger_ms": 2.2383395698852837,
+      "block": 256,
+      "evidence": {
+        "incumbent": "incumbent_m4_folded",
+        "sessions": 3,
+        "protocol_id": "batch-release-v1:focus:plan-reuse:interleave:correctness-first:3sess:p11",
+        "focus_paths": [
+          "results/p800/batch_focus_a/summary.json",
+          "results/p800/batch_focus_b/summary.json"
+        ],
+        "challenger": "m2_t128_rows8",
+        "gain_pct": 63.26,
+        "challenger_ms": 2.2383395698852837
+      },
+      "reason": "focus challenger m2_t128_rows8 beats stable incumbent incumbent_m4_folded by 63.3% (>= 2.0%) across 3 sessions",
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "variant": "spread",
+        "tile": 128,
+        "rows": 8,
+        "batch": 64
+      },
+      "transform_type": "c2c",
+      "transform_direction": "forward",
+      "normalization": "backward",
+      "previous_fallback_provenance": {
+        "issue": 8,
+        "policy": "Option A per-cell fallback (review3 P1): the paired 3-session confirmation measured the previous-deployed path faster here >2%; the old geometry answers this cell until a re-confirmation says otherwise",
+        "source_commit": "54260cf9f2dfda5dc830f749c2debf4101d59d48",
+        "source_table_sha256": "acc1f21c9c93fe20589993f22589ccc24e5b08db05be29d63321d9b63a6b5449",
+        "paired_confirm": "results/p800/releases/20261019-wp2-semantic-matrix-v4",
+        "selector_vs_previous": 0.07487430601763956,
+        "selector_ms": 2.5327219627797604,
+        "previous_ms": 2.3562959395349026,
+        "regression_reason": "current selector slower than legal previous deployed >2% (candidate: retain previous path as fallback)"
+      }
+    },
+    {
+      "N": 1024,
+      "batch": 64,
+      "direction": "dit",
+      "incumbent_ms": 6.092864496167749,
+      "incumbent_block": 256,
+      "challenger_ms": 2.2383395698852837,
+      "block": 256,
+      "evidence": {
+        "incumbent": "incumbent_m4_folded",
+        "sessions": 3,
+        "protocol_id": "batch-release-v1:focus:plan-reuse:interleave:correctness-first:3sess:p11",
+        "focus_paths": [
+          "results/p800/batch_focus_a/summary.json",
+          "results/p800/batch_focus_b/summary.json"
+        ],
+        "challenger": "m2_t128_rows8",
+        "gain_pct": 63.26,
+        "challenger_ms": 2.2383395698852837
+      },
+      "reason": "focus challenger m2_t128_rows8 beats stable incumbent incumbent_m4_folded by 63.3% (>= 2.0%) across 3 sessions",
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "variant": "spread",
+        "tile": 128,
+        "rows": 8,
+        "batch": 64
+      },
+      "transform_type": "c2c",
+      "transform_direction": "inverse",
+      "normalization": "backward",
+      "previous_fallback_provenance": {
+        "issue": 8,
+        "policy": "Option A per-cell fallback (review3 P1): the paired 3-session confirmation measured the previous-deployed path faster here >2%; the old geometry answers this cell until a re-confirmation says otherwise",
+        "source_commit": "54260cf9f2dfda5dc830f749c2debf4101d59d48",
+        "source_table_sha256": "acc1f21c9c93fe20589993f22589ccc24e5b08db05be29d63321d9b63a6b5449",
+        "paired_confirm": "results/p800/releases/20261019-wp2-semantic-matrix-v4",
+        "selector_vs_previous": 0.09246571616381516,
+        "selector_ms": 2.641744911670685,
+        "previous_ms": 2.4181490298360586,
+        "regression_reason": "current selector slower than legal previous deployed >2% (candidate: retain previous path as fallback)"
+      }
+    },
+    {
+      "N": 2048,
+      "batch": 64,
+      "direction": "dit",
+      "incumbent_ms": 12.348429765552282,
+      "incumbent_block": 256,
+      "challenger_ms": 4.977418197086081,
+      "block": 256,
+      "evidence": {
+        "incumbent": "incumbent_m4_folded",
+        "sessions": 3,
+        "protocol_id": "batch-release-v1:focus:plan-reuse:interleave:correctness-first:3sess:p11",
+        "focus_paths": [
+          "results/p800/batch_focus_a/summary.json",
+          "results/p800/batch_focus_b/summary.json"
+        ],
+        "challenger": "m2_t128_rows16",
+        "gain_pct": 59.69,
+        "challenger_ms": 4.977418197086081
+      },
+      "reason": "focus challenger m2_t128_rows16 beats stable incumbent incumbent_m4_folded by 59.7% (>= 2.0%) across 3 sessions",
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "variant": "spread",
+        "tile": 128,
+        "rows": 16,
+        "batch": 64
+      },
+      "transform_type": "c2c",
+      "transform_direction": "forward",
+      "normalization": "backward",
+      "previous_fallback_provenance": {
+        "issue": 8,
+        "policy": "Option A per-cell fallback (review3 P1): the paired 3-session confirmation measured the previous-deployed path faster here >2%; the old geometry answers this cell until a re-confirmation says otherwise",
+        "source_commit": "54260cf9f2dfda5dc830f749c2debf4101d59d48",
+        "source_table_sha256": "acc1f21c9c93fe20589993f22589ccc24e5b08db05be29d63321d9b63a6b5449",
+        "paired_confirm": "results/p800/releases/20261019-wp2-semantic-matrix-v4",
+        "selector_vs_previous": 0.14282684875811413,
+        "selector_ms": 5.728029878810048,
+        "previous_ms": 5.012159002944827,
+        "regression_reason": "current selector slower than legal previous deployed >2% (candidate: retain previous path as fallback)"
+      }
+    },
+    {
+      "N": 2048,
+      "batch": 64,
+      "direction": "dit",
+      "incumbent_ms": 12.348429765552282,
+      "incumbent_block": 256,
+      "challenger_ms": 4.977418197086081,
+      "block": 256,
+      "evidence": {
+        "incumbent": "incumbent_m4_folded",
+        "sessions": 3,
+        "protocol_id": "batch-release-v1:focus:plan-reuse:interleave:correctness-first:3sess:p11",
+        "focus_paths": [
+          "results/p800/batch_focus_a/summary.json",
+          "results/p800/batch_focus_b/summary.json"
+        ],
+        "challenger": "m2_t128_rows16",
+        "gain_pct": 59.69,
+        "challenger_ms": 4.977418197086081
+      },
+      "reason": "focus challenger m2_t128_rows16 beats stable incumbent incumbent_m4_folded by 59.7% (>= 2.0%) across 3 sessions",
+      "flow_id": "local-fused-tile",
+      "flow_realization": "matrix-resident",
+      "processing_unit": "dense-dot-fft64",
+      "params": {
+        "variant": "spread",
+        "tile": 128,
+        "rows": 16,
+        "batch": 64
+      },
+      "transform_type": "c2c",
+      "transform_direction": "inverse",
+      "normalization": "backward",
+      "previous_fallback_provenance": {
+        "issue": 8,
+        "policy": "Option A per-cell fallback (review3 P1): the paired 3-session confirmation measured the previous-deployed path faster here >2%; the old geometry answers this cell until a re-confirmation says otherwise",
+        "source_commit": "54260cf9f2dfda5dc830f749c2debf4101d59d48",
+        "source_table_sha256": "acc1f21c9c93fe20589993f22589ccc24e5b08db05be29d63321d9b63a6b5449",
+        "paired_confirm": "results/p800/releases/20261019-wp2-semantic-matrix-v4",
+        "selector_vs_previous": 0.12023213828850499,
+        "selector_ms": 5.73858292773366,
+        "previous_ms": 5.122672999277711,
+        "regression_reason": "current selector slower than legal previous deployed >2% (candidate: retain previous path as fallback)"
+      }
+    }
   ]
 }

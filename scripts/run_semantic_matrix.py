@@ -697,17 +697,29 @@ def _previous_regression_reason(case_label, semantic, entry):
 
 def _aggregate(out_dir, cases, trials, warmup, sessions, manifest=None):
     from src.xpu.manifest_contract import (
-        REQUIRED_ROW_KEYS, rows_sha256)
+        REQUIRED_ROW_KEYS, iter_raw_rows, rows_sha256,
+        trial_completeness_failures)
 
+    # P2-c: aggregate reads through the SAME plain/gzip reader the
+    # strict gate uses -- an --aggregate-only replay of a released
+    # snapshot (.jsonl.gz) aggregates the identical bytes.
     raw_rows = []
-    for s in range(sessions):
-        p = Path(out_dir) / f"raw_session{s}.jsonl"
-        if p.is_file():
-            with open(p) as f:
-                raw_rows += [json.loads(l) for l in f if l.strip()]
+    decode_failures = []
+    for _, _, r in iter_raw_rows(Path(out_dir)):
+        if "__decode_error__" in r:
+            decode_failures.append(
+                {"kind": "raw-decode-error", "reason":
+                 r["__decode_error__"]})
+            continue
+        raw_rows.append(r)
     steady = {}
     meta = {}
-    failures = []
+    failures = list(decode_failures)
+    # P2-a: the same session/label/candidate/tier census the strict
+    # validator runs -- a truncated candidate or missing session shows
+    # up in summary.failures instead of silently aggregating short.
+    for msg in trial_completeness_failures(raw_rows, manifest or {}):
+        failures.append({"kind": "trial-incompleteness", "detail": msg})
     for r in raw_rows:
         missing = [k for k in REQUIRED_ROW_KEYS
                    if k not in r or r[k] in (None, "")]
@@ -783,6 +795,12 @@ def _aggregate(out_dir, cases, trials, warmup, sessions, manifest=None):
                 "selector_source": meta.get(
                     (label, "selector", TIER_STEADY), {}
                 ).get("params", {}).get("selection_source"),
+                # Issue #8 Option A: did this cell deploy the
+                # previous-deployed fallback? (raw rows carry
+                # params.previous_fallback from plan_fft)
+                "selector_previous_fallback": bool(meta.get(
+                    (label, "selector", TIER_STEADY), {}
+                ).get("params", {}).get("previous_fallback")),
                 # A1: previous production column (issue #8 review)
                 "previous_deployed_ms": prev,
                 "previous_deployed_mad_ms": mad.get(PREVIOUS_CANDIDATE),
@@ -828,6 +846,12 @@ def _aggregate(out_dir, cases, trials, warmup, sessions, manifest=None):
     intentional = [c["label"] for c in cases_out
                    if c.get("regression_reason")
                    and "intentional" in c["regression_reason"]]
+    # P2-b: the ACTUAL oracle candidate names observed in raw rows --
+    # recorded in the manifest alongside (not instead of) the
+    # ``oracle:*`` pattern in ``candidates``.
+    oracle_candidates = sorted(
+        {r["candidate"] for r in raw_rows
+         if str(r.get("candidate") or "").startswith("oracle:")})
     summary = {
         "protocol_id": PROTOCOL_ID,
         "cases": cases_out,
@@ -857,6 +881,7 @@ def _aggregate(out_dir, cases, trials, warmup, sessions, manifest=None):
         # after stamping fails the strict gate.
         manifest = dict(manifest)
         manifest["cases_sha256"] = cases_sha256(cases_out)
+        manifest["oracle_candidates"] = oracle_candidates
         summary["manifest"] = manifest
     (Path(out_dir) / "summary.json").write_text(
         json.dumps(summary, indent=2) + "\n")
@@ -1110,6 +1135,7 @@ def main():
     # A2: top manifest carries the same cases binding as the summary's
     # embedded manifest (strict snapshot validation checks both).
     man["cases_sha256"] = summary["manifest"]["cases_sha256"]
+    man["oracle_candidates"] = summary["manifest"]["oracle_candidates"]
     (out_dir / "manifest.json").write_text(
         json.dumps(man, indent=2, sort_keys=True) + "\n")
     (out_dir / "summary.json").write_text(

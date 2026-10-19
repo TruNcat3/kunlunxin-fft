@@ -520,8 +520,9 @@ def _smoke_table():
             "env_hash": "e" * 16, "entries": [legacy, semantic]}
 
 
-def _run_smoke(table, select_impl, tmp_path, monkeypatch):
-    """verify_bundle's exact-key smoke over a fabricated staged table."""
+def _run_smoke_all(table, select_impl, tmp_path, monkeypatch):
+    """verify_bundle over a fabricated staged table, returning EVERY
+    failure (the fallback-cell loops speak their own messages)."""
     import bootstrap_profile as bp
     from src.xpu.selector import Selection
 
@@ -554,7 +555,14 @@ def _run_smoke(table, select_impl, tmp_path, monkeypatch):
                          block=entry.get("block"))
 
     monkeypatch.setattr("src.xpu.selector.select", fake_select)
-    return [f for f in bp.verify_bundle(staging, "e" * 16)
+    return list(bp.verify_bundle(staging, "e" * 16))
+
+
+def _run_smoke(table, select_impl, tmp_path, monkeypatch):
+    """The exact-key-smoke slice of the failures (legacy/semantic
+    tier messages only)."""
+    return [f for f in _run_smoke_all(table, select_impl, tmp_path,
+                                      monkeypatch)
             if "exact-key select" in f]
 
 
@@ -606,6 +614,97 @@ def test_exact_key_smoke_fails_legacy_tier_mismatch(tmp_path, monkeypatch):
 
     failures = _run_smoke(table, select_impl, tmp_path, monkeypatch)
     assert any("resolved a different entry" in f for f in failures)
+
+
+# ------------- previous-fallback smoke (issue #8 Option A) ---------------
+
+def _smoke_table_with_fallback():
+    """The smoke table plus one declared previous_fallbacks cell that
+    shadows the semantic entry's own key with the old geometry."""
+    table = _smoke_table()
+    table["previous_fallbacks"] = [{
+        "N": 1024, "batch": 16, "direction": "dit", "block": 256,
+        "transform_type": "c2c", "transform_direction": "forward",
+        "normalization": "backward",
+        "flow_id": "local-fused-tile",
+        "flow_realization": "matrix-resident",
+        "processing_unit": "dense-dot-fft64",
+        "params": {"tile": 128, "rows": 8, "variant": "spread",
+                   "batch": 16},
+        "reason": "old deployed winner",
+    }]
+    return table
+
+
+def _run_smoke_real(table, tmp_path, monkeypatch):
+    """verify_bundle with the REAL select/plan_fft over a fabricated
+    staged table (only I/O + freshness gates patched out)."""
+    import bootstrap_profile as bp
+    staging = tmp_path / "staging"
+    (staging / "batch_dummy").mkdir(parents=True)
+    (staging / "selector_table.json").write_text(json.dumps(table))
+    monkeypatch.setattr(bp, "validate_benchmark_output",
+                        lambda *a, **k: [])
+    monkeypatch.setattr(
+        "src.xpu.selector.load_table", lambda path: json.loads(
+            (staging / "selector_table.json").read_text()))
+    monkeypatch.setattr(
+        "src.xpu.selector.assert_current_environment",
+        lambda tbl: tbl.get("env_hash"))
+    return list(bp.verify_bundle(staging, "e" * 16))
+
+
+def test_smoke_previous_fallback_shadowing_is_green(tmp_path, monkeypatch):
+    # End-to-end: real select gives the fallback cell its tier +
+    # reason, real plan_fft marks the geometry -- whole smoke green.
+    failures = _run_smoke_real(_smoke_table_with_fallback(), tmp_path,
+                               monkeypatch)
+    assert failures == []
+
+
+def test_smoke_fails_when_fallback_cell_does_not_win(tmp_path, monkeypatch):
+    # select resolves the claimed key to the shadowed semantic entry:
+    # the fallback would be dead config -> fail closed, both in the
+    # entries loop and in the fallbacks' own self-select loop.
+    table = _smoke_table_with_fallback()
+    entries = table["entries"]
+    legacy, semantic = entries[0], entries[1]
+
+    def select_impl(n, b, ttype, tdir, norm):
+        if n == 3000:
+            return None                      # out-of-matrix abstention
+        if (ttype, tdir, norm) == ("c2c", "forward", "backward"):
+            return (semantic, "semantic")    # the fallback should win
+        return (legacy, "legacy")
+
+    failures = _run_smoke_all(table, select_impl, tmp_path, monkeypatch)
+    assert any("claimed by a previous_fallbacks cell" in f
+               for f in failures), failures
+    assert any("did not select itself as a fallback" in f
+               for f in failures), failures
+
+
+def test_smoke_fails_when_fallback_plan_loses_the_marker(tmp_path,
+                                                         monkeypatch):
+    # plan_fft deploys the fallback geometry but the evidence marker
+    # got lost on the way: the smoke must notice (raw rows would be
+    # unattributable).
+    import dataclasses
+
+    import src.xpu.entry as entry_mod
+
+    table = _smoke_table_with_fallback()
+    real_plan = entry_mod.plan_fft
+
+    def plan_without_marker(*args, **kwargs):
+        plan = real_plan(*args, **kwargs)
+        params = dict(plan.params or {})
+        params.pop("previous_fallback", None)
+        return dataclasses.replace(plan, params=params)
+
+    monkeypatch.setattr(entry_mod, "plan_fft", plan_without_marker)
+    failures = _run_smoke_real(table, tmp_path, monkeypatch)
+    assert any("fallback plan lacks" in f for f in failures), failures
 
 
 # ------------- gzip release snapshots (issue #8 PR-J A2) -----------------
@@ -719,3 +818,112 @@ def test_committed_release_snapshots_strict_validate():
         assert not failures, f"{snap.name}: {failures}"
         checked += 1
     assert checked >= 1, "no post-P1-C release snapshot found to validate"
+
+
+# ------------- P2 evidence completeness (issue #8 review4 一.2) ----------
+
+def _steady_group(sessions, n_trials, candidates, label="N1024B16_dit"):
+    rows = []
+    for s in sessions:
+        for cand in candidates:
+            for t in range(n_trials):
+                r = _valid_row(session=s, label=label, trial=t,
+                               candidate=cand)
+                r["tier"] = "steady"
+                rows.append(r)
+    return rows
+
+
+def test_strict_fails_truncated_candidate_session(tmp_path):
+    # P2-a: 30 trials per session/label/candidate/tier, exactly --
+    # cutting a candidate's trials in ONE session fails strict.
+    man = dict(_valid_manifest(), sessions=2)
+    rows = {s: _steady_group([s], 30, ["m0", "m2"]) for s in (0, 1)}
+    _write_plain_raw(tmp_path, rows)
+    summary = _stamp_dir(tmp_path, man)
+    assert validate_benchmark_output(summary, strict=True) == []
+    # cut m0's last 5 trials in session 0 only, re-stamp the hash
+    rows[0] = [r for r in rows[0]
+               if not (r["candidate"] == "m0" and r["trial"] >= 25)]
+    _write_plain_raw(tmp_path, rows)
+    summary = _stamp_dir(tmp_path, man)
+    failures = validate_benchmark_output(summary, strict=True)
+    assert any("trial completeness census" in f for f in failures), failures
+    assert any("trials=30" in f for f in failures), failures
+
+
+def test_strict_fails_candidate_missing_in_one_session(tmp_path):
+    # A candidate present in session 0 but absent from session 1 (while
+    # the session file itself exists) is an incomplete artifact.
+    man = dict(_valid_manifest(), sessions=2)
+    rows = {0: _steady_group([0], 30, ["m0", "m2"]),
+            1: _steady_group([1], 30, ["m0"])}
+    _write_plain_raw(tmp_path, rows)
+    summary = _stamp_dir(tmp_path, man)
+    failures = validate_benchmark_output(summary, strict=True)
+    assert any("trial completeness census" in f
+               and "not identical across sessions" in f
+               for f in failures), failures
+
+
+def test_plain_missing_session_fails_strict(tmp_path):
+    # The plain-format twin of test_gzip_missing_session_fails_strict.
+    man = dict(_valid_manifest(), sessions=2)
+    rows = {0: _steady_group([0], 30, ["m0"])}
+    _write_plain_raw(tmp_path, rows)
+    summary = _stamp_dir(tmp_path, man)
+    failures = validate_benchmark_output(summary, strict=True)
+    assert any("missing sessions" in f for f in failures), failures
+
+
+def test_strict_oracle_candidates_list_must_match_raw_rows(tmp_path):
+    # P2-b: the recorded oracle list is checked against the rows.
+    man = dict(_valid_manifest(), sessions=1)
+    rows = {0: _steady_group([0], 30, ["m0", "oracle:q"])}
+    _write_plain_raw(tmp_path, rows)
+    man["oracle_candidates"] = ["oracle:q"]
+    summary = _stamp_dir(tmp_path, man)
+    assert validate_benchmark_output(summary, strict=True) == []
+    # wrong recorded list -> fail closed
+    man["oracle_candidates"] = ["oracle:other"]
+    summary = _stamp_dir(tmp_path, man)
+    failures = validate_benchmark_output(summary, strict=True)
+    assert any("oracle_candidates mismatch" in f for f in failures), \
+        failures
+
+
+def test_aggregate_reports_trial_incompleteness_and_oracle_list(tmp_path):
+    # P2-a/P2-b on the aggregate side: summary.failures carries the
+    # census verdict and the embedded manifest records the ACTUAL
+    # oracle candidate names (not only the oracle:* pattern).
+    import run_semantic_matrix as sm
+
+    man = dict(_valid_manifest(), sessions=2)
+    label = "N1024B16:c2c-forward"
+    rows = {0: _steady_group([0], 30, ["m0", "selector", "oracle:q"],
+                             label=label),
+            1: _steady_group([1], 30, ["m0"], label=label)}
+    for r in rows[0]:
+        if r["candidate"] == "selector":
+            r["params"] = {"selection_source": "table",
+                           "previous_fallback": True}
+    _write_plain_raw(tmp_path, rows)
+    summary = sm._aggregate(tmp_path, [(1024, 16)], 30, 5, 2,
+                            manifest=man)
+    assert any(f.get("kind") == "trial-incompleteness"
+               for f in summary["failures"]), summary["failures"]
+    assert summary["manifest"]["oracle_candidates"] == ["oracle:q"]
+    # Option A evidence column: the cell deployed the fallback
+    case = next(c for c in summary["cases"] if c["label"] == label)
+    assert case["selector_previous_fallback"] is True
+    # a complete artifact aggregates with an empty census verdict
+    rows = {s: _steady_group([s], 30, ["m0", "oracle:q"], label=label)
+            for s in (0, 1)}
+    _write_plain_raw(tmp_path, rows)
+    summary = sm._aggregate(tmp_path, [(1024, 16)], 30, 5, 2,
+                            manifest=man)
+    assert not [f for f in summary["failures"]
+                if f.get("kind") == "trial-incompleteness"]
+    assert summary["manifest"]["oracle_candidates"] == ["oracle:q"]
+    case = next(c for c in summary["cases"] if c["label"] == label)
+    assert case["selector_previous_fallback"] is False

@@ -63,6 +63,7 @@ from src.xpu.manifest_contract import (  # noqa: E402
 )
 from src.xpu.selector import GUARD_PCT  # noqa: E402
 from src.xpu.selector import entry_contract_violations  # noqa: E402
+from src.xpu.selector import semantic_key_of  # noqa: E402
 
 import run_semantic_matrix as sm  # noqa: E402
 
@@ -879,6 +880,47 @@ def build_matrix_entries(matrix_runs, guard=GUARD_PCT, threshold=1e-4,
     return entries
 
 
+def _carry_previous_fallbacks() -> list:
+    """Declared previous-deployed fallback cells of the production table.
+
+    Configuration, not measurement (issue #8 Option A): carried through
+    rebuilds and re-validated through the shared contract, so a
+    promotion can never silently drop or corrupt the fallback cells the
+    paired confirmation justified. Absent production config (fresh
+    bootstrap) simply yields no fallbacks.
+    """
+    from src.xpu.selector import TABLE_PATH
+
+    if not os.path.exists(TABLE_PATH):
+        return []
+    with open(TABLE_PATH) as f:
+        prod = json.load(f)
+    fbs = prod.get("previous_fallbacks") or []
+    bad = []
+    seen = set()
+    for i, e in enumerate(fbs):
+        key = (e.get("N"), e.get("batch"), e.get("direction"))
+        sk = semantic_key_of(e)
+        if sk is None:
+            bad.append(f"previous_fallbacks[{i}] {key}: missing the exact "
+                       "semantic triple")
+        else:
+            cell = key + sk
+            if cell in seen:
+                bad.append(f"previous_fallbacks[{i}] {key} {sk}: duplicate "
+                           "cell key")
+            seen.add(cell)
+        for msg in entry_contract_violations(e):
+            bad.append(f"previous_fallbacks[{i}] {key}: {msg}")
+    if bad:
+        raise ConfigError(
+            f"declared previous_fallbacks ({len(fbs)}) do not satisfy the "
+            f"shared contract ({len(bad)} violations): " + "; ".join(bad[:8])
+            + (" ..." if len(bad) > 8 else "")
+            + "; refusing to write the table")
+    return fbs
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("runs", nargs="+", help="B=1 confirmation JSONs")
@@ -1067,6 +1109,12 @@ def main() -> None:
             + (" ..." if len(illegal) > 8 else "")
             + "; refusing to write the table")
 
+    # Declared per-cell fallbacks (issue #8 Option A) are configuration,
+    # not measurement: a rebuild must carry them forward -- re-validated
+    # through the same contract -- or the next promotion would silently
+    # drop the fallback safety net the paired confirmation justified.
+    previous_fallbacks = _carry_previous_fallbacks()
+
     table = {
         "schema_version": 2,
         "device": profile.device,
@@ -1082,6 +1130,8 @@ def main() -> None:
         "rejections": rejections,
         "entries": entries,
     }
+    if previous_fallbacks:
+        table["previous_fallbacks"] = previous_fallbacks
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     with open(args.out, "w") as f:
         json.dump(table, f, indent=2)

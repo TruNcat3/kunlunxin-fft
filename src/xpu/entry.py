@@ -326,6 +326,12 @@ def plan_fft(direction: str, n: int, batch: int = 1, precision: str = "fp32",
     inverse, pack/crop for real transforms) -- the wrapper is part of
     the measured path of that semantic's confirmation rows.
 
+    Previous-deployed fallback (issue #8 Option A): a cell declared in
+    the table's ``previous_fallbacks`` list outranks the semantic
+    entry at that exact key; the plan deploys the old geometry and
+    carries ``params["previous_fallback"] = True`` plus the fallback
+    reason so raw rows are attributable to the fallback decision.
+
     Runner closure (issue #8 P1-A): a table entry carrying an
     ``executed`` field deploys exactly that runner — the measured
     winner recorded end-to-end, even when its orientation differs from
@@ -389,6 +395,12 @@ def plan_fft(direction: str, n: int, batch: int = 1, precision: str = "fp32",
             plan = _with_compat(plan, compat)
         return plan
     params = dict(sel.params or {})
+    if getattr(sel, "entry_tier", "") == "previous-fallback":
+        # Issue #8 Option A: the plan (and every row measured under it)
+        # is attributable to the previous-deployed fallback cell
+        # without diffing geometry. Selection.params stays clean --
+        # only the deployed plan carries the marker.
+        params["previous_fallback"] = True
     if params.get("real_flow"):
         # Dedicated real flow (PR-H): the entry carries the flow id;
         # validate it fail-closed here and mark the plan accordingly

@@ -178,6 +178,81 @@ def _iter_raw_rows(raw_dir: Path):
             yield path, 0, {"__decode_error__": f"unreadable raw: {e}"}
 
 
+def iter_raw_rows(raw_dir: Path):
+    """Public plain/gzip raw reader shared by validators and aggregation.
+
+    ``--aggregate-only`` replays exactly the bytes the strict gate
+    reads (issue #8 review4 P2: same reader on both sides), yielding
+    ``(path, line_no, row)`` triples.
+    """
+    return _iter_raw_rows(raw_dir)
+
+
+# The manifest's timed tier carries exactly ``manifest['trials']``
+# rows per (label, candidate, session). Legacy single-tier run outputs
+# (focus/batch rounds) omit the row ``tier`` field entirely; those are
+# still held to the cross-session census below but not to the
+# steady-tier count (issue #8 review4 P2-a targets matrix evidence).
+STEADY_TIERS = ("steady",)
+
+
+def trial_completeness_failures(rows, manifest: dict) -> list[str]:
+    """Session/label/candidate/tier census (issue #8 review4 P2-a).
+
+    Every ``(label, candidate, tier)`` group of timed (``status=="ok"``)
+    rows must appear in EVERY session with identical row counts -- a
+    candidate truncated in one session, or present in fewer sessions,
+    fails here. Steady groups must carry exactly ``manifest['trials']``
+    timed rows per session. Non-ok rows (recorded correctness failures
+    etc.) are exception evidence, not timings, and leave the census;
+    row duplicates are already rejected by :func:`validate_raw_sessions`.
+    """
+    failures: list[str] = []
+    trials = _get(manifest, "trials")
+    groups: dict[tuple, dict] = {}
+    for row in rows:
+        if not isinstance(row, dict) or "__decode_error__" in row:
+            continue
+        if row.get("status", "ok") != "ok":
+            continue
+        key = (row.get("label"), row.get("candidate"), row.get("tier"))
+        g = groups.setdefault(key, {})
+        s = row.get("session")
+        g[s] = g.get(s, 0) + 1
+    if not groups:
+        return failures
+
+    def _skey(s):
+        return (0, s, "") if isinstance(s, int) else (1, 0, str(s))
+
+    sessions = sorted({s for g in groups.values() for s in g}, key=_skey)
+
+    def _gkey(key):
+        return tuple(str(part) for part in key)
+
+    for key in sorted(groups, key=_gkey):
+        g = groups[key]
+        per_session = {s: g.get(s) for s in sessions}
+        counts = [per_session[s] for s in sessions]
+        if any(c is None for c in counts) or len(set(counts)) != 1:
+            failures.append(
+                "trial completeness census: group (label="
+                f"{key[0]!r}, candidate={key[1]!r}, tier={key[2]!r}) "
+                f"is not identical across sessions {sessions}: "
+                f"per-session rows {per_session}")
+        if (isinstance(trials, int) and trials > 0
+                and key[2] in STEADY_TIERS):
+            for s in sessions:
+                if per_session[s] is not None and per_session[s] != trials:
+                    failures.append(
+                        "trial completeness census: group (label="
+                        f"{key[0]!r}, candidate={key[1]!r}, tier="
+                        f"{key[2]!r}) session {s} has "
+                        f"{per_session[s]} rows, manifest declares "
+                        f"trials={trials}")
+    return failures
+
+
 def validate_raw_sessions(raw_dir: Path, manifest: dict,
                           strict: bool = False) -> list[str]:
     """Duplicate-trial, missing-case and row-field failures.
@@ -270,6 +345,23 @@ def validate_raw_sessions(raw_dir: Path, manifest: dict,
                 f"missing sessions: manifest declares "
                 f"{declared_sessions}, found {found_sessions} raw "
                 "session file(s)")
+    if strict:
+        # Issue #8 review4 P2-a/P2-b: exact trial census per
+        # session/label/candidate/tier, and the recorded oracle
+        # candidate list must be the list the raw rows actually show.
+        plain_rows = [r for _, _, r in rows]
+        failures += trial_completeness_failures(plain_rows, manifest)
+        declared_oracles = _get(manifest, "oracle_candidates")
+        if isinstance(declared_oracles, list):
+            observed = sorted(
+                {r.get("candidate") for r in plain_rows
+                 if isinstance(r.get("candidate"), str)
+                 and r["candidate"].startswith("oracle:")})
+            if sorted(str(c) for c in declared_oracles) != observed:
+                failures.append(
+                    "oracle_candidates mismatch: manifest "
+                    f"{sorted(str(c) for c in declared_oracles)} != raw "
+                    f"rows {observed}")
     return failures
 
 

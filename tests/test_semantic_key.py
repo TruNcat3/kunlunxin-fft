@@ -20,6 +20,7 @@ from src.xpu.config import (  # noqa: E402
     NORMALIZATIONS,
     TRANSFORM_DIRECTIONS,
     TRANSFORM_TYPES,
+    ConfigError,
 )
 from src.xpu.entry import (  # noqa: E402
     SUPPORTED_NORMS,
@@ -283,3 +284,148 @@ def test_legacy_entry_dispatches_by_direction():
     p = plan_fft("dit", 1024, batch=256, profile_hash=PROFILE,
                  table=table, env_hash=ENV)
     assert p.executed == "fft_dit_batch"
+
+
+# --- previous-deployed per-cell fallback (issue #8 Option A) ------------
+
+def _fallback_entry(tdir="forward", **over):
+    """A declared previous_fallbacks cell: the old deployed geometry
+    claiming one exact triple (as load_table requires)."""
+    entry = _base_entry(
+        transform_type="c2c", transform_direction=tdir,
+        normalization="backward",
+        params={"variant": "spread", "batch": 256, "tile": 128, "rows": 8},
+        reason="focus challenger (old deployed winner)",
+        previous_fallback_provenance={"issue": 8, "source_commit": "x"},
+    )
+    entry.update(over)
+    return entry
+
+
+def _fb_table(entries, fallbacks):
+    t = _table(entries)
+    t["previous_fallbacks"] = fallbacks
+    return t
+
+
+def test_previous_fallback_outranks_semantic_entry_at_its_cell():
+    fb = _fallback_entry()
+    sem = _semantic_entry("c2c", "forward", block=512,
+                          params={"variant": "spread", "batch": 256,
+                                  "tile": 64, "rows": 8})
+    table = _fb_table([sem], [fb])
+    hit = find_entry(table, 1024, 256, "dit", "c2c", "forward", "backward")
+    assert hit is fb
+    # the fallback is a declared cell, not an entry -- identity tier
+    from src.xpu.selector import is_previous_fallback
+    assert is_previous_fallback(table, hit)
+    assert not is_previous_fallback(table, sem)
+
+
+def test_previous_fallback_answers_only_its_claimed_triple():
+    fb = _fallback_entry("forward")
+    sem_inv = _semantic_entry("c2c", "inverse")
+    sem_r2c = _semantic_entry("r2c", "forward")
+    legacy = _base_entry()
+    table = _fb_table([sem_inv, sem_r2c, legacy], [fb])
+    # its own key -> fallback
+    assert find_entry(table, 1024, 256, "dit", "c2c", "forward",
+                      "backward") is fb
+    # inverse / r2c / c2r / non-backward norms fall through untouched
+    assert find_entry(table, 1024, 256, "dit", "c2c", "inverse",
+                      "backward") is sem_inv
+    assert find_entry(table, 1024, 256, "dit", "r2c", "forward",
+                      "backward") is sem_r2c
+    assert find_entry(table, 1024, 256, "dit", "c2c", "forward",
+                      "ortho") is legacy
+    # other directions never see a dit-scoped fallback: a dif legacy
+    # entry keeps answering dif queries even while dit is fallback-held
+    legacy_dif = _base_entry(direction="dif")
+    table = _fb_table([sem_inv, sem_r2c, legacy, legacy_dif], [fb])
+    assert find_entry(table, 1024, 256, "dif", "c2c", "forward",
+                      "backward") is legacy_dif
+    assert find_entry(table, 1024, 256, "dit", "c2c", "forward",
+                      "backward") is fb
+
+
+def test_select_previous_fallback_tier_reason_and_params():
+    fb = _fallback_entry()
+    sem = _semantic_entry("c2c", "forward", block=512,
+                          params={"variant": "spread", "batch": 256,
+                                  "tile": 64, "rows": 8})
+    table = _fb_table([sem], [fb])
+    s = _select(table, transform_type="c2c",
+                transform_direction="forward", normalization="backward")
+    assert s.source == "table"
+    assert s.entry_tier == "previous-fallback"
+    assert s.params == fb["params"]
+    assert s.block == fb["block"]
+    assert s.reason.startswith(
+        "previous-deployed per-cell fallback (issue #8):")
+    # Selection.params carries no extra marker -- only plan_fft does
+    assert "previous_fallback" not in s.params
+    # the shadowed semantic entry still answers nothing else wrong:
+    # its inverse sibling key is untouched when not fallback-claimed
+    inv = _semantic_entry("c2c", "inverse", block=512)
+    table2 = _fb_table([sem, inv], [fb])
+    s2 = _select(table2, transform_type="c2c",
+                 transform_direction="inverse", normalization="backward")
+    assert s2.entry_tier == "semantic"
+    assert s2.block == 512
+
+
+def test_plan_fft_marks_the_fallback_geometry_and_reason():
+    fb = _fallback_entry(block=256, incumbent_block=256)
+    sem = _semantic_entry("c2c", "forward", block=512,
+                          params={"variant": "spread", "batch": 256,
+                                  "tile": 64, "rows": 8})
+    table = _fb_table([sem], [fb])
+    p = plan_fft("dit", 1024, batch=256, profile_hash=PROFILE,
+                 table=table, env_hash=ENV,
+                 transform_type="c2c", transform_direction="forward",
+                 norm="backward")
+    assert p.fallback is False
+    assert p.selection_source == "table"
+    raw = dict(p.params)
+    assert raw.pop("previous_fallback") is True
+    assert raw == fb["params"]        # deployed geometry is the old one
+    assert p.block == fb["block"]
+    assert p.executed == "fft_dit_batch"
+    assert p.reason.startswith(
+        "previous-deployed per-cell fallback (issue #8):")
+    # the incumbent-block lookup shares the fallback tier (same source
+    # of truth): M0 block follows the fallback entry, not the shadowed
+    # semantic one
+    sel = _select(table, transform_type="c2c",
+                  transform_direction="forward", normalization="backward")
+    assert _entry_block(table, sel) == fb["incumbent_block"]
+
+
+def test_load_table_rejects_fallback_without_semantic_triple(tmp_path):
+    import json
+    from src.xpu.selector import load_table
+    table = _fb_table([_base_entry()], [_base_entry()])  # no triple!
+    path = tmp_path / "table.json"
+    path.write_text(json.dumps(table))
+    with pytest.raises(ConfigError, match="semantic triple"):
+        load_table(str(path))
+
+
+def test_load_table_rejects_duplicate_previous_fallback_cell(tmp_path):
+    import json
+    from src.xpu.selector import load_table
+    table = _fb_table([], [_fallback_entry(), _fallback_entry()])
+    path = tmp_path / "table.json"
+    path.write_text(json.dumps(table))
+    with pytest.raises(ConfigError, match="duplicate"):
+        load_table(str(path))
+
+
+def test_load_table_accepts_declared_previous_fallbacks(tmp_path):
+    import json
+    from src.xpu.selector import load_table
+    table = _fb_table([_base_entry()], [_fallback_entry()])
+    path = tmp_path / "table.json"
+    path.write_text(json.dumps(table))
+    t = load_table(str(path))
+    assert len(t["previous_fallbacks"]) == 1
