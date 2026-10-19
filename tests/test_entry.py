@@ -153,7 +153,11 @@ def test_plan_batch_entry_dispatches_m4():
     plan = plan_fft("dit", 4096, batch=16, profile_hash=p.hash(), table=t,
                     env_hash=t["env_hash"])
     assert not plan.fallback
-    assert plan.executed == "fft_dit_batch"
+    # batch-aware dispatch: the production winner at (4096,16) is the
+    # measured core (batched radix-4 since issue #8 PR-I round 1);
+    # the property under test is a batched kernel + batch variant,
+    # not a specific core.
+    assert plan.executed in ("fft_dit_batch", "fft_dit_radix4_batch")
     assert plan.params.get("variant") in ("spread", "folded")
 
 

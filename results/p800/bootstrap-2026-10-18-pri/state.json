@@ -1,0 +1,23 @@
+{
+  "completed": [
+    "probe",
+    "check",
+    "calibrate",
+    "build",
+    "verify"
+  ],
+  "verified": {
+    "at": "2026-10-18T14:13:11Z",
+    "hashes": {
+      "batch_focus_a/summary.json": "502a6d6dd2ff82a0e4e607ebecbd0d26ccd2097c67f9636dee33bb6d7e0438ba",
+      "batch_focus_b/summary.json": "9fb754982344346b0dc136bceeee9a91d22d3d94deb8751a2330c25d78c8b290",
+      "batch_holdout/summary.json": "8feb50111586d7a755b6497c251dc6583e4526e2896b799626851b1d81f1b135",
+      "calibration.json": "b7549a8ef039a36a4f7a08d6f893cabf2c1e2c7cac18ad45d0d96277e22ae728",
+      "confirm_b1024.json": "283d9230377573709f20c11a23a6053fffcb1deb809162aeda5b08c205ad5d41",
+      "confirm_b256.json": "40d56ba1ad099286962c02d2ff558bfdd433264e9860c62b3084511169462869",
+      "confirm_batch.json": "ad2dd180d4f36252d818d052d19c2cdd74a348e62722d72081d0eea85de6ac6c",
+      "matrix_pri/summary.json": "2b00297294142f052746d54c93eb4f431beb20ff5e3632bc4d9cf8fde4587bc2",
+      "selector_table.json": "25818154a3ab06dca21aa18ddee2efbfb93f6891f94a2d8b3957be2877638546"
+    }
+  }
+}

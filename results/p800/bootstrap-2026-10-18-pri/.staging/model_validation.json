@@ -1,0 +1,68 @@
+{
+  "guard_pct": 2.0,
+  "kind": "issue-3-model-validation",
+  "metrics": {
+    "constants_declared": true,
+    "fitted": false,
+    "guard_by_source": {
+      "results/p800/bootstrap-2026-10-18-pri/.staging/batch_focus_a/summary.json": {
+        "agreement": 1.0,
+        "pairs": 58,
+        "protocol_id": "batch-release-v1:focus:plan-reuse:interleave:correctness-first:3sess:p11"
+      }
+    },
+    "guard_pct": 2.0,
+    "mdape_pct": {
+      "baseline_m0_rank1_loop": 18.65686025186663,
+      "incumbent_m4_folded": 89.2121637024349,
+      "m2_batch": 86.51155443854202,
+      "m2_packet": 77.33681636282927,
+      "m4_spread": 90.03349955452988,
+      "m5_batch": 89.32444314890571
+    },
+    "mdape_scope": "all scored records (focus+holdout)",
+    "n_focus_records": 66,
+    "n_holdout_records": 78,
+    "n_records": 144,
+    "topk_full_space": {
+      "mean_regret_pct": 0.05125948607562822,
+      "recall": 1.0,
+      "regrets_pct": [
+        0.0,
+        0.0,
+        0.10633854822347495,
+        0.140993904228024,
+        0.0,
+        0.060224464002270384
+      ],
+      "shapes": 6,
+      "space_size": 9
+    },
+    "topk_hit": 1.0,
+    "topk_scope": "full-space holdout records only",
+    "topk_shapes": 6
+  },
+  "n_records": 144,
+  "sources": [
+    {
+      "commit": "dbb8c5b7432dc29bf1e961ed4b868a84db2134f1",
+      "dirty": false,
+      "env_hash": "6b50bd316032c0fe",
+      "full_space": false,
+      "path": "results/p800/bootstrap-2026-10-18-pri/.staging/batch_focus_a/summary.json",
+      "protocol_id": "batch-release-v1:focus:plan-reuse:interleave:correctness-first:3sess:p11",
+      "records": 82,
+      "shapes": 8
+    },
+    {
+      "commit": "dbb8c5b7432dc29bf1e961ed4b868a84db2134f1",
+      "dirty": false,
+      "env_hash": "6b50bd316032c0fe",
+      "full_space": true,
+      "path": "results/p800/bootstrap-2026-10-18-pri/.staging/batch_holdout/summary.json",
+      "protocol_id": "batch-release-v1:focus:plan-reuse:interleave:correctness-first:3sess:p11:m2-fullspace-holdout",
+      "records": 90,
+      "shapes": 6
+    }
+  ]
+}
