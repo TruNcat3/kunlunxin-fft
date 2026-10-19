@@ -334,3 +334,53 @@ def test_aggregate_stamp_and_strict_gate(tmp_path):
         json.dumps(summary, indent=2, sort_keys=True) + "\n")
     assert any("result_sha256" in f
                for f in validate_benchmark_output(tmp_path, strict=True))
+
+
+def _fake_winner_plan(block=1024, **params):
+    from src.xpu.entry import ExecutionPlan
+    return ExecutionPlan(
+        n=4096, batch=16, direction="dit", precision="fp32",
+        selection_source="table", reason="t", fallback=False,
+        executed="fft_dit_radix4_batch", block=block,
+        flow_id="batch-spread", flow_realization="global-stage",
+        processing_unit="radix4-scalar",
+        params={"variant": "spread", **params},
+        transform_type="c2c", transform_direction="forward",
+        norm="backward")
+
+
+def test_winner_block_oracle_mode_sweeps_only_block():
+    """issue #8 PR-I round 2: winner-block mode fixes the promoted
+    winner (flow/unit/params carried verbatim) and varies ONLY the
+    block over the fixed sweep -- a single-factor A/B."""
+    base = _fake_winner_plan(block=1024, batch=16)
+    plans = sm._winner_block_plans(base)
+    assert [p.block for p in plans] == [256, 512, 1024, 2048]
+    assert [p.params["oracle_name"] for p in plans] == [
+        "winner-b256", "winner-b512", "winner-b1024", "winner-b2048"]
+    for p in plans:
+        assert p.executed == base.executed
+        assert p.flow_id == base.flow_id
+        assert p.flow_realization == base.flow_realization
+        assert p.processing_unit == base.processing_unit
+        assert p.params["variant"] == "spread"
+    # a deployed block outside the sweep stays part of the A/B, so
+    # the round can only tie or improve the deployed geometry
+    outside = sm._winner_block_plans(_fake_winner_plan(block=4096))
+    assert sorted(p.block for p in outside) == [256, 512, 1024, 2048, 4096]
+
+
+def test_oracle_mode_defaults_and_calibrate_passthrough():
+    import bootstrap_profile as bp
+    assert sm.ORACLE_MODE == "full"
+    cmds = bp.calibrate_commands(Path("/tmp/x"), "0", "pri")
+    matrix = [c for c in cmds
+              if any(str(x).endswith("run_semantic_matrix.py")
+                     for x in c)][0]
+    assert matrix[matrix.index("--oracle-mode") + 1] == "full"
+    cmds = bp.calibrate_commands(Path("/tmp/x"), "0", "pri", "winner-block")
+    matrix = [c for c in cmds
+              if any(str(x).endswith("run_semantic_matrix.py")
+                     for x in c)][0]
+    assert matrix[matrix.index("--oracle-mode") + 1] == "winner-block"
+    assert "--scope" in matrix and "pri" in matrix

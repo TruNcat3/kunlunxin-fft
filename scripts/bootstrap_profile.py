@@ -78,7 +78,8 @@ MATRIX_SCOPE_DEFAULT = "stress"
 # feed the table builder, focus+holdout feed the cost model — the same
 # commands the frozen evidence was produced with.
 def calibrate_commands(out: Path, device: str,
-                       matrix_scope: str = MATRIX_SCOPE_DEFAULT
+                       matrix_scope: str = MATRIX_SCOPE_DEFAULT,
+                       matrix_oracle_mode: str = "full"
                        ) -> list[list[str]]:
     py = sys.executable
     focus_a = out / "batch_focus_a"
@@ -124,6 +125,7 @@ def calibrate_commands(out: Path, device: str,
         [py, "scripts/run_semantic_matrix.py",
          "--scope", matrix_scope, "--sessions", "3",
          "--trials", "30", "--warmup", "5",
+         "--oracle-mode", matrix_oracle_mode,
          "--out", str(out / f"matrix_{matrix_scope}")],
     ]
 
@@ -537,6 +539,12 @@ def main() -> int:
                     help="semantic-matrix scope for calibrate + build "
                          "(default: %(default)s, the issue #8 stress "
                          "domain; pass 'all' for a full-domain run)")
+    ap.add_argument("--matrix-oracle-mode",
+                    choices=("full", "winner-block"), default="full",
+                    help="oracle candidate set for the calibration "
+                         "matrix: full bounded set (round 1) or the "
+                         "promoted winner re-blocked over the block "
+                         "sweep (PR-I round 2)")
     ap.add_argument("--output", type=Path,
                     default=ROOT / "results" / "local-profile",
                     help="staging directory for this bootstrap run")
@@ -608,7 +616,8 @@ def main() -> int:
                     return _fail(stage, code, tag)
         elif stage == "calibrate":
             for i, cmd in enumerate(calibrate_commands(
-                    staging, args.device, args.matrix_scope)):
+                    staging, args.device, args.matrix_scope,
+                    args.matrix_oracle_mode)):
                 code = run_cmd(cmd, args.device, log_dir,
                                f"{stage}_{i:02d}")
                 if code != 0:

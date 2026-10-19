@@ -71,6 +71,15 @@ TIER_STEADY = "steady"
 TIER_ONE_SHOT = "one_shot"
 TIER_E2E = "e2e"
 
+# Issue #8 PR-I round 2: "full" keeps the round-1 bounded oracle set;
+# "winner-block" fixes the processing unit (the promoted production
+# winner per cell, incl. composition cells) and sweeps ONLY the block
+# (worker waves/tail geometry) -- a single-factor A/B over the same
+# fixed cells. Set from --oracle-mode in main(); session children
+# re-parse the same flag.
+ORACLE_MODE = "full"
+WINNER_BLOCK_SWEEP = (256, 512, 1024, 2048)
+
 SCOPES = {
     "main": [(n, b) for n in (64, 128, 256, 512, 1024, 2048)
              for b in (1, 4, 16, 64)],
@@ -349,6 +358,24 @@ def _oracle_plans(n, b, direction, semantic, block):
     return plans
 
 
+def _winner_block_plans(selector):
+    """Single-factor round-2 candidates: the production winner plan
+    (flow attribution and params exactly as promoted) re-blocked over
+    the fixed block sweep; the selector's own block is always included
+    so the A/B can only tie or improve the deployed geometry."""
+    from dataclasses import replace
+    plans, seen = [], set()
+    for blk in (*WINNER_BLOCK_SWEEP, selector.block):
+        if blk in seen:
+            continue
+        seen.add(blk)
+        plans.append(replace(
+            selector, block=int(blk),
+            params={**(selector.params or {}),
+                    "oracle_name": f"winner-b{int(blk)}"}))
+    return plans
+
+
 def _timed_steady(fns, warmup, trials, seed):
     """Interleaved randomized trials across contenders (one call each)."""
     from src.xpu.runner import _sync
@@ -443,8 +470,17 @@ def run_case(session, n, b, semantic, trials, warmup, seed, table,
                                (lambda p=incumbent: execute_fft_plan(p, x)))
     contenders["selector"] = (selector,
                               (lambda p=selector: execute_fft_plan(p, x)))
-    for plan in _oracle_plans(n, b, direction, semantic,
-                              block=incumbent.block or 1024):
+    if ORACLE_MODE == "winner-block":
+        if selector.fallback:
+            raise RuntimeError(
+                "winner-block oracle mode needs a production entry to "
+                f"sweep, but the selector fell back for "
+                f"N{n}B{b}:{semantic}")
+        oracle_plans = _winner_block_plans(selector)
+    else:
+        oracle_plans = _oracle_plans(n, b, direction, semantic,
+                                     block=incumbent.block or 1024)
+    for plan in oracle_plans:
         name = plan.params["oracle_name"]
         contenders[f"oracle:{name}"] = (
             plan, (lambda p=plan: execute_fft_plan(p, x)))
@@ -846,7 +882,15 @@ def main():
                     help="reuse existing raw sessions (no measuring)")
     ap.add_argument("--session", type=int, default=None,
                     help=argparse.SUPPRESS)
+    ap.add_argument("--oracle-mode", choices=("full", "winner-block"),
+                    default="full",
+                    help="candidate set: full round-1 bounded set, or "
+                         "the promoted production winner re-blocked "
+                         "over the fixed block sweep (PR-I round 2)")
     args = ap.parse_args()
+
+    global ORACLE_MODE
+    ORACLE_MODE = args.oracle_mode
 
     cases = _scope_cells(args.scope)
     out_dir = Path(args.out)
@@ -882,6 +926,9 @@ def main():
         "sessions": args.sessions,
         "seed_base": args.seed,
         "candidates": ["incumbent", "selector", "oracle:*", "vendor"],
+        "oracle_mode": args.oracle_mode,
+        "block_sweep": (list(WINNER_BLOCK_SWEEP)
+                        if args.oracle_mode == "winner-block" else None),
         "shapes": [f"N{n}B{b}:{s}" for n, b in cases
                    for s in SEMANTICS],
         "error_threshold": 1e-4,
@@ -909,6 +956,7 @@ def main():
                  "--seed", str(args.seed),
                  "--e2e-trials", str(args.e2e_trials),
                  "--one-shot-trials", str(args.one_shot_trials),
+                 "--oracle-mode", args.oracle_mode,
                  "--out", str(out_dir)]
         for s in range(args.sessions):
             cmd = [str(s) if x == "SESSION" else x for x in child]
