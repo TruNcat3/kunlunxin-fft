@@ -1,0 +1,22 @@
+$ /root/miniconda/envs/python310_torch29_cuda/bin/python3 scripts/hw_probe.py --out /tmp/opencode/verify-closure-20261019/.staging/calibration.json
+XCCL /root/miniconda/envs/python310_torch29_cuda/lib/python3.10/site-packages/torch_xmlir/xccl//so/libbkcl.so loaded
+[35mSYMBOL_REWRITE [0m[32mtorch success[0m
+    [XDNN_UNIMPLEMENTED][/home/agent/xpytorch/workspace/8ba19c15-fc11-4377-85f3-84daf8eaab09/XMLIR/xdnn_pytorch/src/kernel_wrapper/wrapper/internal_fft_common.cpp:340]
+[ASSERT-FAIL](4==SUCCESS)[/home/agent/xpytorch/workspace/8ba19c15-fc11-4377-85f3-84daf8eaab09/XMLIR/xdnn_pytorch/src/xdnn_pytorch_wrapper/fft_fft.cpp:69]
+    [XDNN_UNIMPLEMENTED][/home/agent/xpytorch/workspace/8ba19c15-fc11-4377-85f3-84daf8eaab09/XMLIR/xdnn_pytorch/src/kernel_wrapper/wrapper/internal_fft_common.cpp:340]
+[ASSERT-FAIL](4==SUCCESS)[/home/agent/xpytorch/workspace/8ba19c15-fc11-4377-85f3-84daf8eaab09/XMLIR/xdnn_pytorch/src/xdnn_pytorch_wrapper/fft_fft.cpp:69]
+    [XDNN_UNIMPLEMENTED][/home/agent/xpytorch/workspace/8ba19c15-fc11-4377-85f3-84daf8eaab09/XMLIR/xdnn_pytorch/src/kernel_wrapper/wrapper/internal_fft_common.cpp:340]
+[ASSERT-FAIL](4==SUCCESS)[/home/agent/xpytorch/workspace/8ba19c15-fc11-4377-85f3-84daf8eaab09/XMLIR/xdnn_pytorch/src/xdnn_pytorch_wrapper/fft_fft.cpp:69]
+    [XDNN_UNIMPLEMENTED][/home/agent/xpytorch/workspace/8ba19c15-fc11-4377-85f3-84daf8eaab09/XMLIR/xdnn_pytorch/src/kernel_wrapper/wrapper/internal_fft_common.cpp:340]
+[ASSERT-FAIL](4==SUCCESS)[/home/agent/xpytorch/workspace/8ba19c15-fc11-4377-85f3-84daf8eaab09/XMLIR/xdnn_pytorch/src/xdnn_pytorch_wrapper/fft_fft.cpp:69]
+wrote /tmp/opencode/verify-closure-20261019/.staging/calibration.json profile_hash=d03a88c277b077d3
+verified paths: 6 ok
+  vendor N=16 B=1: ok
+  vendor N=1024 B=16: ok
+  vendor N=2048 B=64: ok
+  vendor N=4096 B=16: unsupported: RuntimeError: [NOT IMPLEMENTED]: error code= 4(at /home/a
+  vendor N=16384 B=1: unsupported: RuntimeError: [NOT IMPLEMENTED]: error code= 4(at /home/a
+  vendor N=65536 B=1: unsupported: RuntimeError: [NOT IMPLEMENTED]: error code= 4(at /home/a
+  vendor N=1048576 B=1: unsupported: RuntimeError: [NOT IMPLEMENTED]: error code= 4(at /home/a
+
+[exit 0]

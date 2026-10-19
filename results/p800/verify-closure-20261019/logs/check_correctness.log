@@ -1,0 +1,18 @@
+$ /root/miniconda/envs/python310_torch29_cuda/bin/python3 scripts/test_correctness.py
+XCCL /root/miniconda/envs/python310_torch29_cuda/lib/python3.10/site-packages/torch_xmlir/xccl//so/libbkcl.so loaded
+[35mSYMBOL_REWRITE [0m[32mtorch success[0m
+device: kunlunxin-P800 (xpu arch=3, 12 clusters, 256KiB smem)
+profile: smoke (block=1024)
+  dit  N=       8 maxerr=3.768e-07 rel=6.492e-08 OK
+  dif  N=       8 maxerr=3.768e-07 rel=6.492e-08 OK
+  dit  N=      16 maxerr=8.317e-07 rel=7.955e-08 OK
+  dif  N=      16 maxerr=5.933e-07 rel=5.674e-08 OK
+  dit  N=      64 maxerr=2.922e-06 rel=1.264e-07 OK
+  dif  N=      64 maxerr=3.646e-06 rel=1.577e-07 OK
+  dit  N=     256 maxerr=1.348e-05 rel=2.050e-07 OK
+  dif  N=     256 maxerr=1.344e-05 rel=2.044e-07 OK
+  dit  N=    1024 maxerr=3.234e-05 rel=2.906e-07 OK
+  dif  N=    1024 maxerr=4.115e-05 rel=3.698e-07 OK
+ALL PASSED
+
+[exit 0]

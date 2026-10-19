@@ -1,0 +1,24 @@
+$ /root/miniconda/envs/python310_torch29_cuda/bin/python3 scripts/smoke.py
+XCCL /root/miniconda/envs/python310_torch29_cuda/lib/python3.10/site-packages/torch_xmlir/xccl//so/libbkcl.so loaded
+[35mSYMBOL_REWRITE [0m[32mtorch success[0m
+target device: kunlunxin-P800 (xpu arch=3, 12 clusters, 256KiB smem)
+== sentinel launch (non-zero input, output must change) ==
+  ok   output shape preserved
+  ok   output is finite
+  ok   output differs from input (kernel actually ran)
+  ok   output has non-zero energy (5.591e+06)
+  ok   DC bin == sum of inputs (numeric spot check)
+  ok   DIF output finite
+  ok   DIF output differs from input
+  ok   fused output finite
+  ok   fused output differs from input
+== negative input paths (must raise) ==
+  ok   wrong rank (2-D) -> ValueError: x must be 1-D, got 2-D (shape (4, 4)); batched APIs are not implemente
+  ok   wrong dtype (float32) -> TypeError: x must be complex64, got torch.float32; the public layout is complex64
+  ok   non-contiguous view -> ValueError: x must be contiguous; got a non-contiguous view. Clone or contiguous()
+  ok   non-power-of-two length -> ValueError: size must be a positive power of two, got 12
+  ok   wrong device (cpu) -> ValueError: x must be on the XPU device (device='cuda'), got device=cpu
+
+SMOKE PASSED: launch path verified, negative inputs rejected
+
+[exit 0]
