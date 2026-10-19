@@ -1,0 +1,15 @@
+{
+  "completed": [
+    "probe",
+    "check",
+    "verify"
+  ],
+  "verified": {
+    "at": "2026-10-19T13:54:56Z",
+    "hashes": {
+      "calibration.json": "21aadd67c86e9e3a9621ba06456ef854893058501341de25e76ace3ffe39651e",
+      "matrix_all/summary.json": "e7d50ab8d6252bb575ad9f04220c5632af52c987f0ffcc4f94e9d22eed48180f",
+      "selector_table.json": "2fb882ef60da42bba0d7a79898ec22bb4e08ecebbe3d9b68d803624019068bc6"
+    }
+  }
+}
