@@ -373,3 +373,60 @@ def test_r2c_abstain_plan_still_marks_compat():
                     transform_type="r2c")
     assert plan.fallback is True
     assert plan.params.get("real_compat") == REAL_COMPAT_MARK
+
+
+def test_hybrid_cache_evicts_entry_when_plan_dies(monkeypatch):
+    """Recycled object ids must never observe a stale HybridPlan.
+
+    The composition cache keys by id(plan); without eviction a plan
+    that dies lets a later plan reuse its id and inherit hybrid
+    geometry (n/batch/tile) from a different shape (crash or silent
+    mis-selection). The entry must be dropped when the plan dies.
+    """
+    import gc
+    import types
+    import weakref
+    from src.xpu import entry as entry_mod
+
+    calls = []
+
+    def _plan_hybrid(n, batch, tile, core):
+        calls.append((n, batch, tile, core))
+        return object()
+
+    stub = types.ModuleType("src.xpu.adapter_hybrid")
+    stub.plan_hybrid = _plan_hybrid
+    stub.run_hybrid = lambda x, hp: x
+    monkeypatch.setitem(sys.modules, "src.xpu.adapter_hybrid", stub)
+
+    class _StubTensor:
+        def __init__(self, dims):
+            self._dims = dims
+
+        def dim(self):
+            return len(self._dims)
+
+        def unsqueeze(self, axis):
+            return _StubTensor((1,) + self._dims)
+
+        def __getitem__(self, item):
+            return self
+
+    plan = ExecutionPlan(
+        n=64, batch=1, direction="dit", precision="fp32",
+        selection_source="composition", reason="t", fallback=False,
+        executed="run_hybrid", block=None, flow_id="hybrid-A1P1",
+        flow_realization="composed-subtransform",
+        processing_unit="vendor-torch-fft",
+        params={"tile": 64, "core": "vendor"},
+        transform_type="c2c", transform_direction="forward", norm="backward")
+    entry_mod._invoke_composition(plan, _StubTensor((64,)))
+    entry_mod._invoke_composition(plan, _StubTensor((64,)))
+    assert calls == [(64, 1, 64, "vendor")]
+    key = id(plan)
+    assert key in entry_mod._HYBRID_CACHE
+    ref = weakref.ref(plan)
+    del plan
+    gc.collect()
+    assert ref() is None
+    assert key not in entry_mod._HYBRID_CACHE

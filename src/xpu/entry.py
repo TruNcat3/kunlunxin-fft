@@ -53,6 +53,7 @@ unit can later replace the core behind the same contract.
 from __future__ import annotations
 
 import math
+import weakref
 from dataclasses import dataclass, field
 
 from .composition import composition_select
@@ -225,8 +226,10 @@ def _dispatch(sel: Selection) -> str | None:
 
 
 # HybridPlan instances are cached per ExecutionPlan (frozen plan ->
-# dict cannot hold them and stay JSON-safe). Strong refs keep ids
-# stable; the registry stays small (one entry per promoted plan).
+# dict cannot hold them and stay JSON-safe). The registry keys by
+# id(plan) but holds a weakref to the plan: when the plan dies its
+# entry is evicted, so a recycled object id can never observe a
+# stale HybridPlan from a different shape.
 _HYBRID_CACHE: dict = {}
 
 
@@ -620,13 +623,16 @@ def _invoke_composition(plan: ExecutionPlan, x):
     from .ledger import phase
 
     key = id(plan)
-    hp = _HYBRID_CACHE.get(key)
+    cached = _HYBRID_CACHE.get(key)
+    hp = cached[0] if cached is not None and cached[1]() is plan else None
     if hp is None:
         with phase("composition-prepare"):
             hp = plan_hybrid(plan.n, plan.batch,
                              tile=int(plan.params["tile"]),
                              core=plan.params["core"])
-        _HYBRID_CACHE[key] = hp
+        _HYBRID_CACHE[key] = (
+            hp, weakref.ref(plan,
+                            lambda _r, k=key: _HYBRID_CACHE.pop(k, None)))
     squeeze = x.dim() == 1
     if squeeze:
         x = x.unsqueeze(0)
