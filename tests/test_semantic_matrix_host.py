@@ -685,3 +685,137 @@ def test_main_fails_closed_when_a_declared_candidate_is_absent(
                for f in inv_fails), summary["failures"]
     gate = validate_benchmark_output(out, strict=True)
     assert any("oracle:m0_dit" in f and "absent" in f for f in gate), gate
+
+
+# ------------- issue #9 WP0-C: recorded-run replay CLI -------------------
+
+def _v5_copy(tmp_path, name):
+    import shutil
+
+    release = (ROOT / "results" / "p800" / "releases" /
+               "20261019-wp2-semantic-matrix-v5")
+    if not (release / "summary.json").is_file():
+        pytest.skip("released v5 snapshot not present")
+    dst = tmp_path / name
+    shutil.copytree(release, dst)
+    return dst
+
+
+def _run_replay(monkeypatch, src, dst):
+    monkeypatch.setattr(sys, "argv", [
+        "run_semantic_matrix.py", "--aggregate-only",
+        "--out", str(src), "--replay-out", str(dst)])
+    sm.main()
+
+
+def test_replay_regenerates_released_analysis_verbatim(tmp_path,
+                                                       monkeypatch):
+    """WP0-C: --aggregate-only over a recorded run replays the run's
+    OWN manifest/cases/registry into a new directory -- cases, metrics,
+    failures and hashes reproduce; the evidence identity stays the
+    run's while the replay block names today's source commit."""
+    import hashlib
+
+    src = _v5_copy(tmp_path, "v5")
+    orig = json.loads((src / "summary.json").read_text())
+    src_summary = (src / "summary.json").read_bytes()
+    src_manifest = (src / "manifest.json").read_bytes()
+    replay = tmp_path / "replay"
+    _run_replay(monkeypatch, src, replay)
+
+    # the input evidence is never rewritten
+    assert (src / "summary.json").read_bytes() == src_summary
+    assert (src / "manifest.json").read_bytes() == src_manifest
+
+    regen = json.loads((replay / "summary.json").read_text())
+    assert regen["cases"] == orig["cases"]
+    assert regen["metrics"] == orig["metrics"]
+    assert regen["failures"] == orig["failures"]
+    assert regen["raw_sha256"] == orig["raw_sha256"]
+    # evidence identity (commit, hashes) is the RUN's, preserved
+    for key in ("commit", "env_hash", "profile_hash", "result_sha256",
+                "cases_sha256", "protocol_id", "oracle_candidates"):
+        assert regen["manifest"][key] == orig["manifest"][key], key
+    # source identity recorded separately from the evidence commit
+    top = json.loads((replay / "manifest.json").read_text())
+    assert top["replay"]["replayed_by_commit"] == sm._git(
+        "rev-parse", "HEAD")
+    assert top["replay"]["replayed_by_dirty"] in (True, False)
+    assert (top["replay"]["replay_input_manifest_sha256"]
+            == hashlib.sha256(src_manifest).hexdigest())
+    # the replay dir is self-contained: copied bytes + strict-validates
+    for gz in sorted(src.glob("raw_session*.jsonl.gz")):
+        assert (replay / gz.name).read_bytes() == gz.read_bytes()
+    assert validate_benchmark_output(replay, strict=True) == []
+
+
+def test_replay_refuses_tampered_raw_evidence(tmp_path, monkeypatch):
+    """Raw bytes edited after release: the strict input gate refuses
+    before any analysis is regenerated."""
+    import gzip as _gz
+
+    src = _v5_copy(tmp_path, "v5raw")
+    gz = sorted(src.glob("raw_session*.jsonl.gz"))[0]
+    with _gz.open(gz, "rt") as f:
+        lines = f.readlines()
+    for i, line in enumerate(lines):
+        row = json.loads(line)
+        if row.get("status") == "ok" and row.get("api_ms") is not None:
+            row["api_ms"] = row["api_ms"] + 0.5
+            lines[i] = json.dumps(row) + "\n"
+            break
+    else:
+        pytest.fail("no timed row found to tamper")
+    with _gz.open(gz, "wt") as f:
+        f.writelines(lines)
+    with pytest.raises(SystemExit, match="strict validation") as ei:
+        _run_replay(monkeypatch, src, tmp_path / "replay")
+    assert "result_sha256" in str(ei.value)
+
+
+def test_replay_refuses_cases_schedule_drift(tmp_path, monkeypatch):
+    """cases.json edited (cell dropped): the regenerated analysis no
+    longer binds to the recorded cases_sha256 -> hard fail."""
+    src = _v5_copy(tmp_path, "v5cases")
+    cases = json.loads((src / "cases.json").read_text())
+    cases.pop()
+    (src / "cases.json").write_text(json.dumps(cases))
+    with pytest.raises(SystemExit, match="cases drift"):
+        _run_replay(monkeypatch, src, tmp_path / "replay")
+
+
+def test_replay_refuses_provenance_drift(tmp_path, monkeypatch):
+    """Embedded manifest provenance edited -> strict input gate fails;
+    top manifest.json edited -> top-vs-summary binding check fails."""
+    # (a) embedded summary manifest (what the raw rows are judged by)
+    src = _v5_copy(tmp_path, "v5emb")
+    summary = json.loads((src / "summary.json").read_text())
+    summary["manifest"]["protocol_id"] = "semantic-matrix-v0:drifted"
+    (src / "summary.json").write_text(json.dumps(summary))
+    with pytest.raises(SystemExit, match="strict validation"):
+        _run_replay(monkeypatch, src, tmp_path / "replay1")
+    # (b) top manifest.json (the identity the replay would inherit)
+    src2 = _v5_copy(tmp_path, "v5top")
+    man = json.loads((src2 / "manifest.json").read_text())
+    man["protocol_id"] = "semantic-matrix-v0:drifted"
+    (src2 / "manifest.json").write_text(json.dumps(man))
+    with pytest.raises(SystemExit, match="manifest drift"):
+        _run_replay(monkeypatch, src2, tmp_path / "replay2")
+
+
+def test_replay_requires_new_directory_and_aggregate_only(tmp_path,
+                                                          monkeypatch):
+    """Evidence is never rewritten in place: replay without
+    --replay-out (existing manifest) and --replay-out while measuring
+    are both refused."""
+    src = _v5_copy(tmp_path, "v5inplace")
+    monkeypatch.setattr(sys, "argv", [
+        "run_semantic_matrix.py", "--aggregate-only", "--out", str(src)])
+    with pytest.raises(SystemExit, match="replay-out"):
+        sm.main()
+    monkeypatch.setattr(sys, "argv", [
+        "run_semantic_matrix.py", "--scope", "stress",
+        "--out", str(tmp_path / "fresh"), "--replay-out",
+        str(tmp_path / "r2")])
+    with pytest.raises(SystemExit, match="replay-out"):
+        sm.main()

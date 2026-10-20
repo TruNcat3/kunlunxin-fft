@@ -37,13 +37,12 @@ from __future__ import annotations
 import argparse
 import gzip
 import hashlib
-import os
-import random
-import hashlib
 import json
 import math
 import os
 import random
+import re
+import shutil
 import subprocess
 import sys
 import time
@@ -760,10 +759,14 @@ def _previous_regression_reason(case_label, semantic, entry):
     return None
 
 
-def _aggregate(out_dir, cases, trials, warmup, sessions, manifest=None):
+def _aggregate(out_dir, cases, trials, warmup, sessions, manifest=None,
+               write_dir=None):
     from src.xpu.manifest_contract import (
         REQUIRED_ROW_KEYS, declared_inventory_failures, iter_raw_rows,
         rows_sha256, trial_completeness_failures)
+    # issue #9 WP0-C: analysis may be written to a separate replay
+    # directory while the raw evidence stays where it was recorded
+    dest = Path(write_dir) if write_dir else Path(out_dir)
 
     # P2-c: aggregate reads through the SAME plain/gzip reader the
     # strict gate uses -- an --aggregate-only replay of a released
@@ -968,7 +971,7 @@ def _aggregate(out_dir, cases, trials, warmup, sessions, manifest=None):
         manifest["cases_sha256"] = cases_sha256(cases_out)
         manifest["oracle_candidates"] = oracle_candidates
         summary["manifest"] = manifest
-    (Path(out_dir) / "summary.json").write_text(
+    (dest / "summary.json").write_text(
         json.dumps(summary, indent=2) + "\n")
     cols = ["label", "semantic", "N", "batch", "selector_ms",
             "selector_mad_ms", "incumbent_ms", "oracle_ms",
@@ -976,7 +979,7 @@ def _aggregate(out_dir, cases, trials, warmup, sessions, manifest=None):
             "vendor_status", "speedup_vs_vendor",
             "selector_regret", "guard_pass_2pct",
             "selector_source", "sessions_with_data"]
-    with open(Path(out_dir) / "summary.csv", "w") as f:
+    with open(dest / "summary.csv", "w") as f:
         f.write(",".join(cols) + "\n")
         for c in cases_out:
             f.write(",".join(
@@ -988,13 +991,13 @@ def _aggregate(out_dir, cases, trials, warmup, sessions, manifest=None):
                 "previous_deployed_ms", "selector_ms",
                 "selector_vs_previous", "previous_deployed_source",
                 "selector_source", "regression_reason"]
-    with open(Path(out_dir) / "regression_vs_previous.csv", "w",
+    with open(dest / "regression_vs_previous.csv", "w",
               newline="") as f:
         w = _csv.writer(f)
         w.writerow(reg_cols)
         for c in cases_out:
             w.writerow([c.get(k) for k in reg_cols])
-    _write_figures(out_dir, summary)
+    _write_figures(dest, summary)
     return summary
 
 
@@ -1092,6 +1095,46 @@ def _write_snapshot(out_dir, release_id, manifest, env, args, cases):
     return snap
 
 
+def _cases_from_shapes(shapes):
+    """(N, batch) pairs parsed from declared manifest shapes."""
+    pairs = []
+    for shape in shapes or []:
+        m = re.match(r"^N(\d+)B(\d+)", str(shape).split(":")[0])
+        if m:
+            pairs.append((int(m.group(1)), int(m.group(2))))
+    return list(dict.fromkeys(pairs))
+
+
+def _load_replay_cases(out_dir, man, args):
+    """Replay schedule, bound to the recorded run (issue #9 WP0-C).
+
+    Priority: the run's own ``cases.json`` > its declared ``shapes`` >
+    the requested scope (legacy artifacts with neither). The replay
+    must analyze exactly what was declared, never today's scope.
+    """
+    cases_json = Path(out_dir) / "cases.json"
+    if cases_json.is_file():
+        try:
+            data = json.loads(cases_json.read_text())
+            return [(int(n), int(b)) for n, b in data]
+        except (json.JSONDecodeError, TypeError, ValueError) as e:
+            raise SystemExit(f"unreadable cases.json: {cases_json}: {e}")
+    pairs = _cases_from_shapes(man.get("shapes"))
+    return pairs or _scope_cells(args.scope)
+
+
+def _print_summary(summary, note=None):
+    m = summary["metrics"]
+    print(f"cases={len(summary['cases'])} "
+          f"win/tie/loss={m['win']}/{m['tie']}/{m['loss']} "
+          f"geomean={m['geomean_speedup_vs_vendor']} "
+          f"worst={m['worst_speedup_vs_vendor']} "
+          f"mean_regret={m['mean_selector_regret']}")
+    print(f"failures={len(summary['failures'])}")
+    if note:
+        print(note)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--sessions", type=int, default=3)
@@ -1110,6 +1153,12 @@ def main():
     ap.add_argument("--release-id", default=None)
     ap.add_argument("--aggregate-only", action="store_true",
                     help="reuse existing raw sessions (no measuring)")
+    ap.add_argument("--replay-out", default=None, metavar="DIR",
+                    help="WP0-C: write the regenerated analysis into a "
+                         "NEW directory (raw evidence and its recorded "
+                         "identity stay untouched); required when "
+                         "--aggregate-only finds an existing "
+                         "manifest.json")
     ap.add_argument("--session", type=int, default=None,
                     help=argparse.SUPPRESS)
     ap.add_argument("--oracle-mode", choices=("full", "winner-block"),
@@ -1130,17 +1179,25 @@ def main():
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # A1: materialize the previous deployed table from the fixed pre-
-    # issue commit (never the working tree), bind its hash into the
-    # manifest, and hand the file to every session child. Raw bytes —
-    # no strip, so the sha256 matches the committed blob exactly.
-    previous_bytes = subprocess.check_output(
-        ["git", "show",
-         f"{PREVIOUS_SELECTOR_COMMIT}:config/selector_table.json"],
-        cwd=ROOT)
-    previous_sha256 = hashlib.sha256(previous_bytes).hexdigest()
-    previous_table_path = out_dir / PREVIOUS_TABLE_FILE
-    previous_table_path.write_bytes(previous_bytes)
+    if args.replay_out and (not args.aggregate_only or args.snapshot):
+        raise SystemExit(
+            "--replay-out is only for --aggregate-only analysis "
+            "replays (no measuring, no --snapshot)")
+
+    # WP0-C: --aggregate-only over a directory that already carries a
+    # manifest replays the RUN'S OWN recorded identity (commit, env,
+    # registry, hashes, schedule) instead of re-declaring from the
+    # working tree -- and the regenerated analysis must go to a NEW
+    # directory, never over the evidence.
+    input_manifest = None
+    if args.aggregate_only and (out_dir / "manifest.json").is_file():
+        input_manifest = json.loads(
+            (out_dir / "manifest.json").read_text())
+        if not args.replay_out:
+            raise SystemExit(
+                "--aggregate-only found an existing manifest.json: "
+                "replaying a recorded run requires --replay-out DIR "
+                "(new directory; never rewriting evidence in place)")
 
     if args.session is not None:
         # isolated session process: freshly exec'd interpreter, no
@@ -1153,6 +1210,96 @@ def main():
                           args.previous_table))
         print(f"session done: {path}", flush=True)
         os._exit(0)
+
+    write_dir = Path(args.replay_out) if args.replay_out else out_dir
+    if write_dir != out_dir:
+        if write_dir.exists() and any(write_dir.iterdir()):
+            raise SystemExit(
+                f"--replay-out must be empty or absent: {write_dir}")
+        write_dir.mkdir(parents=True, exist_ok=True)
+
+    if input_manifest is not None:
+        # --------- WP0-C replay of a recorded run (host-reachable) ----
+        # gates FIRST: the input must strict-validate exactly as
+        # released (schema, row provenance, trial census, result hash),
+        # so tampered raw/manifest evidence never regenerates.
+        strict_fails = validate_benchmark_output(out_dir, strict=True)
+        if strict_fails:
+            raise SystemExit(format_failures(
+                strict_fails, "replay input failed strict validation"))
+        # the identity the replay inherits (top manifest.json) must be
+        # the SAME identity the strict gate just verified behind the
+        # summary's embedded copy -- tampering either side fails here
+        try:
+            emb = json.loads(
+                (out_dir / "summary.json").read_text())["manifest"]
+        except (OSError, json.JSONDecodeError, KeyError) as e:
+            raise SystemExit(
+                f"replay input has no readable summary manifest: {e}")
+        for key in ("commit", "protocol_id", "env_hash", "profile_hash",
+                    "result_sha256", "cases_sha256", "oracle_candidates"):
+            if input_manifest.get(key) != emb.get(key):
+                raise SystemExit(
+                    "replay input manifest drift: "
+                    f"{key} top {input_manifest.get(key)!r} != summary "
+                    f"{emb.get(key)!r}")
+        man = dict(input_manifest)
+        cases = _load_replay_cases(out_dir, man, args)
+        # self-contained replay dir: evidence bytes copied verbatim
+        for src in sorted(out_dir.glob("raw_session*")):
+            if src.is_file():
+                shutil.copy2(src, write_dir / src.name)
+        if (out_dir / "cases.json").is_file():
+            shutil.copy2(out_dir / "cases.json", write_dir / "cases.json")
+        # source vs evidence identity: commit/env/hashes stay the
+        # RUN's; the replay block names what re-derived the analysis
+        man["replay"] = {
+            "replayed_by_commit": _git("rev-parse", "HEAD"),
+            "replayed_by_dirty": bool(_git("status", "--porcelain")),
+            "replay_command": " ".join(sys.argv),
+            "replay_input": str(out_dir),
+            "replay_input_manifest_sha256": hashlib.sha256(
+                (out_dir / "manifest.json").read_bytes()).hexdigest(),
+        }
+        summary = _aggregate(out_dir, cases, man["trials"],
+                             man["warmup"], man["sessions"],
+                             manifest=man, write_dir=write_dir)
+        # analysis drift: the regenerated cases binding must equal the
+        # one recorded with the evidence
+        regen = summary["manifest"].get("cases_sha256")
+        if (man.get("cases_sha256") is not None
+                and regen != man["cases_sha256"]):
+            raise SystemExit(
+                "replay cases drift: regenerating the analysis from "
+                f"raw yields cases_sha256 {regen} != recorded "
+                f"{man['cases_sha256']}")
+        res = result_sha256(out_dir)
+        if (man.get("result_sha256") is not None
+                and res != man["result_sha256"]):
+            raise SystemExit(
+                f"replay raw drift: result_sha256 {res} != recorded "
+                f"{man['result_sha256']}")
+        (write_dir / "manifest.json").write_text(
+            json.dumps(man, indent=2, sort_keys=True) + "\n")
+        (write_dir / "summary.json").write_text(
+            json.dumps(summary, indent=2) + "\n")
+        _print_summary(
+            summary,
+            f"replay verified: input strict OK, recorded result/cases "
+            f"hashes match; written to {write_dir}")
+        return
+
+    # A1: materialize the previous deployed table from the fixed pre-
+    # issue commit (never the working tree), bind its hash into the
+    # manifest, and hand the file to every session child. Raw bytes —
+    # no strip, so the sha256 matches the committed blob exactly.
+    previous_bytes = subprocess.check_output(
+        ["git", "show",
+         f"{PREVIOUS_SELECTOR_COMMIT}:config/selector_table.json"],
+        cwd=ROOT)
+    previous_sha256 = hashlib.sha256(previous_bytes).hexdigest()
+    previous_table_path = out_dir / PREVIOUS_TABLE_FILE
+    previous_table_path.write_bytes(previous_bytes)
 
     from src.xpu.config import DeviceProfile, build_manifest, git_commit
     from src.xpu.envcheck import current_env_hash, collect
@@ -1208,7 +1355,7 @@ def main():
     man["oracle_candidates"] = sorted(
         {c for cell in inventory["cells"] for c in cell["candidates"]
          if c.startswith("oracle:")})
-    (out_dir / "manifest.json").write_text(
+    (write_dir / "manifest.json").write_text(
         json.dumps(man, indent=2, sort_keys=True) + "\n")
 
     if not args.aggregate_only:
@@ -1231,7 +1378,8 @@ def main():
             print(f"session done: raw_session{s}.jsonl", flush=True)
 
     summary = _aggregate(out_dir, cases, args.trials, args.warmup,
-                         args.sessions, manifest=man)
+                         args.sessions, manifest=man,
+                         write_dir=write_dir)
     # Issue #8 P1-C strict gate: bind the raw evidence hash with the
     # same manifest_contract.result_sha256 the validator recomputes,
     # into both the standalone manifest.json and the summary's
@@ -1243,17 +1391,11 @@ def main():
     # embedded manifest (strict snapshot validation checks both).
     man["cases_sha256"] = summary["manifest"]["cases_sha256"]
     man["oracle_candidates"] = summary["manifest"]["oracle_candidates"]
-    (out_dir / "manifest.json").write_text(
+    (write_dir / "manifest.json").write_text(
         json.dumps(man, indent=2, sort_keys=True) + "\n")
-    (out_dir / "summary.json").write_text(
+    (write_dir / "summary.json").write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n")
-    m = summary["metrics"]
-    print(f"cases={len(summary['cases'])} "
-          f"win/tie/loss={m['win']}/{m['tie']}/{m['loss']} "
-          f"geomean={m['geomean_speedup_vs_vendor']} "
-          f"worst={m['worst_speedup_vs_vendor']} "
-          f"mean_regret={m['mean_selector_regret']}")
-    print(f"failures={len(summary['failures'])}")
+    _print_summary(summary)
 
     if args.snapshot:
         rid = args.release_id or (
