@@ -3049,7 +3049,18 @@
         "selector_vs_previous": 0.1047468864709169,
         "selector_ms": 0.8390620350837708,
         "previous_ms": 0.75950613245368,
-        "regression_reason": "current selector slower than legal previous deployed >2% (candidate: retain previous path as fallback)"
+        "regression_reason": "current selector slower than legal previous deployed >2% (candidate: retain previous path as fallback)",
+        "carry_contract": "fallback-env-binding-v1",
+        "source_env_hash": "6b50bd316032c0fe",
+        "source_profile_hash": "a78b86793c7142a0",
+        "source_precision": "fp32",
+        "source_device": {
+          "device_model": 3,
+          "multiprocessor_count": 12,
+          "max_shared_mem": 262144
+        },
+        "source_result_sha256": "7eb8c04151441edb12706f474a741fe4ecc4b084ccf9f360b17af2963587bca7",
+        "paired_confirm_commit": "b37b948bc17dacab93525cbe14a83820eec7508d"
       }
     },
     {
@@ -3094,7 +3105,18 @@
         "selector_vs_previous": 0.17172919716102597,
         "selector_ms": 0.949622131884098,
         "previous_ms": 0.8104450535029173,
-        "regression_reason": "current selector slower than legal previous deployed >2% (candidate: retain previous path as fallback)"
+        "regression_reason": "current selector slower than legal previous deployed >2% (candidate: retain previous path as fallback)",
+        "carry_contract": "fallback-env-binding-v1",
+        "source_env_hash": "6b50bd316032c0fe",
+        "source_profile_hash": "a78b86793c7142a0",
+        "source_precision": "fp32",
+        "source_device": {
+          "device_model": 3,
+          "multiprocessor_count": 12,
+          "max_shared_mem": 262144
+        },
+        "source_result_sha256": "7eb8c04151441edb12706f474a741fe4ecc4b084ccf9f360b17af2963587bca7",
+        "paired_confirm_commit": "b37b948bc17dacab93525cbe14a83820eec7508d"
       }
     },
     {
@@ -3139,7 +3161,18 @@
         "selector_vs_previous": 0.07487430601763956,
         "selector_ms": 2.5327219627797604,
         "previous_ms": 2.3562959395349026,
-        "regression_reason": "current selector slower than legal previous deployed >2% (candidate: retain previous path as fallback)"
+        "regression_reason": "current selector slower than legal previous deployed >2% (candidate: retain previous path as fallback)",
+        "carry_contract": "fallback-env-binding-v1",
+        "source_env_hash": "6b50bd316032c0fe",
+        "source_profile_hash": "a78b86793c7142a0",
+        "source_precision": "fp32",
+        "source_device": {
+          "device_model": 3,
+          "multiprocessor_count": 12,
+          "max_shared_mem": 262144
+        },
+        "source_result_sha256": "7eb8c04151441edb12706f474a741fe4ecc4b084ccf9f360b17af2963587bca7",
+        "paired_confirm_commit": "b37b948bc17dacab93525cbe14a83820eec7508d"
       }
     },
     {
@@ -3184,7 +3217,18 @@
         "selector_vs_previous": 0.09246571616381516,
         "selector_ms": 2.641744911670685,
         "previous_ms": 2.4181490298360586,
-        "regression_reason": "current selector slower than legal previous deployed >2% (candidate: retain previous path as fallback)"
+        "regression_reason": "current selector slower than legal previous deployed >2% (candidate: retain previous path as fallback)",
+        "carry_contract": "fallback-env-binding-v1",
+        "source_env_hash": "6b50bd316032c0fe",
+        "source_profile_hash": "a78b86793c7142a0",
+        "source_precision": "fp32",
+        "source_device": {
+          "device_model": 3,
+          "multiprocessor_count": 12,
+          "max_shared_mem": 262144
+        },
+        "source_result_sha256": "7eb8c04151441edb12706f474a741fe4ecc4b084ccf9f360b17af2963587bca7",
+        "paired_confirm_commit": "b37b948bc17dacab93525cbe14a83820eec7508d"
       }
     },
     {
@@ -3229,7 +3273,18 @@
         "selector_vs_previous": 0.14282684875811413,
         "selector_ms": 5.728029878810048,
         "previous_ms": 5.012159002944827,
-        "regression_reason": "current selector slower than legal previous deployed >2% (candidate: retain previous path as fallback)"
+        "regression_reason": "current selector slower than legal previous deployed >2% (candidate: retain previous path as fallback)",
+        "carry_contract": "fallback-env-binding-v1",
+        "source_env_hash": "6b50bd316032c0fe",
+        "source_profile_hash": "a78b86793c7142a0",
+        "source_precision": "fp32",
+        "source_device": {
+          "device_model": 3,
+          "multiprocessor_count": 12,
+          "max_shared_mem": 262144
+        },
+        "source_result_sha256": "7eb8c04151441edb12706f474a741fe4ecc4b084ccf9f360b17af2963587bca7",
+        "paired_confirm_commit": "b37b948bc17dacab93525cbe14a83820eec7508d"
       }
     },
     {
@@ -3274,7 +3329,18 @@
         "selector_vs_previous": 0.12023213828850499,
         "selector_ms": 5.73858292773366,
         "previous_ms": 5.122672999277711,
-        "regression_reason": "current selector slower than legal previous deployed >2% (candidate: retain previous path as fallback)"
+        "regression_reason": "current selector slower than legal previous deployed >2% (candidate: retain previous path as fallback)",
+        "carry_contract": "fallback-env-binding-v1",
+        "source_env_hash": "6b50bd316032c0fe",
+        "source_profile_hash": "a78b86793c7142a0",
+        "source_precision": "fp32",
+        "source_device": {
+          "device_model": 3,
+          "multiprocessor_count": 12,
+          "max_shared_mem": 262144
+        },
+        "source_result_sha256": "7eb8c04151441edb12706f474a741fe4ecc4b084ccf9f360b17af2963587bca7",
+        "paired_confirm_commit": "b37b948bc17dacab93525cbe14a83820eec7508d"
       }
     }
   ]

@@ -14,6 +14,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "scripts"))
 
 from src.xpu.config import ConfigError, DeviceProfile  # noqa: E402
 from src.xpu.selector import GUARD_PCT, load_table, select  # noqa: E402
@@ -605,3 +606,190 @@ def test_load_table_rejects_fallback_outside_design_space(tmp_path):
         raw["previous_fallbacks"] = [f]
     with pytest.raises(ConfigError, match="design space"):
         load_table(_mutated_table_path(tmp_path, mutate))
+
+
+# ------------- WP0-A: env-bound previous fallbacks (issue #9) ------------
+
+def test_production_fallbacks_bind_to_the_source_environment():
+    """Positive control: the six v5 fallbacks satisfy the shared
+    binding contract (env/profile/precision/device identity)."""
+    if not TABLE.exists():
+        pytest.skip("selector table not built")
+    from src.xpu.selector import (FALLBACK_CARRY_CONTRACT,
+                                  fallback_binding_violations)
+    t = json.loads(TABLE.read_text())
+    fbs = t.get("previous_fallbacks") or []
+    assert len(fbs) == 6
+    assert fallback_binding_violations(t) == []
+    for e in fbs:
+        prov = e["previous_fallback_provenance"]
+        assert prov["carry_contract"] == FALLBACK_CARRY_CONTRACT
+        assert prov["source_env_hash"] == t["env_hash"]
+        assert prov["source_profile_hash"] == t["profile_hash"]
+        assert prov["source_precision"] == t["precision"]
+        assert prov["source_device"] == {
+            k: t["env"][k] for k in ("device_model",
+                                     "multiprocessor_count",
+                                     "max_shared_mem")}
+        assert prov["source_result_sha256"]
+        assert prov["paired_confirm"]
+
+
+def _tampered_fallback_path(tmp_path, mutate):
+    raw = json.loads(TABLE.read_text())
+    mutate(raw)
+    path = tmp_path / "selector_table.json"
+    path.write_text(json.dumps(raw))
+    return str(path)
+
+
+def test_load_table_rejects_unbound_fallback_env(tmp_path):
+    def mutate(raw):
+        raw["previous_fallbacks"][0]["previous_fallback_provenance"][
+            "source_env_hash"] = "0" * 16
+    with pytest.raises(ConfigError, match="source env"):
+        load_table(_tampered_fallback_path(tmp_path, mutate))
+
+
+def test_load_table_rejects_unbound_fallback_profile(tmp_path):
+    def mutate(raw):
+        raw["previous_fallbacks"][0]["previous_fallback_provenance"][
+            "source_profile_hash"] = "0" * 16
+    with pytest.raises(ConfigError, match="source profile"):
+        load_table(_tampered_fallback_path(tmp_path, mutate))
+
+
+def test_load_table_rejects_unbound_fallback_precision(tmp_path):
+    def mutate(raw):
+        raw["previous_fallbacks"][0]["previous_fallback_provenance"][
+            "source_precision"] = "bf16"
+    with pytest.raises(ConfigError, match="source precision"):
+        load_table(_tampered_fallback_path(tmp_path, mutate))
+
+
+def test_load_table_rejects_unbound_fallback_device(tmp_path):
+    def mutate(raw):
+        raw["previous_fallbacks"][0]["previous_fallback_provenance"][
+            "source_device"] = {"device_model": 3,
+                                "multiprocessor_count": 99,
+                                "max_shared_mem": 262144}
+    with pytest.raises(ConfigError, match="source device"):
+        load_table(_tampered_fallback_path(tmp_path, mutate))
+
+
+def test_load_table_rejects_fallback_without_provenance(tmp_path):
+    def mutate(raw):
+        raw["previous_fallbacks"][0].pop("previous_fallback_provenance",
+                                          None)
+    with pytest.raises(ConfigError, match="provenance"):
+        load_table(_tampered_fallback_path(tmp_path, mutate))
+
+
+def test_load_table_rejects_missing_binding_key(tmp_path):
+    def mutate(raw):
+        raw["previous_fallbacks"][0]["previous_fallback_provenance"].pop(
+            "source_result_sha256", None)
+    with pytest.raises(ConfigError, match="missing binding key"):
+        load_table(_tampered_fallback_path(tmp_path, mutate))
+
+
+def test_load_table_rejects_foreign_carry_contract(tmp_path):
+    def mutate(raw):
+        raw["previous_fallbacks"][0]["previous_fallback_provenance"][
+            "carry_contract"] = "fallback-env-binding-v0"
+    with pytest.raises(ConfigError, match="carry_contract"):
+        load_table(_tampered_fallback_path(tmp_path, mutate))
+
+
+def test_carry_keeps_bound_fallbacks_and_drops_on_env_change(
+        monkeypatch, tmp_path):
+    """Same env: byte-identical carry. Live-env change: explicit drop.
+    Self-inconsistent source provenance: binding-contract drop."""
+    import build_selector_table as bst
+    from src.xpu.selector import fallback_binding_violations
+
+    fake = json.loads(TABLE.read_text())
+    prod_path = tmp_path / "prod.json"
+    prod_path.write_text(json.dumps(fake))
+    monkeypatch.setattr("src.xpu.selector.TABLE_PATH", str(prod_path))
+
+    # same environment: carried intact, binding still clean
+    fbs, drops = bst._carry_previous_fallbacks(live_env=fake["env_hash"])
+    assert len(fbs) == 6 and drops == []
+    assert fallback_binding_violations(
+        {**fake, "previous_fallbacks": fbs}) == []
+
+    # live environment changed: dropped with an explicit message
+    fbs, drops = bst._carry_previous_fallbacks(live_env="0" * 16)
+    assert fbs == [] and len(drops) == 1
+    assert "live env" in drops[0] and "reconfirm" in drops[0]
+
+    # source provenance no longer binds to its own table: contract drop
+    fake["previous_fallbacks"][0]["previous_fallback_provenance"][
+        "source_env_hash"] = "9" * 16
+    prod_path.write_text(json.dumps(fake))
+    fbs, drops = bst._carry_previous_fallbacks(live_env=fake["env_hash"])
+    assert fbs == [] and any("binding contract" in d for d in drops)
+
+    # unknown live env (host-only builder): self-consistency decides
+    fake["previous_fallbacks"][0]["previous_fallback_provenance"][
+        "source_env_hash"] = fake["env_hash"]
+    prod_path.write_text(json.dumps(fake))
+    fbs, drops = bst._carry_previous_fallbacks(live_env=None)
+    assert len(fbs) == 6 and drops == []
+
+
+def test_reconfirm_keeps_guarded_cells_and_drops_the_rest(tmp_path):
+    import build_selector_table as bst
+    from src.xpu.selector import fallback_binding_violations
+
+    prod = json.loads(TABLE.read_text())
+    env, prof, prec = prod["env_hash"], prod["profile_hash"], prod["precision"]
+    cases = []
+    for i, e in enumerate(prod["previous_fallbacks"]):
+        cell = (f"N{e['N']}B{e['batch']}:{bst._semantic_label(e)}")
+        # five cells still justify >2%; the sixth fell below the guard
+        delta = 0.05 if i < 5 else 0.005
+        cases.append({"label": cell, "selector_vs_previous": delta,
+                      "selector_ms": 1.0, "previous_deployed_ms": 0.95})
+    man = {"env_hash": env, "profile_hash": prof, "precision": prec,
+           "result_sha256": "e" * 64, "commit": "c" * 40}
+    ev = tmp_path / "summary.json"
+    ev.write_text(json.dumps({"cases": cases, "manifest": man}))
+    (tmp_path / "manifest.json").write_text(json.dumps(man))
+
+    kept, drops = bst._reconfirm_previous_fallbacks(str(ev), 2.0, env, prof)
+    assert len(kept) == 5 and len(drops) == 1
+    assert "does not clear" in drops[0]
+    # re-bound provenance satisfies the shared contract on output
+    out = {"env_hash": env, "profile_hash": prof, "precision": prec,
+           "env": prod["env"], "previous_fallbacks": kept}
+    assert fallback_binding_violations(out) == []
+    # geometry untouched: reconfirm re-binds evidence, never rewrites it
+    src_by_cell = {(e["N"], e["batch"], e["direction"]): e
+                   for e in prod["previous_fallbacks"]}
+    for e in kept:
+        orig = src_by_cell[(e["N"], e["batch"], e["direction"])]
+        assert e["params"] == orig["params"]
+        assert e["block"] == orig["block"]
+        assert e["previous_fallback_provenance"][
+            "source_table_sha256"] == orig["previous_fallback_provenance"][
+            "source_table_sha256"]
+    # the kept cell records the evidence identity
+    assert kept[0]["previous_fallback_provenance"]["source_result_sha256"] \
+        == "e" * 64
+
+
+def test_reconfirm_refuses_cross_environment_evidence(tmp_path):
+    import build_selector_table as bst
+
+    prod = json.loads(TABLE.read_text())
+    man = {"env_hash": "0" * 16,  # foreign environment
+           "profile_hash": prod["profile_hash"],
+           "precision": prod["precision"],
+           "result_sha256": "e" * 64, "commit": "c" * 40}
+    ev = tmp_path / "summary.json"
+    ev.write_text(json.dumps({"cases": [], "manifest": man}))
+    with pytest.raises(ConfigError, match="cross-environment"):
+        bst._reconfirm_previous_fallbacks(
+            str(ev), 2.0, prod["env_hash"], prod["profile_hash"])

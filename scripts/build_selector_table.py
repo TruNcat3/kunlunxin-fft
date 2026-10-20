@@ -47,6 +47,7 @@ import json
 import math
 import os
 import sys
+from pathlib import Path
 
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(_SCRIPT_DIR))
@@ -880,7 +881,7 @@ def build_matrix_entries(matrix_runs, guard=GUARD_PCT, threshold=1e-4,
     return entries
 
 
-def _carry_previous_fallbacks() -> list:
+def _carry_previous_fallbacks(live_env: str | None = None) -> tuple:
     """Declared previous-deployed fallback cells of the production table.
 
     Configuration, not measurement (issue #8 Option A): carried through
@@ -888,11 +889,21 @@ def _carry_previous_fallbacks() -> list:
     promotion can never silently drop or corrupt the fallback cells the
     paired confirmation justified. Absent production config (fresh
     bootstrap) simply yields no fallbacks.
+
+    Issue #9 WP0-A: carrying additionally requires the SOURCE binding
+    to hold -- every fallback's provenance must match the production
+    table's env/profile/precision/device identity (shared contract
+    :func:`src.xpu.selector.fallback_binding_violations`), and a known
+    live environment must equal the source env. Any mismatch **drops
+    the fallbacks with an explicit message** (never a silent rebind);
+    ``--reconfirm-previous-fallbacks`` is the explicit way back.
+    Returns ``(fallbacks, drop_reasons)``.
     """
-    from src.xpu.selector import TABLE_PATH
+    from src.xpu.selector import (TABLE_PATH,
+                                  fallback_binding_violations)
 
     if not os.path.exists(TABLE_PATH):
-        return []
+        return [], []
     with open(TABLE_PATH) as f:
         prod = json.load(f)
     fbs = prod.get("previous_fallbacks") or []
@@ -918,7 +929,109 @@ def _carry_previous_fallbacks() -> list:
             f"shared contract ({len(bad)} violations): " + "; ".join(bad[:8])
             + (" ..." if len(bad) > 8 else "")
             + "; refusing to write the table")
-    return fbs
+    if not fbs:
+        return [], []
+    # WP0-A binding contract against the SOURCE table itself ...
+    src_bad = fallback_binding_violations(prod)
+    if src_bad:
+        return [], [f"production table fallbacks dropped (binding "
+                    f"contract): {msg}" for msg in src_bad]
+    # ... and against a known live environment (driver/runtime change).
+    if live_env is not None and any(
+            e["previous_fallback_provenance"]["source_env_hash"] != live_env
+            for e in fbs):
+        return [], [f"production table fallbacks dropped (live env "
+                    f"{live_env} != provenance source env) -- reconfirm "
+                    "with --reconfirm-previous-fallbacks under the "
+                    "current environment"]
+    return fbs, []
+
+
+def _semantic_label(e: dict) -> str:
+    """Matrix cell label for a fallback/entry semantic triple."""
+    tt, tdir = e.get("transform_type", "c2c"), e.get(
+        "transform_direction", "forward")
+    if tt == "c2c":
+        return f"c2c-{tdir}"
+    return tt
+
+
+def _reconfirm_previous_fallbacks(summary_path: str, guard: float,
+                                  table_env: str, table_profile: str) -> tuple:
+    """WP0-A explicit reconfirm: re-justify the production fallbacks
+    against a paired-confirm summary measured under the CURRENT
+    environment, or drop the cells that no longer clear the guard.
+
+    Fails closed with ConfigError when the evidence is from another
+    env/profile (rebinding old evidence is exactly what this forbids).
+    Returns ``(fallbacks, drop_reasons)``.
+    """
+    from src.xpu.selector import TABLE_PATH
+
+    sfile = Path(summary_path)
+    if sfile.name == "summary.json" and (sfile.parent / "manifest.json").is_file():
+        man = json.loads((sfile.parent / "manifest.json").read_text())
+    else:
+        man = {}
+    summary = json.loads(sfile.read_text())
+    ev_man = summary.get("manifest") or man
+    if not ev_man:
+        raise ConfigError(
+            f"reconfirm evidence {summary_path} carries no manifest -- "
+            "refusing to rebind fallbacks without an identity")
+    if ev_man.get("env_hash") != table_env:
+        raise ConfigError(
+            f"reconfirm evidence env {ev_man.get('env_hash')} != output "
+            f"table env {table_env} (cross-environment reconfirm is "
+            "forbidden; measure a fresh paired confirmation instead)")
+    if ev_man.get("profile_hash") != table_profile:
+        raise ConfigError(
+            f"reconfirm evidence profile {ev_man.get('profile_hash')} != "
+            f"output table profile {table_profile}")
+    if not os.path.exists(TABLE_PATH):
+        raise ConfigError(
+            "--reconfirm-previous-fallbacks needs the production table "
+            "as the fallback geometry source")
+    with open(TABLE_PATH) as f:
+        prod = json.load(f)
+    cases = {c["label"]: c for c in summary.get("cases", [])}
+    ident = {k: (prod.get("env") or {}).get(k) for k in
+             ("device_model", "multiprocessor_count", "max_shared_mem")}
+    result_sha = ev_man.get("result_sha256")
+    commit = ev_man.get("commit")
+    kept, drops = [], []
+    for e in prod.get("previous_fallbacks") or []:
+        cell = f"N{e['N']}B{e['batch']}:{_semantic_label(e)}"
+        case = cases.get(cell)
+        if case is None or case.get("selector_vs_previous") is None:
+            drops.append(f"{cell}: absent from reconfirm evidence")
+            continue
+        delta = case["selector_vs_previous"]
+        if delta <= guard / 100.0:
+            drops.append(
+                f"{cell}: evidence selector_vs_previous {delta:+.4%} does "
+                f"not clear the {guard}% guard -- fallback dropped")
+            continue
+        e = json.loads(json.dumps(e))  # deep copy, geometry untouched
+        e["previous_fallback_provenance"] = {
+            **e["previous_fallback_provenance"],
+            "carry_contract": "fallback-env-binding-v1",
+            "source_env_hash": table_env,
+            "source_profile_hash": table_profile,
+            "source_precision": prod.get("precision", "fp32"),
+            "source_device": ident,
+            "source_result_sha256": result_sha,
+            "paired_confirm": str(sfile),
+            "paired_confirm_commit": commit,
+            "selector_vs_previous": delta,
+            "selector_ms": case.get("selector_ms"),
+            "previous_ms": case.get("previous_deployed_ms"),
+            "regression_reason": (
+                "reconfirmed under the current environment: selector "
+                f"slower than previous deploy {delta:+.2%} (> {guard}%)"),
+        }
+        kept.append(e)
+    return kept, drops
 
 
 def main() -> None:
@@ -936,6 +1049,13 @@ def main() -> None:
                          "clears its own guard")
     ap.add_argument("--out", default="config/selector_table.json")
     ap.add_argument("--guard", type=float, default=GUARD_PCT)
+    ap.add_argument("--reconfirm-previous-fallbacks", default=None,
+                    metavar="SUMMARY_JSON",
+                    help="WP0-A explicit reconfirm: re-justify the carried "
+                         "previous_fallbacks against a paired-confirm "
+                         "summary measured under the CURRENT env/profile; "
+                         "cells not clearing the guard are dropped, "
+                         "cross-env evidence is refused")
     ap.add_argument("--verify-live-env", action="store_true",
                     help="device-host check: probe the live environment "
                          "and require it to equal the measurement env_hash")
@@ -1113,7 +1233,22 @@ def main() -> None:
     # not measurement: a rebuild must carry them forward -- re-validated
     # through the same contract -- or the next promotion would silently
     # drop the fallback safety net the paired confirmation justified.
-    previous_fallbacks = _carry_previous_fallbacks()
+    # Issue #9 WP0-A: carrying is env-bound. Probe the live env
+    # best-effort (None on a host-only builder) and require the source
+    # binding to hold, or the fallbacks are DROPPED with reasons --
+    # never silently rebound. --reconfirm-previous-fallbacks is the
+    # explicit path back (fresh evidence, current env/profile).
+    try:
+        from src.xpu.envcheck import current_env_hash
+        live_env = current_env_hash()
+    except Exception:  # noqa: BLE001 - host-only build: no live identity
+        live_env = None
+    if args.reconfirm_previous_fallbacks:
+        previous_fallbacks, fb_drops = _reconfirm_previous_fallbacks(
+            args.reconfirm_previous_fallbacks, args.guard,
+            table_env_hash, profile_hash)
+    else:
+        previous_fallbacks, fb_drops = _carry_previous_fallbacks(live_env)
 
     table = {
         "schema_version": 2,
@@ -1132,6 +1267,20 @@ def main() -> None:
     }
     if previous_fallbacks:
         table["previous_fallbacks"] = previous_fallbacks
+    # WP0-A output-side gate: whatever survived must also bind to the
+    # table identity being written (env/profile/precision/device) --
+    # a rebuild whose measurements come from another environment drops
+    # the old fallbacks explicitly instead of shipping stale evidence.
+    from src.xpu.selector import fallback_binding_violations
+    out_bad = fallback_binding_violations(table)
+    if out_bad:
+        fb_drops += [f"output table binding: {m}" for m in out_bad]
+        table.pop("previous_fallbacks", None)
+        previous_fallbacks = []
+    if fb_drops:
+        table["previous_fallbacks_dropped"] = fb_drops
+        for m in fb_drops:
+            print(f"previous_fallbacks: {m}", file=sys.stderr)
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     with open(args.out, "w") as f:
         json.dump(table, f, indent=2)
@@ -1142,7 +1291,8 @@ def main() -> None:
                and e["processing_unit"] == "radix2-scalar")
     print(f"wrote {args.out}: {len(entries)} entries "
           f"({n_b1} at B=1, {n_m0} M0-fallback) guard={args.guard}% "
-          f"rejections={len(rejections)}")
+          f"rejections={len(rejections)} "
+          f"previous_fallbacks={len(previous_fallbacks)}")
     for r in rejections:
         print(f"  rejected: {r}", file=sys.stderr)
 

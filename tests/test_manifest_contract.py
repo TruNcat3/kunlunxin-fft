@@ -517,7 +517,10 @@ def _smoke_table():
         "reason": "semantic",
     }
     return {"profile_hash": "p" * 16, "precision": "fp32",
-            "env_hash": "e" * 16, "entries": [legacy, semantic]}
+            "env_hash": "e" * 16,
+            "env": {"device_model": 3, "multiprocessor_count": 12,
+                    "max_shared_mem": 262144},
+            "entries": [legacy, semantic]}
 
 
 def _run_smoke_all(table, select_impl, tmp_path, monkeypatch):
@@ -632,6 +635,18 @@ def _smoke_table_with_fallback():
         "params": {"tile": 128, "rows": 8, "variant": "spread",
                    "batch": 16},
         "reason": "old deployed winner",
+        # WP0-A binding: the fixture fallback names this table's own
+        # env/profile/precision/device identity
+        "previous_fallback_provenance": {
+            "carry_contract": "fallback-env-binding-v1",
+            "source_env_hash": table["env_hash"],
+            "source_profile_hash": table["profile_hash"],
+            "source_precision": table["precision"],
+            "source_device": dict(table["env"]),
+            "source_table_sha256": "t" * 64,
+            "source_result_sha256": "r" * 64,
+            "paired_confirm": "fixture",
+        },
     }]
     return table
 

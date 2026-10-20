@@ -47,6 +47,28 @@ from src.xpu.selector import (  # noqa: E402
 
 ENV = "e" * 16
 PROFILE = "f" * 16
+# device identity the fixture tables bind their fallbacks against
+# (issue #9 WP0-A: provenance must match the table's own env identity)
+DEVICE_IDENT = {"device_model": 3, "multiprocessor_count": 12,
+                "max_shared_mem": 262144}
+
+
+def _fb_provenance(**over):
+    """A binding-complete fallback provenance for fixture tables."""
+    prov = {
+        "issue": 8,
+        "carry_contract": "fallback-env-binding-v1",
+        "source_env_hash": ENV,
+        "source_profile_hash": PROFILE,
+        "source_precision": "fp32",
+        "source_device": dict(DEVICE_IDENT),
+        "source_table_sha256": "t" * 64,
+        "source_result_sha256": "r" * 64,
+        "paired_confirm": "fixture",
+        "source_commit": "x",
+    }
+    prov.update(over)
+    return prov
 
 
 def _base_entry(**over):
@@ -77,6 +99,7 @@ def _table(entries):
         "profile_hash": PROFILE,
         "env_hash": ENV,
         "precision": "fp32",
+        "env": dict(DEVICE_IDENT),
         "guard_pct": 2.0,
         "selection_semantics": "fixture",
         "sources": ["fixture"],
@@ -296,7 +319,7 @@ def _fallback_entry(tdir="forward", **over):
         normalization="backward",
         params={"variant": "spread", "batch": 256, "tile": 128, "rows": 8},
         reason="focus challenger (old deployed winner)",
-        previous_fallback_provenance={"issue": 8, "source_commit": "x"},
+        previous_fallback_provenance=_fb_provenance(),
     )
     entry.update(over)
     return entry

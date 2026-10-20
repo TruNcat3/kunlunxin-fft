@@ -257,6 +257,89 @@ def semantic_key_of(entry: dict) -> tuple | None:
             entry.get("normalization"))
 
 
+# Issue #9 WP0-A: a carried previous_fallback is only valid while the
+# source environment it was justified in is STILL the environment of
+# the table it ships in. The provenance must name that identity
+# explicitly; anything else is a silent rebind and is rejected.
+FALLBACK_CARRY_CONTRACT = "fallback-env-binding-v1"
+_FALLBACK_BINDING_KEYS = (
+    "carry_contract",        # schema of this contract
+    "source_env_hash",       # env fingerprint of the paired confirmation
+    "source_profile_hash",   # profile the fallback geometry was calibrated on
+    "source_precision",      # precision contract of the source evidence
+    "source_device",         # device identity (model/MP/smem family)
+    "source_table_sha256",   # identity of the previous-deployed table
+    "source_result_sha256",  # result hash of the paired-confirm artifact
+    "paired_confirm",        # evidence path (artifact identity)
+)
+_DEVICE_IDENTITY_KEYS = ("device_model", "multiprocessor_count",
+                         "max_shared_mem")
+
+
+def fallback_binding_violations(table: dict) -> list[str]:
+    """WP0-A shared contract: does every ``previous_fallbacks`` entry
+    bind to THIS table's environment/profile/precision/device identity?
+
+    One source of truth for load (runtime), rebuild/promote (builder +
+    bootstrap verify) and tests: a profile, driver, runtime, toolchain
+    or precision change turns every carried fallback into a violation,
+    so callers either drop the fallbacks explicitly or refuse -- never
+    silently rebind old evidence to a new environment.
+    """
+    violations: list[str] = []
+    fbs = table.get("previous_fallbacks") or ()
+    if not fbs:
+        return violations
+    ident = {k: (table.get("env") or {}).get(k)
+             for k in _DEVICE_IDENTITY_KEYS}
+    for i, e in enumerate(fbs):
+        key = (e.get("N"), e.get("batch"), e.get("direction"))
+        prov = e.get("previous_fallback_provenance")
+        if not isinstance(prov, dict):
+            violations.append(
+                f"previous_fallbacks[{i}] {key}: missing "
+                "previous_fallback_provenance (no source identity to "
+                "bind against)")
+            continue
+        missing = [k for k in _FALLBACK_BINDING_KEYS if prov.get(k) in
+                   (None, "")]
+        if missing:
+            violations.append(
+                f"previous_fallbacks[{i}] {key}: provenance missing "
+                f"binding key(s) {', '.join(missing)}")
+            continue
+        if prov["carry_contract"] != FALLBACK_CARRY_CONTRACT:
+            violations.append(
+                f"previous_fallbacks[{i}] {key}: carry_contract "
+                f"{prov['carry_contract']!r} != {FALLBACK_CARRY_CONTRACT!r}")
+        if prov["source_env_hash"] != table.get("env_hash"):
+            violations.append(
+                f"previous_fallbacks[{i}] {key}: source env "
+                f"{prov['source_env_hash']} != table env "
+                f"{table.get('env_hash')} (stale evidence; reconfirm "
+                "under the current environment)")
+        if prov["source_profile_hash"] != table.get("profile_hash"):
+            violations.append(
+                f"previous_fallbacks[{i}] {key}: source profile "
+                f"{prov['source_profile_hash']} != table profile "
+                f"{table.get('profile_hash')}")
+        if prov["source_precision"] != table.get("precision"):
+            violations.append(
+                f"previous_fallbacks[{i}] {key}: source precision "
+                f"{prov['source_precision']!r} != table precision "
+                f"{table.get('precision')!r}")
+        if any(ident[k] is None for k in _DEVICE_IDENTITY_KEYS):
+            violations.append(
+                f"previous_fallbacks[{i}] {key}: table carries no device "
+                "identity (env: device_model/multiprocessor_count/"
+                "max_shared_mem) to bind the fallback against")
+        elif prov["source_device"] != ident:
+            violations.append(
+                f"previous_fallbacks[{i}] {key}: source device "
+                f"{prov['source_device']} != table device {ident}")
+    return violations
+
+
 def is_previous_fallback(table: dict, entry: dict) -> bool:
     """True when ``entry`` is a declared previous-deployed fallback cell.
 
@@ -381,6 +464,10 @@ def load_table(path: str = TABLE_PATH) -> dict:
             seen_fb.add(cell)
         for msg in entry_contract_violations(e):
             violations.append(f"previous_fallbacks[{i}] {key}: {msg}")
+    # Issue #9 WP0-A: the same env/profile/precision/device binding
+    # contract the builder and verify stage use -- a carried fallback
+    # from another environment must fail at load, not silently rebind.
+    violations += fallback_binding_violations(table)
     if violations:
         raise ConfigError(
             "selector table violates the shared design space / lowering "
