@@ -514,3 +514,174 @@ def test_aggregate_replays_released_gzip_snapshot(tmp_path):
          and r["candidate"].startswith("oracle:")})
     assert observed, "v4 evidence must contain oracle candidates"
     assert regen["manifest"]["oracle_candidates"] == observed
+
+
+# ------------- issue #9 WP0-B: declared candidate inventory --------------
+
+def _rows_from_inventory(inv, profile):
+    """Healthy evidence exactly matching a declared inventory."""
+    rows = []
+    for cell in inv["cells"]:
+        for cand, tiers in cell["candidates"].items():
+            for s in range(inv["sessions"]):
+                for tier, count in tiers.items():
+                    for i in range(count):
+                        rows.append({
+                            "session": s, "label": cell["label"],
+                            "trial": i, "candidate": cand, "tier": tier,
+                            "api_ms": 1.0, "correct": True, "err": 1e-8,
+                            "status": "ok", "protocol_id": sm.PROTOCOL_ID,
+                            "profile_hash": profile,
+                            "timed_scope": sm.TIMING_SCOPE,
+                        })
+    return rows
+
+
+def _write_inv_rows(out_dir, rows, sessions):
+    for s in range(sessions):
+        lines = [json.dumps(r) + "\n" for r in rows if r["session"] == s]
+        (out_dir / f"raw_session{s}.jsonl").write_text("".join(lines))
+
+
+def _run_matrix_main(monkeypatch, out_dir):
+    monkeypatch.setattr(sys, "argv", [
+        "run_semantic_matrix.py", "--aggregate-only",
+        "--scope", "stress", "--out", str(out_dir)])
+    sm.main()
+
+
+def test_declared_inventory_covers_the_runner_candidates():
+    from src.xpu.config import DeviceProfile
+    from src.xpu.selector import load_table
+
+    table = load_table(str(ROOT / "config" / "selector_table.json"))
+    prof = DeviceProfile.load().hash()
+    inv = sm._declared_inventory([(64, 1)], table, "full",
+                                 3, 30, 5, 10, 10, prof)
+    assert inv["schema"] == "declared-inventory-v1"
+    assert (inv["trials"], inv["sessions"], inv["warmup"]) == (30, 3, 5)
+    assert set(inv["allowed_terminal_statuses"]) == {
+        "ok", "wrong-value", "vendor-unsupported", "error"}
+    assert len(inv["cells"]) == 4   # 4 semantics x 1 shape
+    by = {c["label"]: c["candidates"] for c in inv["cells"]}
+    cands = by["N64B1:c2c-forward"]
+    # exactly the contenders run_case builds for this cell
+    incumbent = sm._entry_plan(sm.DIRECTION, 64, 1, "c2c-forward",
+                               None, table)
+    plans = sm._oracle_plans(64, 1, "dit", "c2c-forward",
+                             block=incumbent.block or 1024)
+    assert ({c for c in cands if c.startswith("oracle:")}
+            == {f"oracle:{p.params['oracle_name']}" for p in plans})
+    assert cands["incumbent"] == {"steady": 30}
+    assert cands["incumbent:one_shot"] == {"one_shot": 10}
+    assert cands["incumbent:e2e"] == {"e2e": 10}
+    assert cands["selector"] == {"steady": 30}
+    assert cands["selector:one_shot"] == {"one_shot": 10}
+    assert cands["selector:e2e"] == {"e2e": 10}
+    assert cands["selector:plan_creation"] == {"plan_creation": 1}
+    assert cands["vendor"] == {"steady": 30}
+    assert cands["previous-deployed"] == {"steady": 30}
+    # r2c declares the dedicated half-length pipeline candidates
+    r2c = {c for c in by["N64B1:r2c"] if c.startswith("oracle:")}
+    assert {"oracle:h_dit_t64", "oracle:h_dif_t64"} <= r2c
+
+
+def test_declared_inventory_winner_block_mode_sweeps_declared_blocks():
+    from src.xpu.config import DeviceProfile
+    from src.xpu.selector import load_table
+
+    table = load_table(str(ROOT / "config" / "selector_table.json"))
+    prof = DeviceProfile.load().hash()
+    inv = sm._declared_inventory([(1024, 256)], table, "winner-block",
+                                 3, 30, 5, 10, 10, prof)
+    cands = {c["label"]: c["candidates"] for c in inv["cells"]}[
+        "N1024B256:c2c-forward"]
+    oracles = {c for c in cands if c.startswith("oracle:")}
+    assert oracles and all(
+        o.startswith("oracle:winner-b") for o in oracles)
+    assert len(oracles) in (4, 5)  # fixed sweep + deployed block
+
+
+def test_aggregate_keeps_the_declared_oracle_registry(tmp_path):
+    """WP0-B: observed oracle rows may never overwrite the declared
+    registry -- a mismatch becomes a recorded failure."""
+    rows = _sem_rows("N64B1:c2c-forward", 0.3, 0.9, 1.2, 0.28)
+    rows.append(_row("N64B1:c2c-forward", "oracle:evil", "steady",
+                     0.5, trial=0))
+    _write_raw(tmp_path, rows)
+    man = {"trials": 3, "sessions": 1, "warmup": 1,
+           "shapes": ["N64B1:c2c-forward"],
+           "oracle_candidates": ["oracle:m0_dit"]}
+    summary = sm._aggregate(tmp_path, [(64, 1)], 3, 1, 1, manifest=man)
+    assert summary["manifest"]["oracle_candidates"] == ["oracle:m0_dit"]
+    assert any(f["kind"] == "oracle-candidates-mismatch"
+               for f in summary["failures"]), summary["failures"]
+
+
+def test_aggregate_stamps_observed_oracles_only_when_undeclared(
+        tmp_path):
+    """Legacy manifests without the key keep the observed stamping."""
+    rows = _sem_rows("N64B1:c2c-forward", 0.3, 0.9, 1.2, 0.28)
+    _write_raw(tmp_path, rows)
+    man = {"trials": 3, "sessions": 1, "warmup": 1,
+           "shapes": ["N64B1:c2c-forward"]}
+    summary = sm._aggregate(tmp_path, [(64, 1)], 3, 1, 1, manifest=man)
+    assert summary["manifest"]["oracle_candidates"] == ["oracle:m0_dit"]
+
+
+def _stress_inventory_and_rows():
+    from src.xpu.config import DeviceProfile
+    from src.xpu.selector import load_table
+
+    table = load_table(str(ROOT / "config" / "selector_table.json"))
+    prof = DeviceProfile.load().hash()
+    inv = sm._declared_inventory([(1024, 256)], table, "full",
+                                 3, 30, 5, 10, 10, prof)
+    return inv, prof
+
+
+def test_main_declares_inventory_and_strict_validates(tmp_path,
+                                                      monkeypatch):
+    """--aggregate-only stamps the pre-measurement inventory into
+    manifest.json and the finished output strict-validates against it."""
+    from src.xpu.manifest_contract import declared_inventory_sha256
+
+    inv, prof = _stress_inventory_and_rows()
+    out = tmp_path / "out"
+    out.mkdir()
+    _write_inv_rows(out, _rows_from_inventory(inv, prof), 3)
+    _run_matrix_main(monkeypatch, out)
+    man = json.loads((out / "manifest.json").read_text())
+    assert man["declared_inventory"]["cells"]
+    assert man["declared_inventory_sha256"] == declared_inventory_sha256(
+        man["declared_inventory"])
+    assert man["oracle_candidates"] == sorted(
+        {c for cell in inv["cells"] for c in cell["candidates"]
+         if c.startswith("oracle:")})
+    assert validate_benchmark_output(out, strict=True) == []
+    summary = json.loads((out / "summary.json").read_text())
+    assert not [f for f in summary["failures"]
+                if f.get("kind") == "declared-inventory"]
+    # the stamp survives into the embedded copy both gates read
+    assert (summary["manifest"]["declared_inventory_sha256"]
+            == man["declared_inventory_sha256"])
+
+
+def test_main_fails_closed_when_a_declared_candidate_is_absent(
+        tmp_path, monkeypatch):
+    """Deleting every row of one declared candidate makes both the
+    summary and the strict gate fail (all-absent is a hard fail)."""
+    inv, prof = _stress_inventory_and_rows()
+    out = tmp_path / "out"
+    out.mkdir()
+    rows = [r for r in _rows_from_inventory(inv, prof)
+            if r["candidate"] != "oracle:m0_dit"]
+    _write_inv_rows(out, rows, 3)
+    _run_matrix_main(monkeypatch, out)
+    summary = json.loads((out / "summary.json").read_text())
+    inv_fails = [f for f in summary["failures"]
+                 if f.get("kind") == "declared-inventory"]
+    assert any("oracle:m0_dit" in f["detail"] and "absent" in f["detail"]
+               for f in inv_fails), summary["failures"]
+    gate = validate_benchmark_output(out, strict=True)
+    assert any("oracle:m0_dit" in f and "absent" in f for f in gate), gate

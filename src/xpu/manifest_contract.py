@@ -195,6 +195,250 @@ def iter_raw_rows(raw_dir: Path):
 # steady-tier count (issue #8 review4 P2-a targets matrix evidence).
 STEADY_TIERS = ("steady",)
 
+# Issue #9 WP0-B: declared candidate inventory (pre-measurement
+# registry of per-cell candidates, per-tier row expectations and the
+# explicit terminal-outcome vocabulary). Legacy artifacts predate the
+# key and skip these checks; fresh runs stamp it before session 0.
+DECLARED_INVENTORY_SCHEMA = "declared-inventory-v1"
+# Terminal outcome vocabulary a raw row's status must belong to:
+# ok / incorrect (wrong-value) / unsupported (vendor-unsupported) /
+# error (illegal-args, timeout, launch errors -- carried verbatim in
+# the row's ``reason``).
+DECLARED_TERMINAL_STATUSES = ("ok", "wrong-value", "vendor-unsupported",
+                              "error")
+# Tiers whose rows are terminal-outcome evidence rather than timed
+# trials: the correctness gate and the whole-case abort marker.
+TERMINAL_EVIDENCE_TIERS = ("correctness", "error")
+KNOWN_TIERS = ("steady", "one_shot", "e2e", "plan_creation") \
+    + TERMINAL_EVIDENCE_TIERS
+
+
+def declared_inventory_sha256(inventory) -> str:
+    """Deterministic hash binding a declared candidate inventory.
+
+    Stamped into the manifest before measurement and re-checked by the
+    strict gate, so the registry cannot be edited after the fact to
+    match (possibly tampered) raw evidence -- the same binding pattern
+    as :func:`cases_sha256`.
+    """
+    blob = json.dumps(inventory, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(blob.encode()).hexdigest()
+
+
+def _base_candidate(candidate):
+    """``selector:one_shot`` -> ``selector``; ``oracle:m0_dit`` stays.
+
+    Suffixed row candidates (overhead tiers are recorded under
+    ``<name>:<tier>``) inherit their base candidate's terminal outcome:
+    a killed selector has no one-shot rows, and that absence is
+    explained by its correctness verdict, not missing evidence.
+    """
+    if isinstance(candidate, str) and ":" in candidate:
+        head, tail = candidate.rsplit(":", 1)
+        if tail in KNOWN_TIERS:
+            return head
+    return candidate
+
+
+def declared_inventory_failures(rows, manifest: dict) -> list[str]:
+    """Strict declared-inventory census (issue #9 WP0-B).
+
+    Direction is reversed versus the legacy observed-group census:
+    every DECLARED (cell, candidate, tier, session) must be accounted
+    for in the raw evidence -- a declared candidate with zero rows fails
+    here (the "all-absent is a hard fail" rule), and rows carrying an
+    undeclared label/candidate/tier/status are rejected. A candidate's
+    missing timed rows are excused only by an explicit terminal outcome
+    (correctness/error evidence for it or its suffixed base) or by a
+    single non-ok row at that tier whose status is inside the declared
+    terminal vocabulary.
+
+    Legacy artifacts without ``declared_inventory`` return no failures.
+    """
+    failures: list[str] = []
+    inv = manifest.get("declared_inventory")
+    if inv is None:
+        return failures
+    if not isinstance(inv, dict):
+        return [f"declared_inventory is not a mapping: "
+                f"{type(inv).__name__}"]
+    if inv.get("schema") != DECLARED_INVENTORY_SCHEMA:
+        failures.append(
+            f"declared_inventory schema: expected "
+            f"{DECLARED_INVENTORY_SCHEMA!r}, got "
+            f"{inv.get('schema')!r}")
+    # The inventory must promise exactly the protocol parameters the
+    # manifest declares (same numbers the runner handed to the sessions).
+    for key in ("trials", "sessions", "warmup"):
+        want = _get(manifest, key)
+        got = inv.get(key)
+        if want is not None and got != want:
+            failures.append(
+                f"declared_inventory {key}={got!r} != manifest "
+                f"{want!r}")
+    # Post-hoc edit detection: the stamp must match the inventory bytes.
+    stamp = _get(manifest, "declared_inventory_sha256")
+    if stamp is None:
+        failures.append(
+            "manifest missing field: declared_inventory_sha256 "
+            "(inventory must be stamped before measurement)")
+    elif stamp != declared_inventory_sha256(inv):
+        failures.append(
+            "declared_inventory_sha256 mismatch (inventory edited after "
+            f"stamp: {stamp[:12]}… != "
+            f"{declared_inventory_sha256(inv)[:12]}…)")
+    allowed = inv.get("allowed_terminal_statuses")
+    if not isinstance(allowed, list) or not allowed:
+        failures.append(
+            "declared_inventory missing allowed_terminal_statuses")
+        allowed_list = list(DECLARED_TERMINAL_STATUSES)
+    else:
+        allowed_list = [str(s) for s in allowed]
+    allowed_set = set(allowed_list)
+    cells = inv.get("cells")
+    if not isinstance(cells, list) or not cells:
+        failures.append("declared_inventory missing cells")
+        return failures
+
+    label_map: dict[str, dict] = {}
+    for cell in cells:
+        if not isinstance(cell, dict):
+            failures.append("declared_inventory cell is not a mapping")
+            continue
+        label = cell.get("label")
+        if not label:
+            failures.append("declared_inventory cell without label")
+            continue
+        if label in label_map:
+            failures.append(
+                f"declared_inventory duplicate cell label {label!r}")
+            continue
+        cands = cell.get("candidates")
+        if not isinstance(cands, dict) or not cands:
+            failures.append(
+                f"declared_inventory cell {label!r} has no candidates")
+            continue
+        label_map[label] = cands
+
+    # index every raw row by its full declared identity
+    obs: dict[tuple, list[dict]] = {}
+    for r in rows:
+        if not isinstance(r, dict) or "__decode_error__" in r:
+            continue
+        lab, cand, tier = r.get("label"), r.get("candidate"), r.get("tier")
+        sess = r.get("session")
+        status = r.get("status", "ok")
+        if status not in allowed_set:
+            failures.append(
+                f"declared inventory: row status {status!r} outside "
+                f"allowed_terminal_statuses {allowed_list} (label={lab!r}, "
+                f"candidate={cand!r}, tier={tier!r})")
+        obs.setdefault((lab, cand, tier, sess), []).append(r)
+
+    sessions_n = _get(manifest, "sessions")
+    session_ids = (list(range(sessions_n))
+                   if isinstance(sessions_n, int) and sessions_n > 0
+                   else [])
+    # rows may only come from the declared session range
+    for (lab, cand, tier, sess), _rs in sorted(
+            obs.items(), key=lambda kv: (str(kv[0][0]),
+                                         str(kv[0][1]),
+                                         str(kv[0][2]), str(kv[0][3]))):
+        if sess not in session_ids:
+            failures.append(
+                f"declared inventory: row session {sess!r} outside "
+                f"declared range 0..{sessions_n - 1} (label={lab!r}, "
+                f"candidate={cand!r})")
+
+    # terminal-outcome index: (label, base-candidate, session) -> the
+    # candidate (or its suffixed overhead form) carries explicit
+    # correctness/error evidence in that session
+    terminal: set[tuple] = set()
+    for (lab, cand, tier, sess), rs in obs.items():
+        if tier in TERMINAL_EVIDENCE_TIERS and any(
+                r.get("status", "ok") != "ok" for r in rs):
+            terminal.add((lab, cand, sess))
+
+    def _terminal_explains(lab, cand, sess):
+        return ((lab, cand, sess) in terminal
+                or (lab, _base_candidate(cand), sess) in terminal)
+
+    labels_observed = {k[0] for k in obs}
+    for lab in sorted(l for l in labels_observed if l is not None):
+        if lab not in label_map:
+            failures.append(
+                f"declared inventory: raw row label {lab!r} is not a "
+                "declared cell")
+    # candidates observed under a declared cell must themselves be
+    # declared (catches the whole-case abort marker and any registry
+    # drift such as an unexpected oracle name)
+    for lab, cand in sorted({(k[0], k[1]) for k in obs},
+                            key=lambda p: (str(p[0]), str(p[1]))):
+        if lab in label_map and cand not in label_map[lab]:
+            failures.append(
+                f"declared inventory: observed candidate {cand!r} is not "
+                f"declared for {lab}")
+    for lab, cands in sorted(label_map.items()):
+        if lab not in labels_observed:
+            failures.append(
+                f"declared inventory: cell {lab!r} has no raw rows "
+                "(declared but absent)")
+            continue
+        for cand, tiers in sorted(cands.items()):
+            if not isinstance(tiers, dict) or not tiers:
+                failures.append(
+                    f"declared inventory: {lab!r} candidate {cand!r} "
+                    "declares no tiers")
+                continue
+            for s in session_ids:
+                srows = [r for (l2, c2, _t2, s2), rs in obs.items()
+                         if l2 == lab and c2 == cand and s2 == s
+                         for r in rs]
+                if not srows:
+                    if _terminal_explains(lab, cand, s):
+                        continue
+                    failures.append(
+                        f"declared inventory: candidate {cand!r} absent "
+                        f"in session {s} for {lab} (declared, zero rows)")
+                    continue
+                for r in srows:
+                    tier = r.get("tier")
+                    if tier not in tiers and tier not in TERMINAL_EVIDENCE_TIERS:
+                        failures.append(
+                            f"declared inventory: undeclared tier "
+                            f"{tier!r} for {lab} / {cand!r} session {s}")
+                for tier, count in sorted(tiers.items(),
+                                          key=lambda kv: str(kv[0])):
+                    g = [r for r in srows if r.get("tier") == tier]
+                    if not g:
+                        if _terminal_explains(lab, cand, s):
+                            continue
+                        failures.append(
+                            f"declared inventory: tier {tier!r} absent "
+                            f"for {lab} / {cand!r} session {s} "
+                            "(declared, zero rows)")
+                        continue
+                    non_ok = [r for r in g
+                              if r.get("status", "ok") != "ok"]
+                    if non_ok:
+                        # an explicit terminal outcome at this tier
+                        # replaces the timed expectation
+                        if (len(g) != 1
+                                or g[0].get("status", "ok")
+                                not in allowed_set):
+                            failures.append(
+                                f"declared inventory: {lab} / {cand!r} "
+                                f"tier {tier!r} session {s} mixes "
+                                f"{len(g)} rows with non-ok statuses "
+                                f"(expected a single terminal row)")
+                        continue
+                    if isinstance(count, int) and len(g) != count:
+                        failures.append(
+                            f"declared inventory: {lab} / {cand!r} tier "
+                            f"{tier!r} session {s} has {len(g)} rows, "
+                            f"declared {count}")
+    return failures
+
 
 def trial_completeness_failures(rows, manifest: dict) -> list[str]:
     """Session/label/candidate/tier census (issue #8 review4 P2-a).
@@ -362,6 +606,12 @@ def validate_raw_sessions(raw_dir: Path, manifest: dict,
                     "oracle_candidates mismatch: manifest "
                     f"{sorted(str(c) for c in declared_oracles)} != raw "
                     f"rows {observed}")
+        # Issue #9 WP0-B: the pre-measurement declared candidate
+        # inventory (per-cell candidates, per-tier row expectations,
+        # terminal vocabulary) must be fully accounted for by the raw
+        # evidence -- all-absent declared candidates hard-fail. Skipped
+        # silently for legacy artifacts without the key.
+        failures += declared_inventory_failures(plain_rows, manifest)
     return failures
 
 

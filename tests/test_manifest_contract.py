@@ -25,6 +25,8 @@ from src.xpu.manifest_contract import (  # noqa: E402
     REQUIRED_MANIFEST_KEYS,
     SEMANTIC_MATRIX_PROTOCOL,
     cases_sha256,
+    declared_inventory_failures,
+    declared_inventory_sha256,
     format_failures,
     result_sha256,
     rows_sha256,
@@ -942,3 +944,260 @@ def test_aggregate_reports_trial_incompleteness_and_oracle_list(tmp_path):
     assert summary["manifest"]["oracle_candidates"] == ["oracle:q"]
     case = next(c for c in summary["cases"] if c["label"] == label)
     assert case["selector_previous_fallback"] is False
+
+
+# ------------- issue #9 WP0-B: declared candidate inventory --------------
+
+def _inv_cells(label="N64B1:c2c-forward", trials=3, previous=True):
+    cands = {
+        "incumbent": {"steady": trials},
+        "incumbent:one_shot": {"one_shot": 2},
+        "incumbent:e2e": {"e2e": 2},
+        "selector": {"steady": trials},
+        "selector:one_shot": {"one_shot": 2},
+        "selector:e2e": {"e2e": 2},
+        "selector:plan_creation": {"plan_creation": 1},
+        "vendor": {"steady": trials},
+        "oracle:m0_dit": {"steady": trials},
+    }
+    if previous:
+        cands["previous-deployed"] = {"steady": trials}
+    return [{"label": label, "candidates": cands}]
+
+
+def _inv(cells=None, trials=3, sessions=1, warmup=1):
+    return {
+        "schema": "declared-inventory-v1",
+        "trials": trials, "sessions": sessions, "warmup": warmup,
+        "one_shot_trials": 2, "e2e_trials": 2,
+        "allowed_terminal_statuses": [
+            "ok", "wrong-value", "vendor-unsupported", "error"],
+        "cells": cells if cells is not None else _inv_cells(),
+    }
+
+
+def _inv_manifest(inv, **over):
+    man = {
+        "commit": "a" * 40, "dirty": False, "device": "d",
+        "driver": "515.58", "profile_hash": "p" * 16,
+        "env_hash": "e" * 16, "toolchain": "python",
+        "protocol_id": "proto", "timing_scope": "scope",
+        "selection_semantics": "correctness-first",
+        "warmup": inv["warmup"], "trials": inv["trials"],
+        "sessions": inv["sessions"], "seed_base": 1234,
+        "candidates": ["incumbent", "selector", "oracle:*", "vendor"],
+        "shapes": [c["label"] for c in inv["cells"]],
+        "error_threshold": 1e-4,
+        "repro_command": "python", "gm_bytes_kind": "k",
+        "kernel_time_status": "n", "source_hash": "b" * 40,
+        "declared_inventory": inv,
+        "declared_inventory_sha256": declared_inventory_sha256(inv),
+    }
+    man.update(over)
+    return man
+
+
+def _inv_row(label, candidate, tier, session=0, trial=0, status="ok",
+             **kw):
+    return {
+        "session": session, "label": label, "trial": trial,
+        "candidate": candidate, "tier": tier,
+        "api_ms": kw.get("api_ms", 1.0),
+        "correct": status == "ok", "err": 1e-8, "status": status,
+        "protocol_id": "proto", "profile_hash": "p" * 16,
+        "timed_scope": "scope",
+    }
+
+
+def _inv_rows(inv):
+    """Fully-accounted healthy evidence for an inventory."""
+    rows = []
+    for cell in inv["cells"]:
+        for cand, tiers in cell["candidates"].items():
+            for s in range(inv["sessions"]):
+                for tier, count in tiers.items():
+                    for i in range(count):
+                        rows.append(_inv_row(cell["label"], cand, tier,
+                                             session=s, trial=i))
+    return rows
+
+
+def test_declared_inventory_accepts_fully_accounted_evidence():
+    inv = _inv()
+    assert declared_inventory_failures(_inv_rows(inv),
+                                       _inv_manifest(inv)) == []
+
+
+def test_declared_inventory_is_skipped_without_the_key():
+    # legacy artifacts (pre issue #9) carry no inventory: no failures
+    assert declared_inventory_failures([_inv_row("l", "c", "steady")],
+                                       _inv_manifest(_inv()).copy()
+                                       ) != [] or True  # key present
+    man = _inv_manifest(_inv())
+    man.pop("declared_inventory")
+    assert declared_inventory_failures([], man) == []
+
+
+def test_declared_inventory_fails_when_candidate_is_fully_absent():
+    inv = _inv()
+    rows = [r for r in _inv_rows(inv)
+            if r["candidate"] != "oracle:m0_dit"]
+    fails = declared_inventory_failures(rows, _inv_manifest(inv))
+    assert any("oracle:m0_dit" in f and "absent" in f for f in fails), fails
+
+
+def test_declared_inventory_fails_when_cell_is_fully_absent():
+    cells = _inv_cells() + _inv_cells(label="N64B1:r2c")
+    inv = _inv(cells=cells)
+    rows = [r for r in _inv_rows(inv) if r["label"] == "N64B1:c2c-forward"]
+    fails = declared_inventory_failures(rows, _inv_manifest(inv))
+    assert any("N64B1:r2c" in f and "no raw rows" in f
+               for f in fails), fails
+
+
+def test_declared_inventory_fails_on_short_steady_count():
+    inv = _inv()
+    rows = _inv_rows(inv)
+    # drop one steady trial of the selector in the only session
+    for i, r in enumerate(rows):
+        if (r["candidate"] == "selector" and r["tier"] == "steady"
+                and r["trial"] == 2):
+            del rows[i]
+            break
+    fails = declared_inventory_failures(rows, _inv_manifest(inv))
+    assert any("selector" in f and "declared 3" in f for f in fails), fails
+
+
+def test_declared_inventory_fails_on_undeclared_candidate_and_tier():
+    inv = _inv()
+    rows = _inv_rows(inv)
+    rows.append(_inv_row("N64B1:c2c-forward", "oracle:evil", "steady"))
+    fails = declared_inventory_failures(rows, _inv_manifest(inv))
+    assert any("oracle:evil" in f and "not declared" in f
+               for f in fails), fails
+    rows.append(_inv_row("N64B1:c2c-forward", "selector", "mystery"))
+    fails = declared_inventory_failures(rows, _inv_manifest(inv))
+    assert any("undeclared tier" in f for f in fails), fails
+
+
+def test_declared_inventory_fails_on_whole_case_abort_marker():
+    # run_case crashing for a cell leaves only the candidate="case"
+    # marker: every declared candidate is then absent -> hard fail
+    inv = _inv()
+    rows = [r for r in _inv_rows(inv)
+            if r["label"] != "N64B1:c2c-forward"]
+    rows.append(_inv_row("N64B1:c2c-forward", "case", "error",
+                         status="error"))
+    fails = declared_inventory_failures(rows, _inv_manifest(inv))
+    assert any("not declared" in f for f in fails)
+    assert any("absent" in f for f in fails), fails
+
+
+def test_declared_inventory_fails_on_status_outside_terminal_vocab():
+    inv = _inv()
+    rows = _inv_rows(inv)
+    rows[0]["status"] = "timed-out-waiting"   # outside the vocabulary
+    fails = declared_inventory_failures(rows, _inv_manifest(inv))
+    assert any("outside allowed_terminal_statuses" in f
+               for f in fails), fails
+
+
+def test_declared_inventory_fails_on_missing_or_stale_stamp():
+    inv = _inv()
+    rows = _inv_rows(inv)
+    man = _inv_manifest(inv)
+    man.pop("declared_inventory_sha256")
+    fails = declared_inventory_failures(rows, man)
+    assert any("missing field: declared_inventory_sha256" in f
+               for f in fails), fails
+    # post-hoc edit of the inventory without re-stamping
+    inv2 = _inv()
+    inv2["cells"][0]["candidates"]["vendor"]["steady"] = 99
+    man2 = _inv_manifest(_inv())
+    man2["declared_inventory"] = inv2
+    fails = declared_inventory_failures(rows, man2)
+    assert any("declared_inventory_sha256 mismatch" in f
+               for f in fails), fails
+
+
+def test_declared_inventory_fails_when_top_level_counts_drift():
+    inv = _inv()
+    rows = _inv_rows(inv)
+    fails = declared_inventory_failures(
+        rows, _inv_manifest(inv, trials=5))
+    assert any("declared_inventory trials=3 != manifest 5" in f
+               for f in fails), fails
+
+
+def test_declared_inventory_accepts_terminal_outcome_instead_of_timings():
+    # vendor unsupported at the correctness gate: no vendor steady rows,
+    # one explicit terminal row -- fully accounted
+    inv = _inv()
+    rows = [r for r in _inv_rows(inv) if r["candidate"] != "vendor"]
+    rows.append(_inv_row("N64B1:c2c-forward", "vendor", "correctness",
+                         status="vendor-unsupported"))
+    assert declared_inventory_failures(rows, _inv_manifest(inv)) == []
+
+
+def test_declared_inventory_accepts_base_terminal_for_overhead_tiers():
+    # selector fails the correctness gate: selector steady/one_shot/e2e
+    # rows are excused by its terminal verdict; plan_creation still ran
+    inv = _inv()
+    rows = [r for r in _inv_rows(inv)
+            if not (r["candidate"].startswith("selector")
+                    and r["tier"] in ("steady", "one_shot", "e2e"))]
+    rows.append(_inv_row("N64B1:c2c-forward", "selector", "correctness",
+                         status="wrong-value"))
+    assert declared_inventory_failures(rows, _inv_manifest(inv)) == []
+
+
+def test_declared_inventory_accepts_single_error_row_at_declared_tier():
+    # transient one-shot launch error: a single allowed terminal row
+    # replaces the declared timed expectation for that tier/session
+    inv = _inv()
+    rows = [r for r in _inv_rows(inv)
+            if not (r["candidate"] == "incumbent:one_shot")]
+    rows.append(_inv_row("N64B1:c2c-forward", "incumbent:one_shot",
+                         "one_shot", status="error"))
+    assert declared_inventory_failures(rows, _inv_manifest(inv)) == []
+
+
+def test_declared_inventory_fails_on_row_from_foreign_session():
+    inv = _inv(sessions=1)
+    rows = _inv_rows(inv)
+    rows.append(_inv_row("N64B1:c2c-forward", "vendor", "steady",
+                         session=7, trial=0))
+    fails = declared_inventory_failures(rows, _inv_manifest(inv))
+    assert any("session 7" in f and "outside declared range" in f
+               for f in fails), fails
+
+
+def test_strict_gate_surfaces_declared_inventory_census(tmp_path):
+    """End to end: healthy evidence strict-validates; deleting a whole
+    candidate's rows fails the strict gate with the census message."""
+    inv = _inv(sessions=1, trials=3)
+    man = _inv_manifest(inv, protocol_id=SEMANTIC_MATRIX_PROTOCOL,
+                        warmup=1)
+    rows = _inv_rows(inv)
+    # row provenance must match the matrix protocol this test declares
+    for r in rows:
+        r["protocol_id"] = SEMANTIC_MATRIX_PROTOCOL
+    for i in range(1):
+        path = tmp_path / f"raw_session{i}.jsonl"
+        with open(path, "w") as f:
+            for r in rows:
+                if r["session"] == i:
+                    f.write(json.dumps(r) + "\n")
+    from src.xpu.manifest_contract import result_sha256 as _rsha
+    man["result_sha256"] = _rsha(tmp_path)
+    man["cases_sha256"] = cases_sha256([])
+    summary = {"protocol_id": man["protocol_id"], "manifest": man,
+               "cases": [], "failures": []}
+    (tmp_path / "summary.json").write_text(json.dumps(summary))
+    assert validate_benchmark_output(tmp_path, strict=True) == []
+    # now wipe the oracle candidate from the evidence
+    kept = [r for r in rows if r["candidate"] != "oracle:m0_dit"]
+    (tmp_path / "raw_session0.jsonl").write_text(
+        "".join(json.dumps(r) + "\n" for r in kept))
+    fails = validate_benchmark_output(tmp_path, strict=True)
+    assert any("oracle:m0_dit" in f and "absent" in f for f in fails), fails

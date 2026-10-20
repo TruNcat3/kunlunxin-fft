@@ -72,6 +72,7 @@ SEMANTICS = ("c2c-forward", "c2c-inverse", "r2c", "c2r")
 TIER_STEADY = "steady"
 TIER_ONE_SHOT = "one_shot"
 TIER_E2E = "e2e"
+TIER_PLAN_CREATION = "plan_creation"
 
 # Issue #8 PR-I round 2: "full" keeps the round-1 bounded oracle set;
 # "winner-block" fixes the processing unit (the promoted production
@@ -401,6 +402,70 @@ def _winner_block_plans(selector):
     return plans
 
 
+def _declared_inventory(cases, table, oracle_mode, sessions, trials,
+                        warmup, one_shot_trials, e2e_trials,
+                        profile_hash, has_previous=True):
+    """Pre-measurement declared candidate inventory (issue #9 WP0-B).
+
+    Exactly the contenders :func:`run_case` will construct for every
+    (cell x semantic), with the per-tier row counts each session owes
+    (overhead tiers are declared under their actual row candidate names
+    ``<base>:<tier>``) and the terminal-outcome vocabulary. Stamped into
+    the manifest BEFORE session 0 runs; the strict gate then demands the
+    raw evidence account for every declaration instead of letting
+    observed rows (or observed oracle names) redefine the registry.
+    """
+    from src.xpu.manifest_contract import (
+        DECLARED_INVENTORY_SCHEMA, DECLARED_TERMINAL_STATUSES)
+
+    cells = []
+    for n, b in cases:
+        for semantic in SEMANTICS:
+            label = f"N{n}B{b}:{semantic}"
+            incumbent = _entry_plan(DIRECTION, n, b, semantic, None, table)
+            if oracle_mode == "winner-block":
+                selector = _entry_plan(DIRECTION, n, b, semantic,
+                                       profile_hash, table)
+                if selector.fallback:
+                    raise RuntimeError(
+                        "winner-block declared inventory needs a "
+                        "production entry, but the selector falls back "
+                        f"for {label}")
+                oplans = _winner_block_plans(selector)
+            else:
+                oplans = _oracle_plans(
+                    n, b, DIRECTION, semantic,
+                    block=incumbent.block or 1024)
+            cands = {
+                "incumbent": {"steady": trials},
+                f"incumbent:{TIER_ONE_SHOT}": {TIER_ONE_SHOT:
+                                               one_shot_trials},
+                f"incumbent:{TIER_E2E}": {TIER_E2E: e2e_trials},
+                "selector": {"steady": trials},
+                f"selector:{TIER_ONE_SHOT}": {TIER_ONE_SHOT:
+                                              one_shot_trials},
+                f"selector:{TIER_E2E}": {TIER_E2E: e2e_trials},
+                f"selector:{TIER_PLAN_CREATION}": {TIER_PLAN_CREATION: 1},
+                "vendor": {"steady": trials},
+            }
+            if has_previous:
+                cands[PREVIOUS_CANDIDATE] = {"steady": trials}
+            for plan in oplans:
+                cands[f"oracle:{plan.params['oracle_name']}"] = {
+                    "steady": trials}
+            cells.append({"label": label, "candidates": cands})
+    return {
+        "schema": DECLARED_INVENTORY_SCHEMA,
+        "trials": trials,
+        "sessions": sessions,
+        "warmup": warmup,
+        "one_shot_trials": one_shot_trials,
+        "e2e_trials": e2e_trials,
+        "allowed_terminal_statuses": list(DECLARED_TERMINAL_STATUSES),
+        "cells": cells,
+    }
+
+
 def _timed_steady(fns, warmup, trials, seed):
     """Interleaved randomized trials across contenders (one call each)."""
     from src.xpu.runner import _sync
@@ -629,12 +694,12 @@ def run_case(session, n, b, semantic, trials, warmup, seed, table,
             xs.append((_t.perf_counter() - t0) * 1e3)
         raw.append(_row(
             session, case_label, semantic, "selector:plan_creation",
-            "plan_creation", 0, api_ms=_median(xs), correct=True,
+            TIER_PLAN_CREATION, 0, api_ms=_median(xs), correct=True,
             err=errs.get("selector"), notes=f"samples={xs}"))
     except Exception as e:  # noqa: BLE001
         raw.append(_row(
             session, case_label, semantic, "selector:plan_creation",
-            "plan_creation", 0, api_ms=None, correct=False,
+            TIER_PLAN_CREATION, 0, api_ms=None, correct=False,
             err=errs.get("selector"), status="error",
             reason=f"{type(e).__name__}: {e}"))
 
@@ -697,8 +762,8 @@ def _previous_regression_reason(case_label, semantic, entry):
 
 def _aggregate(out_dir, cases, trials, warmup, sessions, manifest=None):
     from src.xpu.manifest_contract import (
-        REQUIRED_ROW_KEYS, iter_raw_rows, rows_sha256,
-        trial_completeness_failures)
+        REQUIRED_ROW_KEYS, declared_inventory_failures, iter_raw_rows,
+        rows_sha256, trial_completeness_failures)
 
     # P2-c: aggregate reads through the SAME plain/gzip reader the
     # strict gate uses -- an --aggregate-only replay of a released
@@ -720,6 +785,11 @@ def _aggregate(out_dir, cases, trials, warmup, sessions, manifest=None):
     # up in summary.failures instead of silently aggregating short.
     for msg in trial_completeness_failures(raw_rows, manifest or {}):
         failures.append({"kind": "trial-incompleteness", "detail": msg})
+    # Issue #9 WP0-B: declared-inventory census -- a declared cell or
+    # candidate with zero raw rows is a hard failure in the summary
+    # itself, not only at snapshot validation time.
+    for msg in declared_inventory_failures(raw_rows, manifest or {}):
+        failures.append({"kind": "declared-inventory", "detail": msg})
     for r in raw_rows:
         missing = [k for k in REQUIRED_ROW_KEYS
                    if k not in r or r[k] in (None, "")]
@@ -846,12 +916,27 @@ def _aggregate(out_dir, cases, trials, warmup, sessions, manifest=None):
     intentional = [c["label"] for c in cases_out
                    if c.get("regression_reason")
                    and "intentional" in c["regression_reason"]]
-    # P2-b: the ACTUAL oracle candidate names observed in raw rows --
-    # recorded in the manifest alongside (not instead of) the
-    # ``oracle:*`` pattern in ``candidates``.
-    oracle_candidates = sorted(
+    # P2-b / issue #9 WP0-B: the oracle candidate registry is DECLARED
+    # before measurement (manifest.oracle_candidates stamped from the
+    # declared inventory). Observed names are checked against it and
+    # may never overwrite it; only legacy manifests without the key
+    # (pre-WP0-B artifacts) still record the observed set.
+    observed_oracles = sorted(
         {r["candidate"] for r in raw_rows
          if str(r.get("candidate") or "").startswith("oracle:")})
+    declared_oracles = (manifest.get("oracle_candidates")
+                        if manifest else None)
+    if declared_oracles is None:
+        oracle_candidates = observed_oracles
+    else:
+        declared_oracles = sorted(str(c) for c in declared_oracles)
+        if declared_oracles != observed_oracles:
+            failures.append({
+                "kind": "oracle-candidates-mismatch",
+                "declared": declared_oracles,
+                "observed": observed_oracles,
+            })
+        oracle_candidates = declared_oracles
     summary = {
         "protocol_id": PROTOCOL_ID,
         "cases": cases_out,
@@ -993,7 +1078,13 @@ def _write_snapshot(out_dir, release_id, manifest, env, args, cases):
     # binding fields must agree between top manifest and summary.manifest
     top = json.loads((snap / "manifest.json").read_text())
     emb = json.loads((snap / "summary.json").read_text())["manifest"]
-    for key in ("result_sha256", "cases_sha256"):
+    bind_keys = ["result_sha256", "cases_sha256"]
+    if ("declared_inventory_sha256" in top
+            or "declared_inventory_sha256" in emb):
+        # issue #9 WP0-B: the pre-measurement inventory stamp must
+        # survive into both copies (legacy snapshots predate the key)
+        bind_keys.append("declared_inventory_sha256")
+    for key in bind_keys:
         if top.get(key) != emb.get(key):
             raise SystemExit(
                 f"snapshot binding mismatch for {key}: top "
@@ -1065,6 +1156,8 @@ def main():
 
     from src.xpu.config import DeviceProfile, build_manifest, git_commit
     from src.xpu.envcheck import current_env_hash, collect
+    from src.xpu.manifest_contract import declared_inventory_sha256
+    from src.xpu.selector import load_table
 
     env = collect()
     env_hash = current_env_hash()
@@ -1101,6 +1194,20 @@ def main():
         "toolchain": (f"python {sys.version.split()[0]} + "
                       "semantic-matrix-v1"),
     })
+    # Issue #9 WP0-B: declare the candidate inventory and the planned
+    # oracle names BEFORE any session runs (stamped + hashed here);
+    # aggregation and the strict gate validate raw evidence against
+    # these declarations instead of letting observation redefine them.
+    inventory = _declared_inventory(
+        cases, load_table(str(ROOT / "config" / "selector_table.json")),
+        args.oracle_mode, args.sessions, args.trials, args.warmup,
+        args.one_shot_trials, args.e2e_trials,
+        DeviceProfile.load().hash())
+    man["declared_inventory"] = inventory
+    man["declared_inventory_sha256"] = declared_inventory_sha256(inventory)
+    man["oracle_candidates"] = sorted(
+        {c for cell in inventory["cells"] for c in cell["candidates"]
+         if c.startswith("oracle:")})
     (out_dir / "manifest.json").write_text(
         json.dumps(man, indent=2, sort_keys=True) + "\n")
 
