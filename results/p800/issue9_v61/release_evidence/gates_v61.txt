@@ -1,0 +1,113 @@
+=== manifest bindings ===
+  source_hash: 25921743491f3b645804b95bb2fe2fbb5b26441a
+  commit: 25921743491f3b645804b95bb2fe2fbb5b26441a
+  dirty: False
+  profile_hash: a78b86793c7142a0
+  env_hash: 6b50bd316032c0fe
+  previous_selector_source: {'commit': '54260cf9f2dfda5dc830f749c2debf4101d59d48', 'kind': 'commit', 'sha256': 'acc1f21c9c93fe20589993f22589ccc24e5b08db05be29d63321d9b63a6b5449'}
+  previous_selector_sha256: acc1f21c9c93fe20589993f22589ccc24e5b08db05be29d63321d9b63a6b5449
+  precision: fp32
+  result_sha256: f9c3fb30b0a2658a0134557d958d0ebbfefc93118c9e23a0e1c777a2813f1a15
+  cases_sha256: 6cffce506d9b5a354393c93595dbdcbb9d4a779bdaa9cda571a4d7a38ca9ef56
+  oracle_mode: full
+  oracle_candidates: ['oracle:h_dif_t64', 'oracle:h_dit_t64', 'oracle:h_spread', 'oracle:m0_dif', 'oracle:m0_dit', 'oracle:m1_fused_t64', 'oracle:m2_dif_t64', 'oracle:m2_dit_t64', 'oracle:m4_folded', 'oracle:m4_spread', 'oracle:m5_r4_dit']
+  declared_inventory_sha256: b1a98ca6921e56e63fb2e5204c9d12484e191ab41da5aa26fa4a357de32f32b4
+  sessions: 3
+  trials: 30
+  warmup: 5
+  protocol_id: semantic-matrix-v1:plan-reuse:interleave:correctness-first
+
+=== correctness / failures ===
+  cases: 144  missing selector_ms: ['N2048B140:c2c-forward', 'N2048B14:c2c-forward', 'N4096B140:c2c-forward', 'N4096B14:c2c-forward']
+  failures: 222 {'vendor-unsupported:vendor': 108, 'error:incumbent': 12, 'error:selector': 12, 'error:previous-deployed': 12, 'error:oracle:m0_dit': 12, 'error:oracle:m4_spread': 12, 'error:oracle:m4_folded': 12, 'error:oracle:m2_dit_t64': 12, 'error:oracle:m2_dif_t64': 12, 'error:oracle:m5_r4_dit': 12, 'error:selector:plan_creation': 6}
+
+=== P1-1 timed-path independent correctness ===
+  independently validated timed rows: 16800
+  timed-path failures: none
+
+=== fallback gates (previous-deployed carry) ===
+  flagged: ['N1024B16:c2c-forward', 'N1024B16:c2c-inverse', 'N1024B64:c2c-forward', 'N1024B64:c2c-inverse', 'N2048B64:c2c-forward', 'N2048B64:c2c-inverse']
+    N1024B16:c2c-forward       -0.0883%  src=table prev=0.7706 sel=0.7699
+    N1024B16:c2c-inverse       +0.6320%  src=table prev=0.8244 sel=0.8296
+    N1024B64:c2c-forward       -0.3118%  src=table prev=2.3318 sel=2.3245
+    N1024B64:c2c-inverse       -0.0790%  src=table prev=2.4045 sel=2.4026
+    N2048B64:c2c-forward       -0.2137%  src=table prev=5.0942 sel=5.0833
+    N2048B64:c2c-inverse       -0.2233%  src=table prev=5.2100 sel=5.1984
+
+=== stats (A1-historical previous / incumbent / oracle / vendor -- reported separately) ===
+  vs A1-historical previous_regressions_gt_2pct: ['N512B1:r2c', 'N2048B16:c2c-forward', 'N2048B16:c2c-inverse']
+  intentional: ['N2048B16:c2c-inverse', 'N2048B16:r2c', 'N2048B16:c2r']
+    noise-band (single-round): N2048B16:c2c-forward round1=0.009293619967759126 round2=0.032724392337034836 (resolved path identical; identity gate)
+    noise-band (single-round): N512B1:r2c round1=-0.003511204087351949 round2=0.03088681729980558 (resolved path identical; identity gate)
+  stable >2% vs A1 across two rounds: ['N2048B16:c2c-inverse']
+  mean selector_vs_A1previous: -22.4384% over 140 cells
+  vs incumbent >=2% positives: 80
+  vs incumbent >2% regressions: ['N512B1:c2c-inverse']
+  regret mean 0.3615  max 1.5466  >10% cells 68
+  vendor: 4 0 102 geomean 0.122 worst 0.024
+
+=== strict validation (release dir) ===
+  strict: OK 
+  observed oracle candidates: 11
+
+=== raw previous_fallback rows ===
+  N1024B16:c2c-forward: 90 rows
+  N1024B16:c2c-inverse: 90 rows
+  N1024B64:c2c-forward: 90 rows
+  N1024B64:c2c-inverse: 90 rows
+  N2048B64:c2c-forward: 90 rows
+  N2048B64:c2c-inverse: 90 rows
+
+=== raw session counts ===
+  raw_session0: 50694 rows
+  raw_session1: 50694 rows
+  raw_session2: 50694 rows
+
+=== P1-2 v5 path identity ===
+  identical=134 changed=10 fallback-transitions=6
+  v5 sha=2fb882ef60da bound=7aac2319c158 current=7c2282ed0c29
+
+=== P1-2 v5-deployed paired confirmation (changed cells) ===
+    N512B16:c2c-forward          current-vs-v5deployed -39.7147%
+    N512B16:c2r                  current-vs-v5deployed -63.1866%
+    N512B4:c2c-forward           current-vs-v5deployed -45.5260%
+    N512B4:c2r                   current-vs-v5deployed -52.7743%
+    N512B64:c2r                  current-vs-v5deployed -75.1220%
+    N512B64:r2c                  current-vs-v5deployed -71.5777%
+    N64B16:c2c-forward           current-vs-v5deployed -67.0111%
+    N64B16:c2r                   current-vs-v5deployed -57.9330%
+    N64B4:c2c-forward            current-vs-v5deployed -65.6326%
+    N64B4:c2r                    current-vs-v5deployed -57.0895%
+
+=== HARD GATES ===
+  [PASS] top==summary result_sha256
+  [PASS] top==summary cases_sha256
+  [PASS] top==summary declared_inventory_sha256
+  [PASS] dirty=false
+  [PASS] oracle_candidates recorded
+  [PASS] protocol_id bound
+  [PASS] env_hash == config device env_hash
+  [PASS] profile_hash == config device profile_hash
+  [PASS] precision bound (P1-4)
+  [PASS] previous_selector_source recorded (P1-2)
+  [PASS] previous_selector_sha256 == frozen A1 baseline blob
+  [PASS] 144/144 measured outside disclosed non-pow2 gap
+  [PASS] failures only vendor-unsupported or disclosed non-pow2
+  [PASS] no trial-incompleteness failures
+  [PASS] no raw-decode-error failures
+  [PASS] timed paths carry independent correctness (P1-1)
+  [PASS] no one_shot/e2e wrong-value or error rows
+  [PASS] exactly the 6 fallback cells flagged
+  [PASS] fallback cells within +-2% of previous deploy
+  [PASS] no STABLE >2% regressions vs A1 beyond intentional (two-round definition)
+  [PASS] release strict OK
+  [PASS] oracle_candidates == observed rows
+  [PASS] raw previous_fallback rows only on 6-cell labels
+  [PASS] identity: changed cells == closure 10
+  [PASS] identity: identical + changed == 144
+  [PASS] identity: current table sha == release previous-table working table
+  [PASS] identity: frozen base commit == config
+  [PASS] v5 pair: previous table sha == v5 bound blob
+  [PASS] v5 pair: no cell >2% slower than v5-deployed
+  [PASS] v5 pair: strict OK
+ALL HARD GATES PASSED

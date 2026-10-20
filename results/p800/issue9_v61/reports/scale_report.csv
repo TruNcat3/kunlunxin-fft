@@ -1,0 +1,13 @@
+label,selector_ms,selector_source,selector_regret,vendor_ms,vendor_status,measured
+N16384B16:c2c-forward,15.15735313296318,table,-0.0015393851952981707,,unsupported,True
+N16384B1:c2c-forward,2.409948967397213,abstain,0.576812115247803,,unsupported,True
+N16384B256:c2c-forward,474.20974588021636,abstain,0.8715609992717701,,unsupported,True
+N32768B16:c2c-forward,65.35197095945477,abstain,0.7917894102402325,,unsupported,True
+N32768B1:c2c-forward,4.81664901599288,abstain,0.8528816941574353,,unsupported,True
+N32768B256:c2c-forward,1004.0757521055639,abstain,0.7613437228837492,,unsupported,True
+N65536B16:c2c-forward,67.95605015940964,table,-0.0007046447844791803,,unsupported,True
+N65536B1:c2c-forward,4.5010840985924006,table,0.0054545310809193115,,unsupported,True
+N65536B256:c2c-forward,2117.139162030071,abstain,0.8251367586972997,,unsupported,True
+N8192B16:c2c-forward,15.134974848479033,abstain,0.8929534463289077,,unsupported,True
+N8192B1:c2c-forward,1.5657071489840746,abstain,0.5431933481227282,,unsupported,True
+N8192B256:c2c-forward,223.47928793169558,abstain,0.9885485823940678,,unsupported,True

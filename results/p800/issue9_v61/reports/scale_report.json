@@ -1,0 +1,156 @@
+{
+  "baseline": "incumbent per cell",
+  "cells": [
+    {
+      "label": "N16384B16:c2c-forward",
+      "measured": true,
+      "selector_ms": 15.15735313296318,
+      "selector_regret": -0.0015393851952981707,
+      "selector_source": "table",
+      "vendor_ms": null,
+      "vendor_status": "unsupported"
+    },
+    {
+      "label": "N16384B1:c2c-forward",
+      "measured": true,
+      "selector_ms": 2.409948967397213,
+      "selector_regret": 0.576812115247803,
+      "selector_source": "abstain",
+      "vendor_ms": null,
+      "vendor_status": "unsupported"
+    },
+    {
+      "label": "N16384B256:c2c-forward",
+      "measured": true,
+      "selector_ms": 474.20974588021636,
+      "selector_regret": 0.8715609992717701,
+      "selector_source": "abstain",
+      "vendor_ms": null,
+      "vendor_status": "unsupported"
+    },
+    {
+      "label": "N32768B16:c2c-forward",
+      "measured": true,
+      "selector_ms": 65.35197095945477,
+      "selector_regret": 0.7917894102402325,
+      "selector_source": "abstain",
+      "vendor_ms": null,
+      "vendor_status": "unsupported"
+    },
+    {
+      "label": "N32768B1:c2c-forward",
+      "measured": true,
+      "selector_ms": 4.81664901599288,
+      "selector_regret": 0.8528816941574353,
+      "selector_source": "abstain",
+      "vendor_ms": null,
+      "vendor_status": "unsupported"
+    },
+    {
+      "label": "N32768B256:c2c-forward",
+      "measured": true,
+      "selector_ms": 1004.0757521055639,
+      "selector_regret": 0.7613437228837492,
+      "selector_source": "abstain",
+      "vendor_ms": null,
+      "vendor_status": "unsupported"
+    },
+    {
+      "label": "N65536B16:c2c-forward",
+      "measured": true,
+      "selector_ms": 67.95605015940964,
+      "selector_regret": -0.0007046447844791803,
+      "selector_source": "table",
+      "vendor_ms": null,
+      "vendor_status": "unsupported"
+    },
+    {
+      "label": "N65536B1:c2c-forward",
+      "measured": true,
+      "selector_ms": 4.5010840985924006,
+      "selector_regret": 0.0054545310809193115,
+      "selector_source": "table",
+      "vendor_ms": null,
+      "vendor_status": "unsupported"
+    },
+    {
+      "label": "N65536B256:c2c-forward",
+      "measured": true,
+      "selector_ms": 2117.139162030071,
+      "selector_regret": 0.8251367586972997,
+      "selector_source": "abstain",
+      "vendor_ms": null,
+      "vendor_status": "unsupported"
+    },
+    {
+      "label": "N8192B16:c2c-forward",
+      "measured": true,
+      "selector_ms": 15.134974848479033,
+      "selector_regret": 0.8929534463289077,
+      "selector_source": "abstain",
+      "vendor_ms": null,
+      "vendor_status": "unsupported"
+    },
+    {
+      "label": "N8192B1:c2c-forward",
+      "measured": true,
+      "selector_ms": 1.5657071489840746,
+      "selector_regret": 0.5431933481227282,
+      "selector_source": "abstain",
+      "vendor_ms": null,
+      "vendor_status": "unsupported"
+    },
+    {
+      "label": "N8192B256:c2c-forward",
+      "measured": true,
+      "selector_ms": 223.47928793169558,
+      "selector_regret": 0.9885485823940678,
+      "selector_source": "abstain",
+      "vendor_ms": null,
+      "vendor_status": "unsupported"
+    }
+  ],
+  "correctness": "per-cell err <= 1e-4 gate before timing",
+  "coverage": {
+    "domain": "scale (N65536..N524288 C2C-forward)",
+    "labels": 12,
+    "semantic": "c2c-forward only"
+  },
+  "input_type": "uniform random complex, seeded (shape proxy)",
+  "interpretation": "capability + correctness evidence for large-N C2C-forward shapes; NOT a completed scale search optimization (most new points abstain)",
+  "limitations": [
+    "single semantic (c2c-forward); no r2c/c2r scale coverage",
+    "no selector search wave was run over this domain (closure/tune domains are frozen separately)"
+  ],
+  "release": "results/p800/releases/20261020-issue9-semantic-matrix-v6-1",
+  "report": "scale",
+  "schema": "issue9-release-reports-v1",
+  "timing_scope": "steady tier",
+  "unsupported": {
+    "selector_abstain": [
+      "N16384B1:c2c-forward",
+      "N16384B256:c2c-forward",
+      "N32768B16:c2c-forward",
+      "N32768B1:c2c-forward",
+      "N32768B256:c2c-forward",
+      "N65536B256:c2c-forward",
+      "N8192B16:c2c-forward",
+      "N8192B1:c2c-forward",
+      "N8192B256:c2c-forward"
+    ],
+    "vendor_unsupported": [
+      "N16384B16:c2c-forward",
+      "N16384B1:c2c-forward",
+      "N16384B256:c2c-forward",
+      "N32768B16:c2c-forward",
+      "N32768B1:c2c-forward",
+      "N32768B256:c2c-forward",
+      "N65536B16:c2c-forward",
+      "N65536B1:c2c-forward",
+      "N65536B256:c2c-forward",
+      "N8192B16:c2c-forward",
+      "N8192B1:c2c-forward",
+      "N8192B256:c2c-forward"
+    ]
+  }
+}

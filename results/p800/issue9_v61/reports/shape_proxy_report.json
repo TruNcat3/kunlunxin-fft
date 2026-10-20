@@ -1,0 +1,142 @@
+{
+  "baseline": "incumbent per cell",
+  "cells": [
+    {
+      "batch": 128,
+      "capability_probe_failure": false,
+      "label": "N1024B128:c2c-forward",
+      "selector_ms": 11.825038120150566,
+      "selector_source": "abstain",
+      "vendor_ms": 0.2838440705090761,
+      "vendor_status": "ok"
+    },
+    {
+      "batch": 256,
+      "capability_probe_failure": false,
+      "label": "N1024B256:c2c-forward",
+      "selector_ms": 8.564918069168925,
+      "selector_source": "table",
+      "vendor_ms": 0.5159380380064249,
+      "vendor_status": "ok"
+    },
+    {
+      "batch": 32,
+      "capability_probe_failure": false,
+      "label": "N1024B32:c2c-forward",
+      "selector_ms": 3.3404401037842035,
+      "selector_source": "abstain",
+      "vendor_ms": 0.2589849755167961,
+      "vendor_status": "ok"
+    },
+    {
+      "batch": 64,
+      "capability_probe_failure": false,
+      "label": "N1024B64:c2c-forward",
+      "selector_ms": 2.3244989570230246,
+      "selector_source": "table",
+      "vendor_ms": 0.26469514705240726,
+      "vendor_status": "ok"
+    },
+    {
+      "batch": 140,
+      "capability_probe_failure": true,
+      "label": "N2048B140:c2c-forward",
+      "selector_ms": null,
+      "selector_source": null,
+      "vendor_ms": 0.725605059415102,
+      "vendor_status": "ok"
+    },
+    {
+      "batch": 14,
+      "capability_probe_failure": true,
+      "label": "N2048B14:c2c-forward",
+      "selector_ms": null,
+      "selector_source": null,
+      "vendor_ms": 0.6572268903255463,
+      "vendor_status": "ok"
+    },
+    {
+      "batch": 256,
+      "capability_probe_failure": false,
+      "label": "N2048B256:c2c-forward",
+      "selector_ms": 20.19191300496459,
+      "selector_source": "table",
+      "vendor_ms": 1.468498958274722,
+      "vendor_status": "ok"
+    },
+    {
+      "batch": 64,
+      "capability_probe_failure": false,
+      "label": "N2048B64:c2c-forward",
+      "selector_ms": 5.083331139758229,
+      "selector_source": "table",
+      "vendor_ms": 0.6786561571061611,
+      "vendor_status": "ok"
+    },
+    {
+      "batch": 128,
+      "capability_probe_failure": false,
+      "label": "N4096B128:c2c-forward",
+      "selector_ms": 53.039090940728784,
+      "selector_source": "abstain",
+      "vendor_ms": null,
+      "vendor_status": "unsupported"
+    },
+    {
+      "batch": 140,
+      "capability_probe_failure": true,
+      "label": "N4096B140:c2c-forward",
+      "selector_ms": null,
+      "selector_source": null,
+      "vendor_ms": null,
+      "vendor_status": "unsupported"
+    },
+    {
+      "batch": 14,
+      "capability_probe_failure": true,
+      "label": "N4096B14:c2c-forward",
+      "selector_ms": null,
+      "selector_source": null,
+      "vendor_ms": null,
+      "vendor_status": "unsupported"
+    },
+    {
+      "batch": 32,
+      "capability_probe_failure": false,
+      "label": "N4096B32:c2c-forward",
+      "selector_ms": 13.908135937526822,
+      "selector_source": "abstain",
+      "vendor_ms": null,
+      "vendor_status": "unsupported"
+    }
+  ],
+  "correctness": "per-cell err <= 1e-4 gate before timing",
+  "coverage": {
+    "domain": "apps (OFDM/radar proxy shapes)",
+    "labels": 12
+  },
+  "input_type": "uniform random input per semantic -- a SHAPE proxy only; no OFDM DC/guard-band/modulation structure and no radar echo structure are synthesized (config's app_proxy_disclosure padded-proxy for B=14/140 was NOT executed: every legal lowering rejects non-power-of-2 batches)",
+  "limitations": [
+    "application claims are limited to shape-level proxies",
+    "native OFDM/radar workloads need contract-legal lowerings for non-power-of-2 batches (Future Work)"
+  ],
+  "release": "results/p800/releases/20261020-issue9-semantic-matrix-v6-1",
+  "report": "shape_proxy",
+  "schema": "issue9-release-reports-v1",
+  "timing_scope": "steady tier",
+  "unsupported": {
+    "capability_probe_failures": [
+      "N2048B140:c2c-forward",
+      "N2048B14:c2c-forward",
+      "N4096B140:c2c-forward",
+      "N4096B14:c2c-forward"
+    ],
+    "note": "B=14/140 cells are capability probes that FAILED (ValueError: non-power-of-2); they are not completed application proxies and no padded-proxy substitute ran",
+    "vendor_unsupported": [
+      "N4096B128:c2c-forward",
+      "N4096B140:c2c-forward",
+      "N4096B14:c2c-forward",
+      "N4096B32:c2c-forward"
+    ]
+  }
+}

@@ -1,0 +1,47 @@
+# ablation_scope_report
+
+release: results/p800/releases/20261020-issue9-semantic-matrix-v6-1
+
+```json
+{
+  "budget": {
+    "device_hours_total": 16,
+    "implementation_rounds": 2,
+    "max_candidates_per_cell": 24
+  },
+  "future_work_ref": "physical candidate-space optimization moves to the next performance issue (per re-review P2-6)",
+  "limitations": [
+    "scan results are within the declared candidate sets only",
+    "oracle bounded by measured candidates; regret is not a global optimality gap"
+  ],
+  "not_covered": [
+    "true batched M2/hybrid/h_dif kernels (dispatch per row/sub-FFT remains)",
+    "resident/pipeline configurations (boundary_residence canary archived: contract admits only 'gm', no legal resident candidate)",
+    "r2c/c2r adapter-core fusion (phase-split counters unavailable; fusion gate not demonstrated)",
+    "external/third-party local FFT core integration",
+    "non-power-of-2 batch lowerings (capability probes failed)"
+  ],
+  "release": "results/p800/releases/20261020-issue9-semantic-matrix-v6-1",
+  "report": "ablation_scope",
+  "rounds": {
+    "tune-a": {
+      "deployed_equals_oracle_cells": 8,
+      "labels": 8,
+      "max_regret": 0.0020159285460197296,
+      "mean_regret": -0.0006457370471955881,
+      "oracle_mode": "winner-block",
+      "path": "/workspace/kunlunxin-fft/results/p800/issue9/tune-a"
+    },
+    "tune-p": {
+      "deployed_equals_oracle_cells": 8,
+      "labels": 8,
+      "max_regret": 0.0023827243970486744,
+      "mean_regret": 0.0003582660593683673,
+      "oracle_mode": "full",
+      "path": "/workspace/kunlunxin-fft/results/p800/issue9/tune-p"
+    }
+  },
+  "schema": "issue9-release-reports-v1",
+  "scope_statement": "Existing candidate sets were fully scanned (tune-p: full legal processing-unit/flow set) and the deployed winner re-blocked (tune-a: winner-block sweep) within the pre-declared two-round budget; no promotable >=2% gain was found. This is NOT a controlled A/P (architecture-mapping / processing-unit) ablation and NOT 'two-axis implementation and optimization': a94b890..HEAD adds no new physical kernel."
+}
+```
