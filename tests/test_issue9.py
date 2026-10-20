@@ -450,3 +450,41 @@ def test_wp3_attribution_report_for_profile_run():
     # selection is no longer the bottleneck at any anchor (WP2 effect)
     assert all(a["regret"] is None or a["regret"] <= 0.10
                for a in rep["anchors"])
+
+
+# ------------- issue #9 WP4: two bounded tuning rounds ----------------------
+
+def test_wp4_phase_oracle_mode_override():
+    """tune-p measures the full legal unit set (P axis, round 1);
+    tune-a re-blocks the deployed winner (A axis, round 2); other
+    phases follow the protocol default."""
+    import run_issue9 as ri
+
+    assert ri.phase_oracle_mode(CFG, "tune-p") == "full"
+    assert ri.phase_oracle_mode(CFG, "tune-a") == "winner-block"
+    assert ri.phase_oracle_mode(CFG, "closure") == \
+        CFG["protocol"]["oracle_mode"]
+    # estimate reports the phase mode and stays inside the 24/cell cap
+    est_a = ri.estimate_phase(CFG, "tune-a")
+    est_p = ri.estimate_phase(CFG, "tune-p")
+    assert est_a["oracle_mode"] == "winner-block"
+    assert est_p["oracle_mode"] == "full"
+    assert est_a["candidates"] < est_p["candidates"]
+    for est in (est_a, est_p):
+        assert est["max_candidates_per_cell"] <= 24
+        assert est["candidate_budget_per_cell"] == 24
+
+
+def test_wp4_matrix_cmd_uses_phase_oracle_mode():
+    import run_issue9 as ri
+
+    cmd_a = ri.matrix_cmd(CFG, "/tmp/opencode/m", "N1024B256",
+                          phase="tune-a")
+    assert cmd_a[cmd_a.index("--oracle-mode") + 1] == "winner-block"
+    cmd_p = ri.matrix_cmd(CFG, "/tmp/opencode/m", "N1024B256",
+                          phase="tune-p")
+    assert cmd_p[cmd_p.index("--oracle-mode") + 1] == "full"
+    # default stays the protocol value
+    cmd_c = ri.matrix_cmd(CFG, "/tmp/opencode/m", "N1024B256")
+    assert cmd_c[cmd_c.index("--oracle-mode") + 1] == \
+        CFG["protocol"]["oracle_mode"]

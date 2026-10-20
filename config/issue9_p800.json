@@ -295,14 +295,16 @@
         "tune_a"
       ],
       "axis": "architecture-mapping",
-      "gate": "stable gain vs incumbent after >=2% guard on re-measurement, else keep incumbent"
+      "gate": "round 2 (architecture-mapping axis): winner-block re-blocking of the deployed winner (fixed sweep + deployed block); promote only stable >=2% gains, else keep incumbent",
+      "oracle_mode": "winner-block"
     },
     "tune-p": {
       "domains": [
         "tune_a"
       ],
       "axis": "processing-unit",
-      "gate": "stable gain vs incumbent after >=2% guard on re-measurement, else keep incumbent"
+      "gate": "round 1 (processing-unit axis): full legal candidate set compared on the pressure cells; promote only stable >=2% gains over the deployed entry, else keep incumbent",
+      "oracle_mode": "full"
     },
     "validate": {
       "domains": [

@@ -145,6 +145,12 @@ def _ms_for_call(anchor, n, b, semantic):
     return ms0 * (prod / float(n0 * b0)), "v5-element-scaled"
 
 
+def phase_oracle_mode(cfg, phase):
+    """Per-phase oracle mode (tune rounds differ; default: protocol)."""
+    return (cfg.get("phases", {}).get(phase, {})
+            .get("oracle_mode", cfg["protocol"]["oracle_mode"]))
+
+
 def estimate_phase(cfg, phase):
     """Declared cases/candidates/calls + analytic device-time for --dry-run."""
     from src.xpu.config import DeviceProfile
@@ -156,7 +162,7 @@ def estimate_phase(cfg, phase):
     m = cfg["measurement"]
     inv = sm._declared_inventory(
         cases, load_table(str(ROOT / "config" / "selector_table.json")),
-        cfg["protocol"]["oracle_mode"], m["sessions"], m["trials"],
+        phase_oracle_mode(cfg, phase), m["sessions"], m["trials"],
         m["warmup"], m["one_shot_trials"], m["e2e_trials"],
         DeviceProfile.load().hash(), sem_map=sem_map)
 
@@ -187,6 +193,7 @@ def estimate_phase(cfg, phase):
     budget = cfg["budgets"]["max_candidates_per_cell"]
     return {
         "phase": phase,
+        "oracle_mode": phase_oracle_mode(cfg, phase),
         "domains": cfg["phases"][phase]["domains"],
         "shapes": len(cells),
         "semantic_cells": n_sem_cells,
@@ -286,8 +293,10 @@ def preflight(cfg, args):
     return 0
 
 
-def matrix_cmd(cfg, out_dir, cells_spec):
+def matrix_cmd(cfg, out_dir, cells_spec, phase=None):
     m = cfg["measurement"]
+    oracle_mode = (phase_oracle_mode(cfg, phase) if phase
+                   else cfg["protocol"]["oracle_mode"])
     return [
         sys.executable, str(ROOT / "scripts" / "run_semantic_matrix.py"),
         "--cells", cells_spec,
@@ -297,7 +306,7 @@ def matrix_cmd(cfg, out_dir, cells_spec):
         "--one-shot-trials", str(m["one_shot_trials"]),
         "--e2e-trials", str(m["e2e_trials"]),
         "--seed", str(m["seed"]),
-        "--oracle-mode", cfg["protocol"]["oracle_mode"],
+        "--oracle-mode", oracle_mode,
         "--out", str(out_dir),
     ]
 
@@ -346,7 +355,8 @@ def dry_run(cfg, args, out_root):
     spec = phase_cells_spec(cfg, args.phase)
     est = estimate_phase(cfg, args.phase)
     dh = est["device_hours"]
-    print(f"[{est['phase']}] domains={','.join(est['domains'])}")
+    print(f"[{est['phase']}] domains={','.join(est['domains'])} "
+          f"mode={est['oracle_mode']}")
     print(f"  cases: {est['shapes']} shapes / {est['semantic_cells']} "
           "semantic cells / labels:")
     print(f"    {spec}")
@@ -373,7 +383,8 @@ def dry_run(cfg, args, out_root):
             continue
         total_s += e["device_hours"] * 3600.0
         total_calls += e["calls"]
-        rows.append(f"[{ph}] cells={e['semantic_cells']} "
+        rows.append(f"[{ph}] mode={e['oracle_mode']} "
+                    f"cells={e['semantic_cells']} "
                     f"candidates={e['candidates']} calls={e['calls']} "
                     f"device={e['device_hours']:.3f} h")
     for r in rows:
@@ -493,7 +504,7 @@ def main(argv=None):
     else:
         cells_spec = phase_cells_spec(cfg, args.phase)
         out_dir = out_root / args.phase
-        cmd = matrix_cmd(cfg, out_dir, cells_spec)
+        cmd = matrix_cmd(cfg, out_dir, cells_spec, phase=args.phase)
         est = None
         try:
             est = estimate_phase(cfg, args.phase)
