@@ -1,0 +1,774 @@
+{
+  "cases": [
+    {
+      "N": 1024,
+      "batch": 256,
+      "direction": "dit",
+      "guard_pass_2pct": true,
+      "guard_vs_incumbent": 0.6452374018380904,
+      "incumbent_mad_ms": 0.10544806718826294,
+      "incumbent_ms": 23.595020873472095,
+      "label": "N1024B256:c2c-forward",
+      "oracle_candidate": "oracle:m2_dif_t64",
+      "oracle_mad_ms": 0.0420459546148777,
+      "oracle_ms": 8.37738998234272,
+      "previous_deployed_mad_ms": 0.16475701704621315,
+      "previous_deployed_ms": 23.447272833436728,
+      "previous_deployed_source": "abstain",
+      "regression_reason": null,
+      "selector_mad_ms": 0.03754394128918648,
+      "selector_ms": 8.370630908757448,
+      "selector_previous_fallback": false,
+      "selector_regret": -0.0008068233184223006,
+      "selector_source": "table",
+      "selector_vs_previous": -0.643001940216237,
+      "semantic": "c2c-forward",
+      "sessions_with_data": 3,
+      "speedup_vs_incumbent": 2.8187864368487108,
+      "speedup_vs_vendor": 0.061873487305956404,
+      "vendor_mad_ms": 0.007098773494362831,
+      "vendor_ms": 0.5179201252758503,
+      "vendor_status": "ok"
+    },
+    {
+      "N": 1024,
+      "batch": 256,
+      "direction": "dit",
+      "guard_pass_2pct": true,
+      "guard_vs_incumbent": 0.6432331939634739,
+      "incumbent_mad_ms": 0.09013619273900986,
+      "incumbent_ms": 23.684866027906537,
+      "label": "N1024B256:c2c-inverse",
+      "oracle_candidate": "oracle:m2_dif_t64",
+      "oracle_mad_ms": 0.04365900531411171,
+      "oracle_ms": 8.458295138552785,
+      "previous_deployed_mad_ms": 0.19326712936162949,
+      "previous_deployed_ms": 23.599501000717282,
+      "previous_deployed_source": "abstain",
+      "regression_reason": null,
+      "selector_mad_ms": 0.03693997859954834,
+      "selector_ms": 8.44997400417924,
+      "selector_previous_fallback": false,
+      "selector_regret": -0.0009837838757384976,
+      "selector_source": "table",
+      "selector_vs_previous": -0.6419426832829045,
+      "semantic": "c2c-inverse",
+      "sessions_with_data": 3,
+      "speedup_vs_incumbent": 2.8029513482754305,
+      "speedup_vs_vendor": 0.06122147684959166,
+      "vendor_mad_ms": 0.007559312507510185,
+      "vendor_ms": 0.5173198878765106,
+      "vendor_status": "ok"
+    },
+    {
+      "N": 1024,
+      "batch": 256,
+      "direction": "dit",
+      "guard_pass_2pct": true,
+      "guard_vs_incumbent": 0.7843901320457781,
+      "incumbent_mad_ms": 0.07677893154323101,
+      "incumbent_ms": 23.278377950191498,
+      "label": "N1024B256:r2c",
+      "oracle_candidate": "oracle:h_dif_t64",
+      "oracle_mad_ms": 0.03918912261724472,
+      "oracle_ms": 5.008758045732975,
+      "previous_deployed_mad_ms": 0.2083259169012308,
+      "previous_deployed_ms": 23.98033393546939,
+      "previous_deployed_source": "abstain",
+      "regression_reason": null,
+      "selector_mad_ms": 0.04136702045798302,
+      "selector_ms": 5.019047996029258,
+      "selector_previous_fallback": false,
+      "selector_regret": 0.00205439156819498,
+      "selector_source": "table",
+      "selector_vs_previous": -0.7907014969209596,
+      "semantic": "r2c",
+      "sessions_with_data": 3,
+      "speedup_vs_incumbent": 4.63800664361206,
+      "speedup_vs_vendor": 0.07793549711140142,
+      "vendor_mad_ms": 0.008200062438845634,
+      "vendor_ms": 0.3911620005965233,
+      "vendor_status": "ok"
+    },
+    {
+      "N": 1024,
+      "batch": 256,
+      "direction": "dit",
+      "guard_pass_2pct": true,
+      "guard_vs_incumbent": 0.7855458675002781,
+      "incumbent_mad_ms": 0.1314480323344469,
+      "incumbent_ms": 23.400424979627132,
+      "label": "N1024B256:c2r",
+      "oracle_candidate": "oracle:h_dif_t64",
+      "oracle_mad_ms": 0.03932020626962185,
+      "oracle_ms": 5.006388993933797,
+      "previous_deployed_mad_ms": 0.16740686260163784,
+      "previous_deployed_ms": 23.86757591739297,
+      "previous_deployed_source": "abstain",
+      "regression_reason": null,
+      "selector_mad_ms": 0.044149113819003105,
+      "selector_ms": 5.018317839130759,
+      "selector_previous_fallback": false,
+      "selector_regret": 0.0023827243970486744,
+      "selector_source": "table",
+      "selector_vs_previous": -0.7897432962400772,
+      "semantic": "c2r",
+      "sessions_with_data": 3,
+      "speedup_vs_incumbent": 4.663001772657828,
+      "speedup_vs_vendor": 0.09366687404200642,
+      "vendor_mad_ms": 0.007719267159700394,
+      "vendor_ms": 0.4700501449406147,
+      "vendor_status": "ok"
+    },
+    {
+      "N": 2048,
+      "batch": 256,
+      "direction": "dit",
+      "guard_pass_2pct": true,
+      "guard_vs_incumbent": 0.5850274947930973,
+      "incumbent_mad_ms": 0.12389686889946461,
+      "incumbent_ms": 48.96957706660032,
+      "label": "N2048B256:c2c-forward",
+      "oracle_candidate": "oracle:m2_dit_t64",
+      "oracle_mad_ms": 0.06530783139169216,
+      "oracle_ms": 20.322308177128434,
+      "previous_deployed_mad_ms": 0.23232586681842804,
+      "previous_deployed_ms": 50.38938904181123,
+      "previous_deployed_source": "abstain",
+      "regression_reason": null,
+      "selector_mad_ms": 0.10636798106133938,
+      "selector_ms": 20.321028074249625,
+      "selector_previous_fallback": false,
+      "selector_regret": -6.299003379206525e-05,
+      "selector_source": "table",
+      "selector_vs_previous": -0.5967200940382905,
+      "semantic": "c2c-forward",
+      "sessions_with_data": 3,
+      "speedup_vs_incumbent": 2.4097982094052384,
+      "speedup_vs_vendor": 0.07209526012988061,
+      "vendor_mad_ms": 0.012590084224939346,
+      "vendor_ms": 1.4650498051196337,
+      "vendor_status": "ok"
+    },
+    {
+      "N": 2048,
+      "batch": 256,
+      "direction": "dit",
+      "guard_pass_2pct": true,
+      "guard_vs_incumbent": 0.5911708670334511,
+      "incumbent_mad_ms": 0.14514708891510963,
+      "incumbent_ms": 50.08268100209534,
+      "label": "N2048B256:c2c-inverse",
+      "oracle_candidate": "oracle:m2_dit_t64",
+      "oracle_mad_ms": 0.07051927968859673,
+      "oracle_ms": 20.48096409998834,
+      "previous_deployed_mad_ms": 0.16433116979897022,
+      "previous_deployed_ms": 49.98057289049029,
+      "previous_deployed_source": "abstain",
+      "regression_reason": null,
+      "selector_mad_ms": 0.08494500070810318,
+      "selector_ms": 20.47525905072689,
+      "selector_previous_fallback": false,
+      "selector_regret": -0.00027855374549745626,
+      "selector_source": "table",
+      "selector_vs_previous": -0.5903356471005421,
+      "semantic": "c2c-inverse",
+      "sessions_with_data": 3,
+      "speedup_vs_incumbent": 2.4460096391462924,
+      "speedup_vs_vendor": 0.07265500036342726,
+      "vendor_mad_ms": 0.012769130989909172,
+      "vendor_ms": 1.4876299537718296,
+      "vendor_status": "ok"
+    },
+    {
+      "N": 2048,
+      "batch": 256,
+      "direction": "dit",
+      "guard_pass_2pct": true,
+      "guard_vs_incumbent": 0.7930735165332384,
+      "incumbent_mad_ms": 0.32944208942353725,
+      "incumbent_ms": 50.40127714164555,
+      "label": "N2048B256:r2c",
+      "oracle_candidate": "oracle:h_dif_t64",
+      "oracle_mad_ms": 0.06312900222837925,
+      "oracle_ms": 10.433217976242304,
+      "previous_deployed_mad_ms": 0.30544307082891464,
+      "previous_deployed_ms": 50.230301916599274,
+      "previous_deployed_source": "abstain",
+      "regression_reason": null,
+      "selector_mad_ms": 0.058928970247507095,
+      "selector_ms": 10.429359041154385,
+      "selector_previous_fallback": false,
+      "selector_regret": -0.00036987007236943814,
+      "selector_source": "table",
+      "selector_vs_previous": -0.7923691747170672,
+      "semantic": "r2c",
+      "sessions_with_data": 3,
+      "speedup_vs_incumbent": 4.832634195712456,
+      "speedup_vs_vendor": 0.13647254764704259,
+      "vendor_mad_ms": 0.016179867088794708,
+      "vendor_ms": 1.4233211986720562,
+      "vendor_status": "ok"
+    },
+    {
+      "N": 2048,
+      "batch": 256,
+      "direction": "dit",
+      "guard_pass_2pct": true,
+      "guard_vs_incumbent": 0.8100281550447397,
+      "incumbent_mad_ms": 0.2386351116001606,
+      "incumbent_ms": 51.32387997582555,
+      "label": "N2048B256:c2r",
+      "oracle_candidate": "oracle:h_dif_t64",
+      "oracle_mad_ms": 0.06870785728096962,
+      "oracle_ms": 9.741022950038314,
+      "previous_deployed_mad_ms": 0.31729298643767834,
+      "previous_deployed_ms": 51.0432249866426,
+      "previous_deployed_source": "abstain",
+      "regression_reason": null,
+      "selector_mad_ms": 0.06284983828663826,
+      "selector_ms": 9.75009216926992,
+      "selector_previous_fallback": false,
+      "selector_regret": 0.000931033555523042,
+      "selector_source": "table",
+      "selector_vs_previous": -0.8089836178685536,
+      "semantic": "c2r",
+      "sessions_with_data": 3,
+      "speedup_vs_incumbent": 5.263937928462542,
+      "speedup_vs_vendor": 0.13826659152795326,
+      "vendor_mad_ms": 0.013609183952212334,
+      "vendor_ms": 1.3481120113283396,
+      "vendor_status": "ok"
+    }
+  ],
+  "failures": [],
+  "manifest": {
+    "block": 1024,
+    "block_sweep": null,
+    "boundary_residence": "gm",
+    "candidates": [
+      "incumbent",
+      "selector",
+      "oracle:*",
+      "vendor",
+      "previous-deployed"
+    ],
+    "cases_sha256": "51622e2e60e9c143c7a5447f3b54328e3e61b88b6be0b93a549e75b55243dc5a",
+    "command": "",
+    "commit": "baa96e5b50cbd0f1e1675ad14c448ece4ed5c746",
+    "correctness_threshold": 0.0001,
+    "declared_inventory": {
+      "allowed_terminal_statuses": [
+        "ok",
+        "wrong-value",
+        "vendor-unsupported",
+        "error"
+      ],
+      "cells": [
+        {
+          "candidates": {
+            "incumbent": {
+              "steady": 30
+            },
+            "incumbent:e2e": {
+              "e2e": 10
+            },
+            "incumbent:one_shot": {
+              "one_shot": 10
+            },
+            "oracle:m0_dit": {
+              "steady": 30
+            },
+            "oracle:m2_dif_t64": {
+              "steady": 30
+            },
+            "oracle:m2_dit_t64": {
+              "steady": 30
+            },
+            "oracle:m4_folded": {
+              "steady": 30
+            },
+            "oracle:m4_spread": {
+              "steady": 30
+            },
+            "oracle:m5_r4_dit": {
+              "steady": 30
+            },
+            "previous-deployed": {
+              "steady": 30
+            },
+            "selector": {
+              "steady": 30
+            },
+            "selector:e2e": {
+              "e2e": 10
+            },
+            "selector:one_shot": {
+              "one_shot": 10
+            },
+            "selector:plan_creation": {
+              "plan_creation": 1
+            },
+            "vendor": {
+              "steady": 30
+            }
+          },
+          "label": "N1024B256:c2c-forward"
+        },
+        {
+          "candidates": {
+            "incumbent": {
+              "steady": 30
+            },
+            "incumbent:e2e": {
+              "e2e": 10
+            },
+            "incumbent:one_shot": {
+              "one_shot": 10
+            },
+            "oracle:m0_dit": {
+              "steady": 30
+            },
+            "oracle:m2_dif_t64": {
+              "steady": 30
+            },
+            "oracle:m2_dit_t64": {
+              "steady": 30
+            },
+            "oracle:m4_folded": {
+              "steady": 30
+            },
+            "oracle:m4_spread": {
+              "steady": 30
+            },
+            "oracle:m5_r4_dit": {
+              "steady": 30
+            },
+            "previous-deployed": {
+              "steady": 30
+            },
+            "selector": {
+              "steady": 30
+            },
+            "selector:e2e": {
+              "e2e": 10
+            },
+            "selector:one_shot": {
+              "one_shot": 10
+            },
+            "selector:plan_creation": {
+              "plan_creation": 1
+            },
+            "vendor": {
+              "steady": 30
+            }
+          },
+          "label": "N1024B256:c2c-inverse"
+        },
+        {
+          "candidates": {
+            "incumbent": {
+              "steady": 30
+            },
+            "incumbent:e2e": {
+              "e2e": 10
+            },
+            "incumbent:one_shot": {
+              "one_shot": 10
+            },
+            "oracle:h_dif_t64": {
+              "steady": 30
+            },
+            "oracle:h_spread": {
+              "steady": 30
+            },
+            "oracle:m0_dit": {
+              "steady": 30
+            },
+            "oracle:m2_dif_t64": {
+              "steady": 30
+            },
+            "oracle:m2_dit_t64": {
+              "steady": 30
+            },
+            "oracle:m4_folded": {
+              "steady": 30
+            },
+            "oracle:m4_spread": {
+              "steady": 30
+            },
+            "oracle:m5_r4_dit": {
+              "steady": 30
+            },
+            "previous-deployed": {
+              "steady": 30
+            },
+            "selector": {
+              "steady": 30
+            },
+            "selector:e2e": {
+              "e2e": 10
+            },
+            "selector:one_shot": {
+              "one_shot": 10
+            },
+            "selector:plan_creation": {
+              "plan_creation": 1
+            },
+            "vendor": {
+              "steady": 30
+            }
+          },
+          "label": "N1024B256:r2c"
+        },
+        {
+          "candidates": {
+            "incumbent": {
+              "steady": 30
+            },
+            "incumbent:e2e": {
+              "e2e": 10
+            },
+            "incumbent:one_shot": {
+              "one_shot": 10
+            },
+            "oracle:h_dif_t64": {
+              "steady": 30
+            },
+            "oracle:h_spread": {
+              "steady": 30
+            },
+            "oracle:m0_dit": {
+              "steady": 30
+            },
+            "oracle:m2_dif_t64": {
+              "steady": 30
+            },
+            "oracle:m2_dit_t64": {
+              "steady": 30
+            },
+            "oracle:m4_folded": {
+              "steady": 30
+            },
+            "oracle:m4_spread": {
+              "steady": 30
+            },
+            "oracle:m5_r4_dit": {
+              "steady": 30
+            },
+            "previous-deployed": {
+              "steady": 30
+            },
+            "selector": {
+              "steady": 30
+            },
+            "selector:e2e": {
+              "e2e": 10
+            },
+            "selector:one_shot": {
+              "one_shot": 10
+            },
+            "selector:plan_creation": {
+              "plan_creation": 1
+            },
+            "vendor": {
+              "steady": 30
+            }
+          },
+          "label": "N1024B256:c2r"
+        },
+        {
+          "candidates": {
+            "incumbent": {
+              "steady": 30
+            },
+            "incumbent:e2e": {
+              "e2e": 10
+            },
+            "incumbent:one_shot": {
+              "one_shot": 10
+            },
+            "oracle:m0_dit": {
+              "steady": 30
+            },
+            "oracle:m2_dif_t64": {
+              "steady": 30
+            },
+            "oracle:m2_dit_t64": {
+              "steady": 30
+            },
+            "oracle:m4_folded": {
+              "steady": 30
+            },
+            "oracle:m4_spread": {
+              "steady": 30
+            },
+            "oracle:m5_r4_dit": {
+              "steady": 30
+            },
+            "previous-deployed": {
+              "steady": 30
+            },
+            "selector": {
+              "steady": 30
+            },
+            "selector:e2e": {
+              "e2e": 10
+            },
+            "selector:one_shot": {
+              "one_shot": 10
+            },
+            "selector:plan_creation": {
+              "plan_creation": 1
+            },
+            "vendor": {
+              "steady": 30
+            }
+          },
+          "label": "N2048B256:c2c-forward"
+        },
+        {
+          "candidates": {
+            "incumbent": {
+              "steady": 30
+            },
+            "incumbent:e2e": {
+              "e2e": 10
+            },
+            "incumbent:one_shot": {
+              "one_shot": 10
+            },
+            "oracle:m0_dit": {
+              "steady": 30
+            },
+            "oracle:m2_dif_t64": {
+              "steady": 30
+            },
+            "oracle:m2_dit_t64": {
+              "steady": 30
+            },
+            "oracle:m4_folded": {
+              "steady": 30
+            },
+            "oracle:m4_spread": {
+              "steady": 30
+            },
+            "oracle:m5_r4_dit": {
+              "steady": 30
+            },
+            "previous-deployed": {
+              "steady": 30
+            },
+            "selector": {
+              "steady": 30
+            },
+            "selector:e2e": {
+              "e2e": 10
+            },
+            "selector:one_shot": {
+              "one_shot": 10
+            },
+            "selector:plan_creation": {
+              "plan_creation": 1
+            },
+            "vendor": {
+              "steady": 30
+            }
+          },
+          "label": "N2048B256:c2c-inverse"
+        },
+        {
+          "candidates": {
+            "incumbent": {
+              "steady": 30
+            },
+            "incumbent:e2e": {
+              "e2e": 10
+            },
+            "incumbent:one_shot": {
+              "one_shot": 10
+            },
+            "oracle:h_dif_t64": {
+              "steady": 30
+            },
+            "oracle:h_spread": {
+              "steady": 30
+            },
+            "oracle:m0_dit": {
+              "steady": 30
+            },
+            "oracle:m2_dif_t64": {
+              "steady": 30
+            },
+            "oracle:m2_dit_t64": {
+              "steady": 30
+            },
+            "oracle:m4_folded": {
+              "steady": 30
+            },
+            "oracle:m4_spread": {
+              "steady": 30
+            },
+            "oracle:m5_r4_dit": {
+              "steady": 30
+            },
+            "previous-deployed": {
+              "steady": 30
+            },
+            "selector": {
+              "steady": 30
+            },
+            "selector:e2e": {
+              "e2e": 10
+            },
+            "selector:one_shot": {
+              "one_shot": 10
+            },
+            "selector:plan_creation": {
+              "plan_creation": 1
+            },
+            "vendor": {
+              "steady": 30
+            }
+          },
+          "label": "N2048B256:r2c"
+        },
+        {
+          "candidates": {
+            "incumbent": {
+              "steady": 30
+            },
+            "incumbent:e2e": {
+              "e2e": 10
+            },
+            "incumbent:one_shot": {
+              "one_shot": 10
+            },
+            "oracle:h_dif_t64": {
+              "steady": 30
+            },
+            "oracle:h_spread": {
+              "steady": 30
+            },
+            "oracle:m0_dit": {
+              "steady": 30
+            },
+            "oracle:m2_dif_t64": {
+              "steady": 30
+            },
+            "oracle:m2_dit_t64": {
+              "steady": 30
+            },
+            "oracle:m4_folded": {
+              "steady": 30
+            },
+            "oracle:m4_spread": {
+              "steady": 30
+            },
+            "oracle:m5_r4_dit": {
+              "steady": 30
+            },
+            "previous-deployed": {
+              "steady": 30
+            },
+            "selector": {
+              "steady": 30
+            },
+            "selector:e2e": {
+              "e2e": 10
+            },
+            "selector:one_shot": {
+              "one_shot": 10
+            },
+            "selector:plan_creation": {
+              "plan_creation": 1
+            },
+            "vendor": {
+              "steady": 30
+            }
+          },
+          "label": "N2048B256:c2r"
+        }
+      ],
+      "e2e_trials": 10,
+      "one_shot_trials": 10,
+      "schema": "declared-inventory-v1",
+      "sessions": 3,
+      "trials": 30,
+      "warmup": 5
+    },
+    "declared_inventory_sha256": "d88966542d2f58eba790c2464c776d44f09349d6c43ded6f083d7bf80d8d8d31",
+    "device": "kunlunxin-p800",
+    "direction": "forward",
+    "dirty": false,
+    "driver": "515.58",
+    "dtype": "complex64",
+    "env_hash": "6b50bd316032c0fe",
+    "error_threshold": 0.0001,
+    "extra": {},
+    "flow_id": "baseline-global-stage",
+    "fused_tile": 1,
+    "gm_bytes_kind": "analytical estimate only; not used in this matrix's reported metrics",
+    "kernel_time_status": "not collected: this stack exposes reliable sync API wall time; device/kernel timers unavailable",
+    "layout": "planar-soa",
+    "oracle_candidates": [
+      "oracle:h_dif_t64",
+      "oracle:h_spread",
+      "oracle:m0_dit",
+      "oracle:m2_dif_t64",
+      "oracle:m2_dit_t64",
+      "oracle:m4_folded",
+      "oracle:m4_spread",
+      "oracle:m5_r4_dit"
+    ],
+    "oracle_mode": "full",
+    "precision": "fp32",
+    "previous_selector_sha256": "acc1f21c9c93fe20589993f22589ccc24e5b08db05be29d63321d9b63a6b5449",
+    "previous_selector_source_commit": "54260cf9f2dfda5dc830f749c2debf4101d59d48",
+    "processing_unit": "radix2-scalar",
+    "profile_hash": "a78b86793c7142a0",
+    "protocol_id": "semantic-matrix-v1:plan-reuse:interleave:correctness-first",
+    "repro_command": "/workspace/kunlunxin-fft/scripts/run_semantic_matrix.py --cells N1024B256,N2048B256 --sessions 3 --trials 30 --warmup 5 --one-shot-trials 10 --e2e-trials 10 --seed 1234 --oracle-mode full --out /workspace/kunlunxin-fft/results/p800/issue9/tune-p",
+    "result_sha256": "3f7131f7dfc3c73bd285a588c48520a2dd23ba6a3a812819cc66fab96d8ad2c5",
+    "seed_base": 1234,
+    "selection_semantics": "correctness-first, interleaved randomized contender order, 3+ independent process sessions, 2% incumbent guard, oracle = bounded measured set, vendor errors preserved",
+    "sessions": 3,
+    "shapes": [
+      "N1024B256:c2c-forward",
+      "N1024B256:c2c-inverse",
+      "N1024B256:r2c",
+      "N1024B256:c2r",
+      "N2048B256:c2c-forward",
+      "N2048B256:c2c-inverse",
+      "N2048B256:r2c",
+      "N2048B256:c2r"
+    ],
+    "source_hash": "baa96e5b50cbd0f1e1675ad14c448ece4ed5c746",
+    "td": 1,
+    "timing_scope": "api wall time (dispatch+alloc+layout+sync), ms; tiers: plan_creation / steady / one_shot / e2e",
+    "toolchain": "python 3.10.18 + semantic-matrix-v1",
+    "torch_device_key": "cuda",
+    "trials": 30,
+    "ts": 1,
+    "ud": 1,
+    "us": 1,
+    "warmup": 5,
+    "xpu_arch": 3
+  },
+  "metrics": {
+    "geomean_speedup_vs_vendor": 0.08503213115473086,
+    "intentional_semantic_exceptions": [],
+    "loss": 8,
+    "max_selector_regret": 0.0023827243970486744,
+    "mean_selector_regret": 0.0003582660593683673,
+    "previous_cells_measured": 8,
+    "previous_regressions_gt_2pct": [],
+    "tie": 0,
+    "vendor_supported_cases": 8,
+    "win": 0,
+    "worst_speedup_vs_vendor": 0.06122147684959166
+  },
+  "protocol_id": "semantic-matrix-v1:plan-reuse:interleave:correctness-first",
+  "raw_sha256": "5e5ad58f3545ecc168eed6669eea5e1d4a79f77ebd8b8bb0f9806c8e97ae2f5b",
+  "rows_sha256_check": "5e5ad58f3545ecc168eed6669eea5e1d4a79f77ebd8b8bb0f9806c8e97ae2f5b"
+}

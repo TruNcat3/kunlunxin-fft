@@ -1,0 +1,476 @@
+{
+  "schema": "issue9-attribution-v1",
+  "run": "results/p800/issue9/profile",
+  "protocol_id": "semantic-matrix-v1:plan-reuse:interleave:correctness-first",
+  "classes_used": [
+    "core-invoke dominated",
+    "launch-dispatch dominated",
+    "real-adapter dominated",
+    "worker-occupancy-tail dominated"
+  ],
+  "unavailable_quantities": [
+    "visible launches: no hardware counter export (analytic only)",
+    "workspace / live set: not instrumented this round (unavailable)",
+    "GM bytes, bandwidth, occupancy: analytic estimate only",
+    "pack/core/stitch/hermitian/crop/scale phase split: unavailable (no in-kernel counter)",
+    "worker/block/wave/tail occupancy: analytic from plan geometry only",
+    "E2D H2D/D2H split: timed as one combined e2e scope (per-hop split unavailable)"
+  ],
+  "rule_thresholds": {
+    "regret_max": 0.1,
+    "dispatch_frac": 0.5,
+    "transfer_frac": 1.0,
+    "priority": [
+      "selector",
+      "launch",
+      "GM",
+      "real-adapter",
+      "core (local-fused-tile)",
+      "worker-tail (global/spread/folded)",
+      "unclassified-need-counters"
+    ]
+  },
+  "anchors": [
+    {
+      "label": "N64B16:c2c-forward",
+      "semantic": "c2c-forward",
+      "N": 64,
+      "batch": 16,
+      "selector_source": "table",
+      "oracle_candidate": "oracle:m2_dit_t64",
+      "regret": 0.006778381833824065,
+      "flow_id": "local-fused-tile",
+      "has_real_flow": false,
+      "vendor_status": "ok",
+      "steady_ms": 0.16639195382595062,
+      "incumbent_steady_ms": 0.49594498705118895,
+      "plan_creation_ms": 0.11998694390058517,
+      "one_shot_ms": 0.34818192943930626,
+      "e2e_ms": 0.24162442423403263,
+      "incumbent_one_shot_ms": 0.6737599615007639,
+      "incumbent_e2e_ms": 0.5859669763594866,
+      "dispatch_delta_ms": 0.18178997561335564,
+      "transfer_delta_ms": 0.07523247040808201,
+      "dispatch_frac_of_steady": 1.092540663375536,
+      "transfer_frac_of_steady": 0.45214007455418614,
+      "geometry": {
+        "executed": "fft_dif_matrix_batch",
+        "flow_id": "local-fused-tile",
+        "flow_realization": "matrix-resident",
+        "processing_unit": "dense-dot-fft64",
+        "block": 1024
+      },
+      "plan_geometry_analytic": {
+        "rows": 8,
+        "tile": 64,
+        "variant": "spread",
+        "analytic_gm_bytes": 24576,
+        "gm_bytes_kind": "analytic estimate; not measured"
+      },
+      "incumbent_geometry": {
+        "flow_id": "baseline-global-stage",
+        "processing_unit": "radix2-scalar"
+      },
+      "attribution_class": "launch-dispatch dominated",
+      "evidence": {
+        "regret_vs_oracle": 0.006778381833824065,
+        "dispatch_delta_ms": 0.18178997561335564,
+        "transfer_delta_ms": 0.07523247040808201,
+        "one_shot_includes": "per-call plan/dispatch overhead (runner note)",
+        "e2e_scope": "H2D + execute + D2H combined; per-hop split unavailable"
+      }
+    },
+    {
+      "label": "N512B64:r2c",
+      "semantic": "r2c",
+      "N": 512,
+      "batch": 64,
+      "selector_source": "table",
+      "oracle_candidate": "oracle:h_dif_t64",
+      "regret": 0.00445305921638095,
+      "flow_id": "dedicated-r2c-pack-v1",
+      "has_real_flow": true,
+      "vendor_status": "ok",
+      "steady_ms": 0.9473240934312344,
+      "incumbent_steady_ms": 3.211830393411219,
+      "plan_creation_ms": 0.02552894875407219,
+      "one_shot_ms": 0.9780935943126678,
+      "e2e_ms": 1.0098029160872102,
+      "incumbent_one_shot_ms": 3.2552684424445033,
+      "incumbent_e2e_ms": 3.2704940531402826,
+      "dispatch_delta_ms": 0.030769500881433487,
+      "transfer_delta_ms": 0.06247882265597582,
+      "dispatch_frac_of_steady": 0.032480437365406276,
+      "transfer_frac_of_steady": 0.06595295431542945,
+      "geometry": {
+        "executed": "fft_dif_matrix_batch",
+        "flow_id": "dedicated-r2c-pack-v1",
+        "flow_realization": "matrix-resident",
+        "processing_unit": "dense-dot-fft64",
+        "block": 1024
+      },
+      "plan_geometry_analytic": {
+        "rows": 8,
+        "tile": 64,
+        "variant": "spread",
+        "analytic_gm_bytes": 786432,
+        "gm_bytes_kind": "analytic estimate; not measured"
+      },
+      "incumbent_geometry": {
+        "flow_id": "baseline-global-stage",
+        "processing_unit": "radix2-scalar"
+      },
+      "attribution_class": "real-adapter dominated",
+      "evidence": {
+        "regret_vs_oracle": 0.00445305921638095,
+        "dispatch_delta_ms": 0.030769500881433487,
+        "transfer_delta_ms": 0.06247882265597582,
+        "one_shot_includes": "per-call plan/dispatch overhead (runner note)",
+        "e2e_scope": "H2D + execute + D2H combined; per-hop split unavailable"
+      }
+    },
+    {
+      "label": "N512B64:c2r",
+      "semantic": "c2r",
+      "N": 512,
+      "batch": 64,
+      "selector_source": "table",
+      "oracle_candidate": "oracle:h_dif_t64",
+      "regret": 0.001354428713689959,
+      "flow_id": "dedicated-c2r-hermitian-v1",
+      "has_real_flow": true,
+      "vendor_status": "ok",
+      "steady_ms": 0.9387799073010683,
+      "incumbent_steady_ms": 3.624471020884812,
+      "plan_creation_ms": 0.02613919787108898,
+      "one_shot_ms": 0.964878941886127,
+      "e2e_ms": 1.0090628638863564,
+      "incumbent_one_shot_ms": 3.6829389864578843,
+      "incumbent_e2e_ms": 3.777582896873355,
+      "dispatch_delta_ms": 0.02609903458505869,
+      "transfer_delta_ms": 0.07028295658528805,
+      "dispatch_frac_of_steady": 0.027801015320078303,
+      "transfer_frac_of_steady": 0.07486627700346402,
+      "geometry": {
+        "executed": "fft_dif_matrix_batch",
+        "flow_id": "dedicated-c2r-hermitian-v1",
+        "flow_realization": "matrix-resident",
+        "processing_unit": "dense-dot-fft64",
+        "block": 1024
+      },
+      "plan_geometry_analytic": {
+        "rows": 8,
+        "tile": 64,
+        "variant": "spread",
+        "analytic_gm_bytes": 786432,
+        "gm_bytes_kind": "analytic estimate; not measured"
+      },
+      "incumbent_geometry": {
+        "flow_id": "baseline-global-stage",
+        "processing_unit": "radix2-scalar"
+      },
+      "attribution_class": "real-adapter dominated",
+      "evidence": {
+        "regret_vs_oracle": 0.001354428713689959,
+        "dispatch_delta_ms": 0.02609903458505869,
+        "transfer_delta_ms": 0.07028295658528805,
+        "one_shot_includes": "per-call plan/dispatch overhead (runner note)",
+        "e2e_scope": "H2D + execute + D2H combined; per-hop split unavailable"
+      }
+    },
+    {
+      "label": "N1024B256:c2c-forward",
+      "semantic": "c2c-forward",
+      "N": 1024,
+      "batch": 256,
+      "selector_source": "table",
+      "oracle_candidate": "oracle:m2_dit_t64",
+      "regret": 0.03234281393385663,
+      "flow_id": "local-fused-tile",
+      "has_real_flow": false,
+      "vendor_status": "ok",
+      "steady_ms": 8.534689084626734,
+      "incumbent_steady_ms": 23.221825598739088,
+      "plan_creation_ms": 0.11919718235731125,
+      "one_shot_ms": 8.689066511578858,
+      "e2e_ms": 8.927921066060662,
+      "incumbent_one_shot_ms": 23.435088456608355,
+      "incumbent_e2e_ms": 23.763300850987434,
+      "dispatch_delta_ms": 0.15437742695212364,
+      "transfer_delta_ms": 0.393231981433928,
+      "dispatch_frac_of_steady": 0.01808823091519512,
+      "transfer_frac_of_steady": 0.04607455263276601,
+      "geometry": {
+        "executed": "fft_dif_matrix_batch",
+        "flow_id": "local-fused-tile",
+        "flow_realization": "matrix-resident",
+        "processing_unit": "dense-dot-fft64",
+        "block": 512
+      },
+      "plan_geometry_analytic": {
+        "rows": 8,
+        "tile": 64,
+        "variant": "spread",
+        "analytic_gm_bytes": 6291456,
+        "gm_bytes_kind": "analytic estimate; not measured"
+      },
+      "incumbent_geometry": {
+        "flow_id": "baseline-global-stage",
+        "processing_unit": "radix2-scalar"
+      },
+      "attribution_class": "core-invoke dominated",
+      "evidence": {
+        "regret_vs_oracle": 0.03234281393385663,
+        "dispatch_delta_ms": 0.15437742695212364,
+        "transfer_delta_ms": 0.393231981433928,
+        "one_shot_includes": "per-call plan/dispatch overhead (runner note)",
+        "e2e_scope": "H2D + execute + D2H combined; per-hop split unavailable"
+      }
+    },
+    {
+      "label": "N1024B256:c2c-inverse",
+      "semantic": "c2c-inverse",
+      "N": 1024,
+      "batch": 256,
+      "selector_source": "table",
+      "oracle_candidate": "oracle:m2_dit_t64",
+      "regret": 0.02988866396789258,
+      "flow_id": "local-fused-tile",
+      "has_real_flow": false,
+      "vendor_status": "ok",
+      "steady_ms": 8.625663933344185,
+      "incumbent_steady_ms": 23.270164034329355,
+      "plan_creation_ms": 0.022038817405700684,
+      "one_shot_ms": 8.611003053374588,
+      "e2e_ms": 9.01251402683556,
+      "incumbent_one_shot_ms": 23.406896041706204,
+      "incumbent_e2e_ms": 23.7437654286623,
+      "dispatch_delta_ms": -0.014660879969596863,
+      "transfer_delta_ms": 0.38685009349137545,
+      "dispatch_frac_of_steady": -0.0016996813326939824,
+      "transfer_frac_of_steady": 0.04484873239681075,
+      "geometry": {
+        "executed": "fft_dif_matrix_batch",
+        "flow_id": "local-fused-tile",
+        "flow_realization": "matrix-resident",
+        "processing_unit": "dense-dot-fft64",
+        "block": 512
+      },
+      "plan_geometry_analytic": {
+        "rows": 8,
+        "tile": 64,
+        "variant": "spread",
+        "analytic_gm_bytes": 6291456,
+        "gm_bytes_kind": "analytic estimate; not measured"
+      },
+      "incumbent_geometry": {
+        "flow_id": "baseline-global-stage",
+        "processing_unit": "radix2-scalar"
+      },
+      "attribution_class": "core-invoke dominated",
+      "evidence": {
+        "regret_vs_oracle": 0.02988866396789258,
+        "dispatch_delta_ms": -0.014660879969596863,
+        "transfer_delta_ms": 0.38685009349137545,
+        "one_shot_includes": "per-call plan/dispatch overhead (runner note)",
+        "e2e_scope": "H2D + execute + D2H combined; per-hop split unavailable"
+      }
+    },
+    {
+      "label": "N1024B256:r2c",
+      "semantic": "r2c",
+      "N": 1024,
+      "batch": 256,
+      "selector_source": "table",
+      "oracle_candidate": "oracle:h_dif_t64",
+      "regret": 0.0019840628158691587,
+      "flow_id": "dedicated-r2c-pack-v1",
+      "has_real_flow": true,
+      "vendor_status": "ok",
+      "steady_ms": 4.882210050709546,
+      "incumbent_steady_ms": 22.703341441228986,
+      "plan_creation_ms": 0.02559996210038662,
+      "one_shot_ms": 4.868386080488563,
+      "e2e_ms": 5.212983931414783,
+      "incumbent_one_shot_ms": 22.756370366550982,
+      "incumbent_e2e_ms": 23.51183199789375,
+      "dispatch_delta_ms": -0.013823970220983028,
+      "transfer_delta_ms": 0.3307738807052374,
+      "dispatch_frac_of_steady": -0.0028314984561088174,
+      "transfer_frac_of_steady": 0.06775084997769915,
+      "geometry": {
+        "executed": "fft_dif_matrix_batch",
+        "flow_id": "dedicated-r2c-pack-v1",
+        "flow_realization": "matrix-resident",
+        "processing_unit": "dense-dot-fft64",
+        "block": 256
+      },
+      "plan_geometry_analytic": {
+        "rows": 8,
+        "tile": 64,
+        "variant": "spread",
+        "analytic_gm_bytes": 6291456,
+        "gm_bytes_kind": "analytic estimate; not measured"
+      },
+      "incumbent_geometry": {
+        "flow_id": "baseline-global-stage",
+        "processing_unit": "radix2-scalar"
+      },
+      "attribution_class": "real-adapter dominated",
+      "evidence": {
+        "regret_vs_oracle": 0.0019840628158691587,
+        "dispatch_delta_ms": -0.013823970220983028,
+        "transfer_delta_ms": 0.3307738807052374,
+        "one_shot_includes": "per-call plan/dispatch overhead (runner note)",
+        "e2e_scope": "H2D + execute + D2H combined; per-hop split unavailable"
+      }
+    },
+    {
+      "label": "N1024B256:c2r",
+      "semantic": "c2r",
+      "N": 1024,
+      "batch": 256,
+      "selector_source": "table",
+      "oracle_candidate": "oracle:h_dif_t64",
+      "regret": 0.004595888032077111,
+      "flow_id": "dedicated-c2r-hermitian-v1",
+      "has_real_flow": true,
+      "vendor_status": "ok",
+      "steady_ms": 5.133643047884107,
+      "incumbent_steady_ms": 23.236313136294484,
+      "plan_creation_ms": 0.026589957997202873,
+      "one_shot_ms": 5.124937975779176,
+      "e2e_ms": 5.307943909429014,
+      "incumbent_one_shot_ms": 23.363839485682547,
+      "incumbent_e2e_ms": 23.612751509062946,
+      "dispatch_delta_ms": -0.008705072104930878,
+      "transfer_delta_ms": 0.1743008615449071,
+      "dispatch_frac_of_steady": -0.0016956909593702232,
+      "transfer_frac_of_steady": 0.033952664787776254,
+      "geometry": {
+        "executed": "fft_dif_matrix_batch",
+        "flow_id": "dedicated-c2r-hermitian-v1",
+        "flow_realization": "matrix-resident",
+        "processing_unit": "dense-dot-fft64",
+        "block": 256
+      },
+      "plan_geometry_analytic": {
+        "rows": 8,
+        "tile": 64,
+        "variant": "spread",
+        "analytic_gm_bytes": 6291456,
+        "gm_bytes_kind": "analytic estimate; not measured"
+      },
+      "incumbent_geometry": {
+        "flow_id": "baseline-global-stage",
+        "processing_unit": "radix2-scalar"
+      },
+      "attribution_class": "real-adapter dominated",
+      "evidence": {
+        "regret_vs_oracle": 0.004595888032077111,
+        "dispatch_delta_ms": -0.008705072104930878,
+        "transfer_delta_ms": 0.1743008615449071,
+        "one_shot_includes": "per-call plan/dispatch overhead (runner note)",
+        "e2e_scope": "H2D + execute + D2H combined; per-hop split unavailable"
+      }
+    },
+    {
+      "label": "N2048B16:c2c-forward",
+      "semantic": "c2c-forward",
+      "N": 2048,
+      "batch": 16,
+      "selector_source": "composition",
+      "oracle_candidate": "oracle:m2_dit_t64",
+      "regret": -0.8345081941298893,
+      "flow_id": "hybrid-A1P1",
+      "has_real_flow": false,
+      "vendor_status": "ok",
+      "steady_ms": 0.291154021397233,
+      "incumbent_steady_ms": 3.4789289347827435,
+      "plan_creation_ms": 0.10230811312794685,
+      "one_shot_ms": 0.5791418952867389,
+      "e2e_ms": 0.3579125041142106,
+      "incumbent_one_shot_ms": 3.6727399565279484,
+      "incumbent_e2e_ms": 3.7238739896565676,
+      "dispatch_delta_ms": 0.28798787388950586,
+      "transfer_delta_ms": 0.0667584827169776,
+      "dispatch_frac_of_steady": 0.9891255236917802,
+      "transfer_frac_of_steady": 0.2292892346003229,
+      "geometry": {
+        "executed": "run_hybrid",
+        "flow_id": "hybrid-A1P1",
+        "flow_realization": "decomposition-composition",
+        "processing_unit": "vendor-subfft-host-composition",
+        "block": null
+      },
+      "plan_geometry_analytic": {
+        "rows": null,
+        "tile": 64,
+        "variant": null,
+        "analytic_gm_bytes": 786432,
+        "gm_bytes_kind": "analytic estimate; not measured"
+      },
+      "incumbent_geometry": {
+        "flow_id": "baseline-global-stage",
+        "processing_unit": "radix2-scalar"
+      },
+      "attribution_class": "launch-dispatch dominated",
+      "evidence": {
+        "regret_vs_oracle": -0.8345081941298893,
+        "dispatch_delta_ms": 0.28798787388950586,
+        "transfer_delta_ms": 0.0667584827169776,
+        "one_shot_includes": "per-call plan/dispatch overhead (runner note)",
+        "e2e_scope": "H2D + execute + D2H combined; per-hop split unavailable"
+      }
+    },
+    {
+      "label": "N16384B16:c2c-forward",
+      "semantic": "c2c-forward",
+      "N": 16384,
+      "batch": 16,
+      "selector_source": "table",
+      "oracle_candidate": "oracle:m5_r4_dit",
+      "regret": 0.0010428549258176822,
+      "flow_id": "batch-spread",
+      "has_real_flow": false,
+      "vendor_status": "unsupported",
+      "steady_ms": 15.22404607385397,
+      "incumbent_steady_ms": 29.14372307714075,
+      "plan_creation_ms": 0.11967704631388187,
+      "one_shot_ms": 15.402566990815103,
+      "e2e_ms": 15.715785091742873,
+      "incumbent_one_shot_ms": 29.398668091744184,
+      "incumbent_e2e_ms": 29.64878303464502,
+      "dispatch_delta_ms": 0.17852091696113348,
+      "transfer_delta_ms": 0.4917390178889036,
+      "dispatch_frac_of_steady": 0.011726246498145344,
+      "transfer_frac_of_steady": 0.032300153027875055,
+      "geometry": {
+        "executed": "fft_dit_radix4_batch",
+        "flow_id": "batch-spread",
+        "flow_realization": "global-stage",
+        "processing_unit": "radix4-scalar",
+        "block": 256
+      },
+      "plan_geometry_analytic": {
+        "rows": null,
+        "tile": null,
+        "variant": "spread",
+        "analytic_gm_bytes": 6291456,
+        "gm_bytes_kind": "analytic estimate; not measured"
+      },
+      "incumbent_geometry": {
+        "flow_id": "baseline-global-stage",
+        "processing_unit": "radix2-scalar"
+      },
+      "attribution_class": "worker-occupancy-tail dominated",
+      "evidence": {
+        "regret_vs_oracle": 0.0010428549258176822,
+        "dispatch_delta_ms": 0.17852091696113348,
+        "transfer_delta_ms": 0.4917390178889036,
+        "one_shot_includes": "per-call plan/dispatch overhead (runner note)",
+        "e2e_scope": "H2D + execute + D2H combined; per-hop split unavailable"
+      }
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+{
+  "cells": [
+    [
+      64,
+      16,
+      [
+        "c2c-forward"
+      ]
+    ],
+    [
+      512,
+      64,
+      [
+        "r2c",
+        "c2r"
+      ]
+    ],
+    [
+      1024,
+      256,
+      [
+        "c2c-forward",
+        "c2c-inverse",
+        "r2c",
+        "c2r"
+      ]
+    ],
+    [
+      2048,
+      16,
+      [
+        "c2c-forward"
+      ]
+    ],
+    [
+      16384,
+      16,
+      [
+        "c2c-forward"
+      ]
+    ]
+  ],
+  "protocol_id": "semantic-matrix-v1:plan-reuse:interleave:correctness-first"
+}
