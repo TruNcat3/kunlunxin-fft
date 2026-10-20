@@ -293,11 +293,11 @@ def preflight(cfg, args):
     return 0
 
 
-def matrix_cmd(cfg, out_dir, cells_spec, phase=None):
+def matrix_cmd(cfg, out_dir, cells_spec, phase=None, release_id=None):
     m = cfg["measurement"]
     oracle_mode = (phase_oracle_mode(cfg, phase) if phase
                    else cfg["protocol"]["oracle_mode"])
-    return [
+    cmd = [
         sys.executable, str(ROOT / "scripts" / "run_semantic_matrix.py"),
         "--cells", cells_spec,
         "--sessions", str(m["sessions"]),
@@ -309,6 +309,11 @@ def matrix_cmd(cfg, out_dir, cells_spec, phase=None):
         "--oracle-mode", oracle_mode,
         "--out", str(out_dir),
     ]
+    if release_id:
+        # WP5: one measured run both validates the frozen table and
+        # writes the immutable release snapshot (strict-validated).
+        cmd += ["--snapshot", "--release-id", release_id]
+    return cmd
 
 
 def replay_cmd(src, dst):
@@ -331,7 +336,8 @@ def child_env(device):
 
 def dry_run(cfg, args, out_root):
     print(f"dry-run phase={args.phase} device={args.device} "
-          f"output={out_root}")
+          f"output={out_root}"
+          + (f" release={args.release_id}" if args.release_id else ""))
     print(f"config: {CONFIG_PATH.relative_to(ROOT)} "
           f"sha={config_sha256()[:12]}")
     print("device-time model: analytic, anchored on v5 recorded "
@@ -446,7 +452,13 @@ def main(argv=None):
     ap.add_argument("--replay-src", default=None,
                     help="recorded run to replay (default: "
                          "<output>/validate)")
+    ap.add_argument("--release-id", default=None,
+                    help="measure phase: pass --snapshot --release-id "
+                         "to the matrix child (WP5 immutable release)")
     args = ap.parse_args(argv)
+    if args.release_id and args.phase in ("preflight", "replay"):
+        raise SystemExit("--release-id needs a measure phase "
+                         "(closure/profile/tune-*/validate)")
 
     cfg = load_config()
     out_root = Path(args.output) if args.output else Path(cfg["outputs"]["root"])
@@ -504,7 +516,8 @@ def main(argv=None):
     else:
         cells_spec = phase_cells_spec(cfg, args.phase)
         out_dir = out_root / args.phase
-        cmd = matrix_cmd(cfg, out_dir, cells_spec, phase=args.phase)
+        cmd = matrix_cmd(cfg, out_dir, cells_spec, phase=args.phase,
+                         release_id=args.release_id)
         est = None
         try:
             est = estimate_phase(cfg, args.phase)

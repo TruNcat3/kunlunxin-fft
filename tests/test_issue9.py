@@ -488,3 +488,26 @@ def test_wp4_matrix_cmd_uses_phase_oracle_mode():
     cmd_c = ri.matrix_cmd(CFG, "/tmp/opencode/m", "N1024B256")
     assert cmd_c[cmd_c.index("--oracle-mode") + 1] == \
         CFG["protocol"]["oracle_mode"]
+
+
+def test_wp5_release_id_adds_snapshot_flags():
+    """--release-id turns a measure phase into validate+snapshot in one
+    measured run (WP5); other phases reject it."""
+    import subprocess
+    import run_issue9 as ri
+
+    cmd = ri.matrix_cmd(CFG, "/tmp/opencode/m", "N1024B256",
+                        phase="validate",
+                        release_id="20261020-issue9-semantic-matrix-v6")
+    assert cmd[cmd.index("--snapshot") + 1] == "--release-id"
+    assert cmd[-1] == "20261020-issue9-semantic-matrix-v6"
+    plain = ri.matrix_cmd(CFG, "/tmp/opencode/m", "N1024B256",
+                          phase="validate")
+    assert "--snapshot" not in plain
+    # rejected on non-measure phases
+    r = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "run_issue9.py"),
+         "--phase", "preflight", "--dry-run", "--release-id", "x"],
+        capture_output=True, text=True)
+    assert r.returncode != 0
+    assert "needs a measure phase" in r.stderr
