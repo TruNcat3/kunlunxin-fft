@@ -819,3 +819,100 @@ def test_replay_requires_new_directory_and_aggregate_only(tmp_path,
         str(tmp_path / "r2")])
     with pytest.raises(SystemExit, match="replay-out"):
         sm.main()
+
+
+# ------------- issue #9 WP1: exact cell schedule (--cells) ----------------
+
+def test_parse_cells_spec_formats_and_merge():
+    cells = sm.parse_cells_spec(
+        "N64B4:c2c-forward+c2r, N64B4:r2c, N512B64")
+    assert cells == [(64, 4, ["c2c-forward", "c2r", "r2c"]),
+                     (512, 64, list(sm.SEMANTICS))]
+    with pytest.raises(SystemExit, match="unknown semantic"):
+        sm.parse_cells_spec("N64B4:c2c-sideways")
+    with pytest.raises(SystemExit, match="bad cell"):
+        sm.parse_cells_spec("64x4")
+    with pytest.raises(SystemExit, match="empty"):
+        sm.parse_cells_spec(" , ")
+
+
+def test_schedule_flattening_respects_sem_map():
+    cells = sm.parse_cells_spec("N64B4:c2c-forward,N512B64:r2c+c2r")
+    cases = [((n, b)) for n, b, _ in cells]
+    sem_map = {(n, b): s for n, b, s in cells}
+    assert sm._schedule(cases, sem_map) == [
+        (64, 4, "c2c-forward"),
+        (512, 64, "r2c"), (512, 64, "c2r")]
+    # without a sem_map every shape runs all four semantics
+    assert len(sm._schedule([(64, 4)])) == 4
+
+
+def test_main_cells_filtered_schedule_declares_and_validates(
+        tmp_path, monkeypatch):
+    """--cells measures exactly the declared cell+semantic set: one
+    label in shapes/inventory/schedule, strict gate green."""
+    from src.xpu.config import DeviceProfile
+    from src.xpu.selector import load_table
+
+    table = load_table(str(ROOT / "config" / "selector_table.json"))
+    prof = DeviceProfile.load().hash()
+    sem_map = {(1024, 256): ["r2c"]}
+    inv = sm._declared_inventory([(1024, 256)], table, "full",
+                                 3, 30, 5, 10, 10, prof,
+                                 sem_map=sem_map)
+    assert [c["label"] for c in inv["cells"]] == ["N1024B256:r2c"]
+    out = tmp_path / "out"
+    out.mkdir()
+    _write_inv_rows(out, _rows_from_inventory(inv, prof), 3)
+    monkeypatch.setattr(sys, "argv", [
+        "run_semantic_matrix.py", "--aggregate-only",
+        "--cells", "N1024B256:r2c", "--out", str(out)])
+    sm.main()
+    man = json.loads((out / "manifest.json").read_text())
+    assert man["shapes"] == ["N1024B256:r2c"]
+    sched = json.loads((out / "schedule.json").read_text())
+    assert sched["cells"] == [[1024, 256, ["r2c"]]]
+    summary = json.loads((out / "summary.json").read_text())
+    assert [c["label"] for c in summary["cases"]] == ["N1024B256:r2c"]
+    assert validate_benchmark_output(out, strict=True) == []
+
+
+def test_filtered_schedule_snapshot_and_replay_roundtrip(tmp_path,
+                                                         monkeypatch):
+    """A filtered-schedule run snapshots and replays with its exact
+    per-shape semantics (WP1 domains survive the WP0-C replay path)."""
+    from src.xpu.config import DeviceProfile
+    from src.xpu.selector import load_table
+
+    table = load_table(str(ROOT / "config" / "selector_table.json"))
+    prof = DeviceProfile.load().hash()
+    sem_map = {(1024, 256): ["r2c"]}
+    inv = sm._declared_inventory([(1024, 256)], table, "full",
+                                 3, 30, 5, 10, 10, prof,
+                                 sem_map=sem_map)
+    out = tmp_path / "out"
+    out.mkdir()
+    _write_inv_rows(out, _rows_from_inventory(inv, prof), 3)
+    monkeypatch.setattr(sys, "argv", [
+        "run_semantic_matrix.py", "--aggregate-only",
+        "--cells", "N1024B256:r2c", "--out", str(out)])
+    sm.main()
+    orig = json.loads((out / "summary.json").read_text())
+    man = json.loads((out / "manifest.json").read_text())
+    # snapshot under a temporary ROOT (immutable evidence never touched)
+    monkeypatch.setattr(sm, "ROOT", tmp_path)
+    snap = sm._write_snapshot(out, "rid-filtered", man, {}, None,
+                              [(1024, 256)])
+    monkeypatch.setattr(sm, "ROOT", ROOT)
+    # replay reproduces the filtered analysis from the snapshot's own
+    # manifest/shapes (single r2c label, no cross product)
+    replay = tmp_path / "replay"
+    monkeypatch.setattr(sys, "argv", [
+        "run_semantic_matrix.py", "--aggregate-only",
+        "--out", str(snap), "--replay-out", str(replay)])
+    sm.main()
+    regen = json.loads((replay / "summary.json").read_text())
+    assert regen["cases"] == orig["cases"]
+    assert [c["label"] for c in regen["cases"]] == ["N1024B256:r2c"]
+    assert regen["metrics"] == orig["metrics"]
+    assert validate_benchmark_output(replay, strict=True) == []

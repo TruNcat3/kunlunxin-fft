@@ -118,6 +118,61 @@ SCOPES = {
 }
 
 
+def parse_cells_spec(spec):
+    """Parse ``--cells`` into ordered ``[(N, batch, [sems...]), ...]``.
+
+    Formats per cell: ``N64B4`` (all four semantics), ``N64B4:c2c-forward``
+    or ``N64B4:c2c-forward+r2c``; cells are comma-separated. Issue #9
+    WP1 freezes experiment domains as exact cell+semantic sets (the
+    10-cell closure domain, the 12-cell scale slice, ...) -- the matrix
+    must measure exactly the declared set, not the cross product.
+    """
+    cells = []
+    index = {}
+    for part in str(spec).split(","):
+        part = part.strip()
+        if not part:
+            continue
+        head, _, sem_part = part.partition(":")
+        m = re.match(r"^N(\d+)B(\d+)$", head)
+        if not m:
+            raise SystemExit(
+                f"--cells: bad cell {part!r} (expected N<n>B<b>[:"
+                "sem[+sem...]])")
+        n, b = int(m.group(1)), int(m.group(2))
+        if sem_part:
+            sems = [x for x in sem_part.split("+") if x]
+            unknown = [x for x in sems if x not in SEMANTICS]
+            if unknown:
+                raise SystemExit(
+                    f"--cells: unknown semantic(s) {unknown} in {part!r}"
+                    f" (known: {list(SEMANTICS)})")
+        else:
+            sems = list(SEMANTICS)
+        key = (n, b)
+        if key in index:
+            merged = cells[index[key]][2]
+            for sem in sems:
+                if sem not in merged:
+                    merged.append(sem)
+        else:
+            index[key] = len(cells)
+            cells.append((n, b, list(sems)))
+    if not cells:
+        raise SystemExit("--cells: empty cell list")
+    return cells
+
+
+def _schedule(cells, sem_map=None):
+    """Flattened ``[(N, batch, semantic), ...]`` measurement schedule."""
+    sched = []
+    for n, b in cells:
+        for sem in (sem_map.get((n, b), SEMANTICS) if sem_map
+                    else SEMANTICS):
+            sched.append((n, b, sem))
+    return sched
+
+
 # Previous production selector: the frozen table as of the last commit
 # BEFORE issue #8 started (v2 snapshot commit) — read from git, never
 # from the working tree. Issue #8 PR-J A1: release confirmation needs a
@@ -403,7 +458,7 @@ def _winner_block_plans(selector):
 
 def _declared_inventory(cases, table, oracle_mode, sessions, trials,
                         warmup, one_shot_trials, e2e_trials,
-                        profile_hash, has_previous=True):
+                        profile_hash, has_previous=True, sem_map=None):
     """Pre-measurement declared candidate inventory (issue #9 WP0-B).
 
     Exactly the contenders :func:`run_case` will construct for every
@@ -419,7 +474,8 @@ def _declared_inventory(cases, table, oracle_mode, sessions, trials,
 
     cells = []
     for n, b in cases:
-        for semantic in SEMANTICS:
+        for semantic in (sem_map.get((n, b), SEMANTICS) if sem_map
+                         else SEMANTICS):
             label = f"N{n}B{b}:{semantic}"
             incumbent = _entry_plan(DIRECTION, n, b, semantic, None, table)
             if oracle_mode == "winner-block":
@@ -712,15 +768,26 @@ def run_child(payload):
     previous_table = (load_table(str(previous_table_path))
                       if previous_table_path else None)
     raw_path = Path(out_dir) / f"raw_session{session}.jsonl"
+    # WP1: the parent's schedule.json is the frozen exact cell set
+    # (per-shape semantics); --scope stays the fallback for directly
+    # spawned legacy children.
+    sem_map = None
+    sched_path = Path(out_dir) / "schedule.json"
+    if sched_path.is_file():
+        sched = json.loads(sched_path.read_text())
+        cases = [(int(n), int(b)) for n, b, _sems in sched["cells"]]
+        sem_map = {(int(n), int(b)): list(sems)
+                   for n, b, sems in sched["cells"]}
     # per-session seeded interleaving of case order (and semantic
     # order): no session measures the grid in the same sequence
     order = list(cases)
     rnd = random.Random(seed + session * 10007)
     rnd.shuffle(order)
-    sems = list(SEMANTICS)
-    rnd.shuffle(sems)
     with open(raw_path, "w") as raw_f:
         for n, b in order:
+            sems = list(sem_map.get((n, b), SEMANTICS) if sem_map
+                        else SEMANTICS)
+            rnd.shuffle(sems)
             for semantic in sems:
                 rows = []
                 try:
@@ -760,7 +827,7 @@ def _previous_regression_reason(case_label, semantic, entry):
 
 
 def _aggregate(out_dir, cases, trials, warmup, sessions, manifest=None,
-               write_dir=None):
+               write_dir=None, sem_map=None):
     from src.xpu.manifest_contract import (
         REQUIRED_ROW_KEYS, declared_inventory_failures, iter_raw_rows,
         rows_sha256, trial_completeness_failures)
@@ -817,7 +884,8 @@ def _aggregate(out_dir, cases, trials, warmup, sessions, manifest=None,
     cases_out = []
     for n, b in cases:
         case_label = f"N{n}B{b}"
-        for semantic in SEMANTICS:
+        for semantic in (sem_map.get((n, b), SEMANTICS) if sem_map
+                         else SEMANTICS):
             label = f"{case_label}:{semantic}"
             med = {}
             mad = {}
@@ -1123,6 +1191,26 @@ def _load_replay_cases(out_dir, man, args):
     return pairs or _scope_cells(args.scope)
 
 
+def _replay_sem_map(man):
+    """Per-shape semantics from the recorded shape labels (WP1 filtered
+    schedules replay exactly; unknown semantics fail closed)."""
+    sem_map = {}
+    for shape in man.get("shapes") or []:
+        head, _, sem = str(shape).partition(":")
+        m = re.match(r"^N(\d+)B(\d+)$", head)
+        if not m or not sem:
+            continue
+        if sem not in SEMANTICS:
+            raise SystemExit(
+                f"recorded shape {shape!r} names unknown semantic "
+                f"{sem!r}")
+        key = (int(m.group(1)), int(m.group(2)))
+        sem_map.setdefault(key, [])
+        if sem not in sem_map[key]:
+            sem_map[key].append(sem)
+    return sem_map or None
+
+
 def _print_summary(summary, note=None):
     m = summary["metrics"]
     print(f"cases={len(summary['cases'])} "
@@ -1145,6 +1233,11 @@ def main():
     ap.add_argument("--seed", type=int, default=1234)
     ap.add_argument("--scope", choices=sorted(SCOPES) + ["all"],
                     default="main")
+    ap.add_argument("--cells", default=None, metavar="SPEC",
+                    help="exact cell schedule, e.g. "
+                         "'N64B4:c2c-forward+c2r,N512B64:r2c' -- "
+                         "overrides --scope so a frozen experiment "
+                         "domain (issue #9 WP1) is measured exactly")
     ap.add_argument("--out", default=str(
         ROOT / "results" / "p800" / "semantic_matrix"))
     ap.add_argument("--snapshot", action="store_true",
@@ -1175,7 +1268,14 @@ def main():
     global ORACLE_MODE
     ORACLE_MODE = args.oracle_mode
 
-    cases = _scope_cells(args.scope)
+    if args.cells:
+        cell_specs = parse_cells_spec(args.cells)
+        cases = list(dict.fromkeys((n, b) for n, b, _ in cell_specs))
+        sem_map = {(n, b): list(sems) for n, b, sems in cell_specs}
+    else:
+        cases = _scope_cells(args.scope)
+        sem_map = None
+    schedule = _schedule(cases, sem_map)
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1245,6 +1345,9 @@ def main():
                     f"{emb.get(key)!r}")
         man = dict(input_manifest)
         cases = _load_replay_cases(out_dir, man, args)
+        # per-shape semantics come from the recorded shape labels, so
+        # a filtered schedule (WP1 frozen domains) replays identically
+        sem_map = _replay_sem_map(man)
         # self-contained replay dir: evidence bytes copied verbatim
         for src in sorted(out_dir.glob("raw_session*")):
             if src.is_file():
@@ -1263,7 +1366,8 @@ def main():
         }
         summary = _aggregate(out_dir, cases, man["trials"],
                              man["warmup"], man["sessions"],
-                             manifest=man, write_dir=write_dir)
+                             manifest=man, write_dir=write_dir,
+                             sem_map=sem_map)
         # analysis drift: the regenerated cases binding must equal the
         # one recorded with the evidence
         regen = summary["manifest"].get("cases_sha256")
@@ -1328,8 +1432,7 @@ def main():
         "oracle_mode": args.oracle_mode,
         "block_sweep": (list(WINNER_BLOCK_SWEEP)
                         if args.oracle_mode == "winner-block" else None),
-        "shapes": [f"N{n}B{b}:{s}" for n, b in cases
-                   for s in SEMANTICS],
+        "shapes": [f"N{n}B{b}:{s}" for n, b, s in schedule],
         "error_threshold": 1e-4,
         "repro_command": " ".join(sys.argv),
         "gm_bytes_kind": ("analytical estimate only; not used in this "
@@ -1349,9 +1452,17 @@ def main():
         cases, load_table(str(ROOT / "config" / "selector_table.json")),
         args.oracle_mode, args.sessions, args.trials, args.warmup,
         args.one_shot_trials, args.e2e_trials,
-        DeviceProfile.load().hash())
+        DeviceProfile.load().hash(), sem_map=sem_map)
     man["declared_inventory"] = inventory
     man["declared_inventory_sha256"] = declared_inventory_sha256(inventory)
+    # WP1: freeze the exact schedule next to the evidence; session
+    # children read this file instead of re-deriving from --scope
+    sched_cells = [[n, b, list(sem_map.get((n, b), SEMANTICS))
+                    if sem_map else list(SEMANTICS)]
+                   for n, b in cases]
+    (out_dir / "schedule.json").write_text(
+        json.dumps({"cells": sched_cells, "protocol_id": PROTOCOL_ID},
+                   indent=2) + "\n")
     man["oracle_candidates"] = sorted(
         {c for cell in inventory["cells"] for c in cell["candidates"]
          if c.startswith("oracle:")})
@@ -1379,7 +1490,7 @@ def main():
 
     summary = _aggregate(out_dir, cases, args.trials, args.warmup,
                          args.sessions, manifest=man,
-                         write_dir=write_dir)
+                         write_dir=write_dir, sem_map=sem_map)
     # Issue #8 P1-C strict gate: bind the raw evidence hash with the
     # same manifest_contract.result_sha256 the validator recomputes,
     # into both the standalone manifest.json and the summary's
