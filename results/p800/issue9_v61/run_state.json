@@ -1,0 +1,60 @@
+{
+  "config": "config/issue9_p800.json",
+  "config_sha256": "9c652dd45e0ea7f5b7117c30794649c846131d2f198086f39c182b80ed49b150",
+  "device": "2",
+  "identity": {
+    "config_sha256": "9c652dd45e0ea7f5b7117c30794649c846131d2f198086f39c182b80ed49b150",
+    "device": "2",
+    "env_hash": "6b50bd316032c0fe",
+    "profile_hash": "a78b86793c7142a0",
+    "selector_table_sha256": "7c2282ed0c295f2e5179c358f75a7d73051f21cbaaf7caf04c281dcb8efe88fd",
+    "source_commit": "b6f47812894e048866ab41a159874bdadcf20bee"
+  },
+  "output": "/workspace/kunlunxin-fft/results/p800/issue9_v61",
+  "phases": {
+    "preflight": {
+      "cmd": null,
+      "device": "2",
+      "ended": "2026-10-20T18:05:51",
+      "out": null,
+      "returncode": 0,
+      "started": "2026-10-20T18:05:43",
+      "status": "done"
+    },
+    "validate": {
+      "cmd": [
+        "/root/miniconda/envs/python310_torch29_cuda/bin/python3",
+        "/workspace/kunlunxin-fft/scripts/run_semantic_matrix.py",
+        "--cells",
+        "N64B1,N64B4,N64B16,N64B64,N128B1,N128B4,N128B16,N128B64,N256B1,N256B4,N256B16,N256B64,N512B1,N512B4,N512B16,N512B64,N1024B1,N1024B4,N1024B16,N1024B64,N2048B1,N2048B4,N2048B16,N2048B64,N1024B256,N2048B256,N4096B1,N4096B16,N16384B1,N16384B16,N65536B1,N65536B16,N8192B1:c2c-forward,N8192B16:c2c-forward,N8192B256:c2c-forward,N16384B256:c2c-forward,N32768B1:c2c-forward,N32768B16:c2c-forward,N32768B256:c2c-forward,N65536B256:c2c-forward,N2048B14:c2c-forward,N2048B140:c2c-forward,N4096B14:c2c-forward,N4096B140:c2c-forward,N1024B32:c2c-forward,N1024B128:c2c-forward,N4096B32:c2c-forward,N4096B128:c2c-forward",
+        "--sessions",
+        "3",
+        "--trials",
+        "30",
+        "--warmup",
+        "5",
+        "--one-shot-trials",
+        "10",
+        "--e2e-trials",
+        "10",
+        "--seed",
+        "1234",
+        "--oracle-mode",
+        "full",
+        "--out",
+        "/workspace/kunlunxin-fft/results/p800/issue9_v61/validate",
+        "--snapshot",
+        "--release-id",
+        "20261020-issue9-semantic-matrix-v6-1"
+      ],
+      "device": "2",
+      "ended": "2026-10-20T19:39:58",
+      "out": "/workspace/kunlunxin-fft/results/p800/issue9_v61/validate",
+      "result_sha256": "83a03a2de285fc92f162edaade32d38bda931c8cc4dd241c55c546d3e1dd4fa0",
+      "returncode": 0,
+      "started": "2026-10-20T18:15:03",
+      "status": "done"
+    }
+  },
+  "schema": "issue9-launch-state-v2"
+}

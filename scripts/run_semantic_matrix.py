@@ -767,13 +767,20 @@ def run_case(session, n, b, semantic, trials, warmup, seed, table,
             continue
         direction_arg = direction
         try:
-            xs, out = _timed_once(
-                lambda: run_fft(
-                    x, direction_arg, profile_hash=(
-                        prof if name == "selector" else None),
+            # run_fft returns (y, ExecutionReport); the timed path
+            # yields the tensor so timed-path validation sees output
+            prof_arg = prof if name == "selector" else None
+
+            def one_shot(prof_arg=prof_arg):
+                y, _rep = run_fft(
+                    x, direction_arg, profile_hash=prof_arg,
                     table=table, transform_type=transform_type,
                     transform_direction=transform_direction,
-                    norm=norm),
+                    norm=norm)
+                return y
+
+            xs, out = _timed_once(
+                one_shot,
                 max(2, warmup // 2), one_shot_trials,
                 seed=seed * 1000 + 2)
             err, problem = _validate_timed_path(out, ref, err_fn,
