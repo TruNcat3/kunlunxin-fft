@@ -739,30 +739,60 @@ def test_carry_keeps_bound_fallbacks_and_drops_on_env_change(
     assert len(fbs) == 6 and drops == []
 
 
-def test_reconfirm_keeps_guarded_cells_and_drops_the_rest(tmp_path):
+def _reconfirm_ev_dir(tmp_path, prod, monkeypatch, *, cases=None,
+                      man_over=None, summary_over=None):
+    """Validated-shaped reconfirm evidence directory (P1-4).
+
+    Builds summary.json + sibling manifest.json with the full identity
+    set the hardened reconfirm requires; the strict validator is
+    monkeypatched to PASS (a separate test drives it to fail).
+    """
+    import run_semantic_matrix as sm
+    import build_selector_table as bst
+
+    monkeypatch.setattr(
+        bst, "validate_benchmark_output", lambda path, strict=False: [])
+    env, prof, prec = prod["env_hash"], prod["profile_hash"], prod[
+        "precision"]
+    if cases is None:
+        cases = []
+        for i, e in enumerate(prod["previous_fallbacks"]):
+            cell = (f"N{e['N']}B{e['batch']}:{bst._semantic_label(e)}")
+            # five cells still justify >2%; the sixth fell below the guard
+            delta = 0.05 if i < 5 else 0.005
+            cases.append({"label": cell, "selector_vs_previous": delta,
+                          "selector_ms": 1.0,
+                          "previous_deployed_ms": 0.95})
+    man = {"env_hash": env, "profile_hash": prof, "precision": prec,
+           "protocol_id": sm.PROTOCOL_ID,
+           "previous_selector_sha256": "d" * 64,
+           "result_sha256": "e" * 64, "cases_sha256": "f" * 64,
+           "commit": "c" * 40}
+    man.update(man_over or {})
+    ev = tmp_path / "summary.json"
+    ev.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"cases": cases, "manifest": man}
+    payload.update(summary_over or {})
+    ev.write_text(json.dumps(payload))
+    (tmp_path / "manifest.json").write_text(json.dumps(man))
+    return ev
+
+
+def test_reconfirm_keeps_guarded_cells_and_drops_the_rest(tmp_path,
+                                                          monkeypatch):
     import build_selector_table as bst
     from src.xpu.selector import fallback_binding_violations
 
     prod = json.loads(TABLE.read_text())
-    env, prof, prec = prod["env_hash"], prod["profile_hash"], prod["precision"]
-    cases = []
-    for i, e in enumerate(prod["previous_fallbacks"]):
-        cell = (f"N{e['N']}B{e['batch']}:{bst._semantic_label(e)}")
-        # five cells still justify >2%; the sixth fell below the guard
-        delta = 0.05 if i < 5 else 0.005
-        cases.append({"label": cell, "selector_vs_previous": delta,
-                      "selector_ms": 1.0, "previous_deployed_ms": 0.95})
-    man = {"env_hash": env, "profile_hash": prof, "precision": prec,
-           "result_sha256": "e" * 64, "commit": "c" * 40}
-    ev = tmp_path / "summary.json"
-    ev.write_text(json.dumps({"cases": cases, "manifest": man}))
-    (tmp_path / "manifest.json").write_text(json.dumps(man))
+    env, prof = prod["env_hash"], prod["profile_hash"]
+    ev = _reconfirm_ev_dir(tmp_path, prod, monkeypatch)
 
     kept, drops = bst._reconfirm_previous_fallbacks(str(ev), 2.0, env, prof)
     assert len(kept) == 5 and len(drops) == 1
     assert "does not clear" in drops[0]
     # re-bound provenance satisfies the shared contract on output
-    out = {"env_hash": env, "profile_hash": prof, "precision": prec,
+    out = {"env_hash": env, "profile_hash": prof,
+           "precision": prod["precision"],
            "env": prod["env"], "previous_fallbacks": kept}
     assert fallback_binding_violations(out) == []
     # geometry untouched: reconfirm re-binds evidence, never rewrites it
@@ -775,21 +805,104 @@ def test_reconfirm_keeps_guarded_cells_and_drops_the_rest(tmp_path):
         assert e["previous_fallback_provenance"][
             "source_table_sha256"] == orig["previous_fallback_provenance"][
             "source_table_sha256"]
-    # the kept cell records the evidence identity
-    assert kept[0]["previous_fallback_provenance"]["source_result_sha256"] \
-        == "e" * 64
+    # the kept cell records the full evidence identity (P1-4 bindings)
+    prov = kept[0]["previous_fallback_provenance"]
+    assert prov["source_result_sha256"] == "e" * 64
+    assert prov["source_cases_sha256"] == "f" * 64
+    assert prov["source_previous_selector_sha256"] == "d" * 64
+    assert prov["source_protocol_id"] is not None
+    assert prov["source_semantic_key"]
 
 
-def test_reconfirm_refuses_cross_environment_evidence(tmp_path):
+def test_reconfirm_refuses_cross_environment_evidence(tmp_path,
+                                                      monkeypatch):
     import build_selector_table as bst
 
     prod = json.loads(TABLE.read_text())
-    man = {"env_hash": "0" * 16,  # foreign environment
-           "profile_hash": prod["profile_hash"],
-           "precision": prod["precision"],
-           "result_sha256": "e" * 64, "commit": "c" * 40}
-    ev = tmp_path / "summary.json"
-    ev.write_text(json.dumps({"cases": [], "manifest": man}))
+    ev = _reconfirm_ev_dir(tmp_path, prod, monkeypatch,
+                           man_over={"env_hash": "0" * 16})
     with pytest.raises(ConfigError, match="cross-environment"):
         bst._reconfirm_previous_fallbacks(
             str(ev), 2.0, prod["env_hash"], prod["profile_hash"])
+
+
+def test_reconfirm_refuses_non_strict_evidence(tmp_path, monkeypatch):
+    """P1-4: a summary that fails the strict output gate never rebinds
+    (forged result hash / missing raw / tampered census)."""
+    import build_selector_table as bst
+
+    prod = json.loads(TABLE.read_text())
+    monkeypatch.setattr(
+        bst, "validate_benchmark_output",
+        lambda path, strict=False: ["result_sha256 mismatch"])
+    ev = tmp_path / "summary.json"
+    ev.write_text(json.dumps({"cases": [], "manifest": {
+        "env_hash": prod["env_hash"],
+        "profile_hash": prod["profile_hash"]}}))
+    (tmp_path / "manifest.json").write_text("{}")
+    with pytest.raises(ConfigError, match="strict output gate"):
+        bst._reconfirm_previous_fallbacks(
+            str(ev), 2.0, prod["env_hash"], prod["profile_hash"])
+
+
+def test_reconfirm_refuses_bare_summary_and_missing_bindings(tmp_path,
+                                                             monkeypatch):
+    """P1-4 attack vectors: bare summary, missing previous-table
+    identity, precision claim mismatch, missing protocol."""
+    import build_selector_table as bst
+
+    prod = json.loads(TABLE.read_text())
+    env, prof = prod["env_hash"], prod["profile_hash"]
+    # bare summary.json with no sibling manifest
+    bare = tmp_path / "alone" / "summary.json"
+    bare.parent.mkdir()
+    bare.write_text(json.dumps({"cases": []}))
+    with pytest.raises(ConfigError, match="run directory"):
+        bst._reconfirm_previous_fallbacks(str(bare), 2.0, env, prof)
+
+    ev = _reconfirm_ev_dir(tmp_path / "no_prev", prod, monkeypatch,
+                           man_over={"previous_selector_sha256": None})
+    with pytest.raises(ConfigError, match="previous_selector_sha256"):
+        bst._reconfirm_previous_fallbacks(str(ev), 2.0, env, prof)
+
+    ev = _reconfirm_ev_dir(tmp_path / "fp64", prod, monkeypatch,
+                           man_over={"precision": "fp64"})
+    with pytest.raises(ConfigError, match="precision"):
+        bst._reconfirm_previous_fallbacks(str(ev), 2.0, env, prof)
+
+    ev = _reconfirm_ev_dir(tmp_path / "proto", prod, monkeypatch,
+                           man_over={"protocol_id": "other-protocol"})
+    with pytest.raises(ConfigError, match="protocol_id"):
+        bst._reconfirm_previous_fallbacks(str(ev), 2.0, env, prof)
+
+
+def test_reconfirm_refuses_missing_paired_samples(tmp_path, monkeypatch):
+    """P1-4: a carried fallback cell without paired current/previous
+    correctness-clean samples refuses the whole reconfirm."""
+    import build_selector_table as bst
+
+    prod = json.loads(TABLE.read_text())
+    env, prof = prod["env_hash"], prod["profile_hash"]
+    e0 = prod["previous_fallbacks"][0]
+    cell0 = f"N{e0['N']}B{e0['batch']}:{bst._semantic_label(e0)}"
+    cases = []
+    for i, e in enumerate(prod["previous_fallbacks"]):
+        cell = f"N{e['N']}B{e['batch']}:{bst._semantic_label(e)}"
+        c = {"label": cell, "selector_vs_previous": 0.05,
+             "selector_ms": 1.0, "previous_deployed_ms": 0.95}
+        if cell == cell0:
+            c.pop("previous_deployed_ms")
+            c["selector_vs_previous"] = None
+        cases.append(c)
+    ev = _reconfirm_ev_dir(tmp_path, prod, monkeypatch, cases=cases)
+    with pytest.raises(ConfigError, match="paired current/previous"):
+        bst._reconfirm_previous_fallbacks(str(ev), 2.0, env, prof)
+
+    # an absent cell is also an operator error, not a silent drop
+    ev = _reconfirm_ev_dir(tmp_path / "absent", prod, monkeypatch,
+                           cases=[{"label": "N0B0:c2c-forward",
+                                   "selector_vs_previous": 0.05,
+                                   "selector_ms": 1.0,
+                                   "previous_deployed_ms": 0.95}])
+    with pytest.raises(ConfigError, match="carries no case"):
+        bst._reconfirm_previous_fallbacks(str(ev), 2.0, env, prof)

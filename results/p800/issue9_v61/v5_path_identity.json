@@ -1,0 +1,493 @@
+{
+  "changed": [
+    {
+      "N": 64,
+      "batch": 4,
+      "current": {
+        "block": 1024,
+        "executed": "fft_dit_matrix_batch",
+        "fallback": false,
+        "flow_id": "local-fused-tile",
+        "flow_realization": "matrix-resident",
+        "params": {
+          "batch": 4,
+          "rows": 8,
+          "tile": 64,
+          "variant": "spread"
+        },
+        "processing_unit": "dense-dot-fft64"
+      },
+      "label": "N64B4:c2c-forward",
+      "semantic": "c2c-forward",
+      "v5": {
+        "block": 1024,
+        "executed": "fft_dit_batch",
+        "fallback": false,
+        "flow_id": "batch-folded",
+        "flow_realization": "global-stage",
+        "params": {
+          "batch": 4,
+          "variant": "folded"
+        },
+        "processing_unit": "radix2-scalar"
+      }
+    },
+    {
+      "N": 64,
+      "batch": 4,
+      "current": {
+        "block": 1024,
+        "executed": "fft_dif_matrix_batch",
+        "fallback": false,
+        "flow_id": "dedicated-c2r-hermitian-v1",
+        "flow_realization": "matrix-resident",
+        "params": {
+          "batch": 4,
+          "real_compat": "dedicated-half-spectrum",
+          "real_flow": "dedicated-c2r-hermitian-v1",
+          "rows": 8,
+          "tile": 64,
+          "variant": "spread"
+        },
+        "processing_unit": "dense-dot-fft64"
+      },
+      "label": "N64B4:c2r",
+      "semantic": "c2r",
+      "v5": {
+        "block": 1024,
+        "executed": "fft_dit_batch",
+        "fallback": false,
+        "flow_id": "batch-folded",
+        "flow_realization": "global-stage",
+        "params": {
+          "batch": 4,
+          "real_compat": "packed-c2c-compat",
+          "variant": "folded"
+        },
+        "processing_unit": "radix2-scalar"
+      }
+    },
+    {
+      "N": 64,
+      "batch": 16,
+      "current": {
+        "block": 1024,
+        "executed": "fft_dif_matrix_batch",
+        "fallback": false,
+        "flow_id": "local-fused-tile",
+        "flow_realization": "matrix-resident",
+        "params": {
+          "batch": 16,
+          "rows": 8,
+          "tile": 64,
+          "variant": "spread"
+        },
+        "processing_unit": "dense-dot-fft64"
+      },
+      "label": "N64B16:c2c-forward",
+      "semantic": "c2c-forward",
+      "v5": {
+        "block": 1024,
+        "executed": "fft_dit_batch",
+        "fallback": false,
+        "flow_id": "batch-folded",
+        "flow_realization": "global-stage",
+        "params": {
+          "batch": 16,
+          "variant": "folded"
+        },
+        "processing_unit": "radix2-scalar"
+      }
+    },
+    {
+      "N": 64,
+      "batch": 16,
+      "current": {
+        "block": 1024,
+        "executed": "fft_dif_matrix_batch",
+        "fallback": false,
+        "flow_id": "dedicated-c2r-hermitian-v1",
+        "flow_realization": "matrix-resident",
+        "params": {
+          "batch": 16,
+          "real_compat": "dedicated-half-spectrum",
+          "real_flow": "dedicated-c2r-hermitian-v1",
+          "rows": 8,
+          "tile": 64,
+          "variant": "spread"
+        },
+        "processing_unit": "dense-dot-fft64"
+      },
+      "label": "N64B16:c2r",
+      "semantic": "c2r",
+      "v5": {
+        "block": 1024,
+        "executed": "fft_dit_batch",
+        "fallback": false,
+        "flow_id": "batch-folded",
+        "flow_realization": "global-stage",
+        "params": {
+          "batch": 16,
+          "real_compat": "packed-c2c-compat",
+          "variant": "folded"
+        },
+        "processing_unit": "radix2-scalar"
+      }
+    },
+    {
+      "N": 512,
+      "batch": 4,
+      "current": {
+        "block": 1024,
+        "executed": "fft_dif_matrix_batch",
+        "fallback": false,
+        "flow_id": "local-fused-tile",
+        "flow_realization": "matrix-resident",
+        "params": {
+          "batch": 4,
+          "rows": 8,
+          "tile": 64,
+          "variant": "spread"
+        },
+        "processing_unit": "dense-dot-fft64"
+      },
+      "label": "N512B4:c2c-forward",
+      "semantic": "c2c-forward",
+      "v5": {
+        "block": 1024,
+        "executed": "fft_dit_batch",
+        "fallback": true,
+        "flow_id": "baseline-global-stage",
+        "flow_realization": "global-stage",
+        "params": {
+          "batch": 4,
+          "variant": "folded"
+        },
+        "processing_unit": "radix2-scalar"
+      }
+    },
+    {
+      "N": 512,
+      "batch": 4,
+      "current": {
+        "block": 1024,
+        "executed": "fft_dif_matrix_batch",
+        "fallback": false,
+        "flow_id": "dedicated-c2r-hermitian-v1",
+        "flow_realization": "matrix-resident",
+        "params": {
+          "batch": 4,
+          "real_compat": "dedicated-half-spectrum",
+          "real_flow": "dedicated-c2r-hermitian-v1",
+          "rows": 8,
+          "tile": 64,
+          "variant": "spread"
+        },
+        "processing_unit": "dense-dot-fft64"
+      },
+      "label": "N512B4:c2r",
+      "semantic": "c2r",
+      "v5": {
+        "block": 1024,
+        "executed": "fft_dit_batch",
+        "fallback": true,
+        "flow_id": "baseline-global-stage",
+        "flow_realization": "global-stage",
+        "params": {
+          "batch": 4,
+          "real_compat": "packed-c2c-compat",
+          "variant": "folded"
+        },
+        "processing_unit": "radix2-scalar"
+      }
+    },
+    {
+      "N": 512,
+      "batch": 16,
+      "current": {
+        "block": 1024,
+        "executed": "fft_dif_matrix_batch",
+        "fallback": false,
+        "flow_id": "local-fused-tile",
+        "flow_realization": "matrix-resident",
+        "params": {
+          "batch": 16,
+          "rows": 8,
+          "tile": 64,
+          "variant": "spread"
+        },
+        "processing_unit": "dense-dot-fft64"
+      },
+      "label": "N512B16:c2c-forward",
+      "semantic": "c2c-forward",
+      "v5": {
+        "block": 1024,
+        "executed": "fft_dit_batch",
+        "fallback": true,
+        "flow_id": "baseline-global-stage",
+        "flow_realization": "global-stage",
+        "params": {
+          "batch": 16,
+          "variant": "folded"
+        },
+        "processing_unit": "radix2-scalar"
+      }
+    },
+    {
+      "N": 512,
+      "batch": 16,
+      "current": {
+        "block": 1024,
+        "executed": "fft_dif_matrix_batch",
+        "fallback": false,
+        "flow_id": "dedicated-c2r-hermitian-v1",
+        "flow_realization": "matrix-resident",
+        "params": {
+          "batch": 16,
+          "real_compat": "dedicated-half-spectrum",
+          "real_flow": "dedicated-c2r-hermitian-v1",
+          "rows": 8,
+          "tile": 64,
+          "variant": "spread"
+        },
+        "processing_unit": "dense-dot-fft64"
+      },
+      "label": "N512B16:c2r",
+      "semantic": "c2r",
+      "v5": {
+        "block": 1024,
+        "executed": "fft_dit_batch",
+        "fallback": true,
+        "flow_id": "baseline-global-stage",
+        "flow_realization": "global-stage",
+        "params": {
+          "batch": 16,
+          "real_compat": "packed-c2c-compat",
+          "variant": "folded"
+        },
+        "processing_unit": "radix2-scalar"
+      }
+    },
+    {
+      "N": 512,
+      "batch": 64,
+      "current": {
+        "block": 1024,
+        "executed": "fft_dif_matrix_batch",
+        "fallback": false,
+        "flow_id": "dedicated-r2c-pack-v1",
+        "flow_realization": "matrix-resident",
+        "params": {
+          "batch": 64,
+          "real_compat": "dedicated-half-spectrum",
+          "real_flow": "dedicated-r2c-pack-v1",
+          "rows": 8,
+          "tile": 64,
+          "variant": "spread"
+        },
+        "processing_unit": "dense-dot-fft64"
+      },
+      "label": "N512B64:r2c",
+      "semantic": "r2c",
+      "v5": {
+        "block": 1024,
+        "executed": "fft_dit_batch",
+        "fallback": true,
+        "flow_id": "baseline-global-stage",
+        "flow_realization": "global-stage",
+        "params": {
+          "batch": 64,
+          "real_compat": "packed-c2c-compat",
+          "variant": "folded"
+        },
+        "processing_unit": "radix2-scalar"
+      }
+    },
+    {
+      "N": 512,
+      "batch": 64,
+      "current": {
+        "block": 1024,
+        "executed": "fft_dif_matrix_batch",
+        "fallback": false,
+        "flow_id": "dedicated-c2r-hermitian-v1",
+        "flow_realization": "matrix-resident",
+        "params": {
+          "batch": 64,
+          "real_compat": "dedicated-half-spectrum",
+          "real_flow": "dedicated-c2r-hermitian-v1",
+          "rows": 8,
+          "tile": 64,
+          "variant": "spread"
+        },
+        "processing_unit": "dense-dot-fft64"
+      },
+      "label": "N512B64:c2r",
+      "semantic": "c2r",
+      "v5": {
+        "block": 1024,
+        "executed": "fft_dit_batch",
+        "fallback": true,
+        "flow_id": "baseline-global-stage",
+        "flow_realization": "global-stage",
+        "params": {
+          "batch": 64,
+          "real_compat": "packed-c2c-compat",
+          "variant": "folded"
+        },
+        "processing_unit": "radix2-scalar"
+      }
+    }
+  ],
+  "counts": {
+    "changed": 10,
+    "fallback_transitions": 6,
+    "identical": 134
+  },
+  "current_table_sha256": "7c2282ed0c295f2e5179c358f75a7d73051f21cbaaf7caf04c281dcb8efe88fd",
+  "frozen_base_commit": "a94b8907f101792ed4afb08924e05e2c0bc74e94",
+  "identical": [
+    "N1024B128:c2c-forward",
+    "N1024B16:c2c-forward",
+    "N1024B16:c2c-inverse",
+    "N1024B16:c2r",
+    "N1024B16:r2c",
+    "N1024B1:c2c-forward",
+    "N1024B1:c2c-inverse",
+    "N1024B1:c2r",
+    "N1024B1:r2c",
+    "N1024B256:c2c-forward",
+    "N1024B256:c2c-inverse",
+    "N1024B256:c2r",
+    "N1024B256:r2c",
+    "N1024B32:c2c-forward",
+    "N1024B4:c2c-forward",
+    "N1024B4:c2c-inverse",
+    "N1024B4:c2r",
+    "N1024B4:r2c",
+    "N1024B64:c2c-forward",
+    "N1024B64:c2c-inverse",
+    "N1024B64:c2r",
+    "N1024B64:r2c",
+    "N128B16:c2c-forward",
+    "N128B16:c2c-inverse",
+    "N128B16:c2r",
+    "N128B16:r2c",
+    "N128B1:c2c-forward",
+    "N128B1:c2c-inverse",
+    "N128B1:c2r",
+    "N128B1:r2c",
+    "N128B4:c2c-forward",
+    "N128B4:c2c-inverse",
+    "N128B4:c2r",
+    "N128B4:r2c",
+    "N128B64:c2c-forward",
+    "N128B64:c2c-inverse",
+    "N128B64:c2r",
+    "N128B64:r2c",
+    "N16384B16:c2c-forward",
+    "N16384B16:c2c-inverse",
+    "N16384B16:c2r",
+    "N16384B16:r2c",
+    "N16384B1:c2c-forward",
+    "N16384B1:c2c-inverse",
+    "N16384B1:c2r",
+    "N16384B1:r2c",
+    "N16384B256:c2c-forward",
+    "N2048B140:c2c-forward",
+    "N2048B14:c2c-forward",
+    "N2048B16:c2c-forward",
+    "N2048B16:c2c-inverse",
+    "N2048B16:c2r",
+    "N2048B16:r2c",
+    "N2048B1:c2c-forward",
+    "N2048B1:c2c-inverse",
+    "N2048B1:c2r",
+    "N2048B1:r2c",
+    "N2048B256:c2c-forward",
+    "N2048B256:c2c-inverse",
+    "N2048B256:c2r",
+    "N2048B256:r2c",
+    "N2048B4:c2c-forward",
+    "N2048B4:c2c-inverse",
+    "N2048B4:c2r",
+    "N2048B4:r2c",
+    "N2048B64:c2c-forward",
+    "N2048B64:c2c-inverse",
+    "N2048B64:c2r",
+    "N2048B64:r2c",
+    "N256B16:c2c-forward",
+    "N256B16:c2c-inverse",
+    "N256B16:c2r",
+    "N256B16:r2c",
+    "N256B1:c2c-forward",
+    "N256B1:c2c-inverse",
+    "N256B1:c2r",
+    "N256B1:r2c",
+    "N256B4:c2c-forward",
+    "N256B4:c2c-inverse",
+    "N256B4:c2r",
+    "N256B4:r2c",
+    "N256B64:c2c-forward",
+    "N256B64:c2c-inverse",
+    "N256B64:c2r",
+    "N256B64:r2c",
+    "N32768B16:c2c-forward",
+    "N32768B1:c2c-forward",
+    "N32768B256:c2c-forward",
+    "N4096B128:c2c-forward",
+    "N4096B140:c2c-forward",
+    "N4096B14:c2c-forward",
+    "N4096B16:c2c-forward",
+    "N4096B16:c2c-inverse",
+    "N4096B16:c2r",
+    "N4096B16:r2c",
+    "N4096B1:c2c-forward",
+    "N4096B1:c2c-inverse",
+    "N4096B1:c2r",
+    "N4096B1:r2c",
+    "N4096B32:c2c-forward",
+    "N512B16:c2c-inverse",
+    "N512B16:r2c",
+    "N512B1:c2c-forward",
+    "N512B1:c2c-inverse",
+    "N512B1:c2r",
+    "N512B1:r2c",
+    "N512B4:c2c-inverse",
+    "N512B4:r2c",
+    "N512B64:c2c-forward",
+    "N512B64:c2c-inverse",
+    "N64B16:c2c-inverse",
+    "N64B16:r2c",
+    "N64B1:c2c-forward",
+    "N64B1:c2c-inverse",
+    "N64B1:c2r",
+    "N64B1:r2c",
+    "N64B4:c2c-inverse",
+    "N64B4:r2c",
+    "N64B64:c2c-forward",
+    "N64B64:c2c-inverse",
+    "N64B64:c2r",
+    "N64B64:r2c",
+    "N65536B16:c2c-forward",
+    "N65536B16:c2c-inverse",
+    "N65536B16:c2r",
+    "N65536B16:r2c",
+    "N65536B1:c2c-forward",
+    "N65536B1:c2c-inverse",
+    "N65536B1:c2r",
+    "N65536B1:r2c",
+    "N65536B256:c2c-forward",
+    "N8192B16:c2c-forward",
+    "N8192B1:c2c-forward",
+    "N8192B256:c2c-forward"
+  ],
+  "identical_labels_sha256": "9dcdff464a9553f70503be0cbb2c595fcb9dfaffa9315e6788368015af39dc25",
+  "interpretation": "identical cells inherit v5 production behaviour by construction (same resolved runner/geometry under the current contracts); only changed/fallback-transition cells require paired v5-deployed confirmation",
+  "profile_hash": "a78b86793c7142a0",
+  "schema": "issue9-v5-path-identity-v1",
+  "v5_bound_normalization": "WP0-A carry-contract binding keys stamped onto the pre-WP0-A fallback provenance, sourced from the v5 table's own env/profile/precision/device identity; entry geometry, params and selection behaviour untouched",
+  "v5_table_bound_sha256": "7aac2319c1585f1a64da6d4c3625e50b79aa0f727d99df70e65a7f4b86c65f5f",
+  "v5_table_sha256": "2fb882ef60da42bba0d7a79898ec22bb4e08ecebbe3d9b68d803624019068bc6",
+  "validate_semantic_cells": 144
+}

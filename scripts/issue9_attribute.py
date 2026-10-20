@@ -4,8 +4,16 @@
 Reads one run_issue9 ``--phase profile`` run directory (summary.json +
 raw sessions), emits per-anchor tier medians (plan creation, steady,
 one-shot, e2e), the measurable overhead deltas, and a disclosed
-classification of every anchor into exactly one of the six attribution
-classes from issue #9 WP3.
+hypothesis label for every anchor.
+
+Release-correction (issue #9 re-review P1-3): the six WP3 class names
+are now ``hypothesis`` labels with ``confidence`` attached, because the
+dominance rules run over quantities that are themselves disclosed as
+unavailable (phase splits, launches, workspace, waves).  A hypothesis
+with ``confidence=unverified`` is NOT direct causal evidence and must
+not be used as justification for skipping an optimization.  Only the
+selector-coverage deficit (regret vs bounded oracle) is measured
+directly and carries ``confidence=measured``.
 
 Everything that needs hardware counters (visible launches,
 workspace/live set, measured GM bytes, worker waves) is reported as
@@ -24,9 +32,9 @@ if str(ROOT) not in sys.path:
 
 from src.xpu.manifest_contract import iter_raw_rows  # noqa: E402
 
-SCHEMA = "issue9-attribution-v1"
+SCHEMA = "issue9-attribution-v2"
 
-# six attribution classes from issue #9 WP3 (fixed vocabulary)
+# six WP3 class names, now emitted as hypothesis labels (see docstring)
 CLASS_SELECTOR = "selector-coverage dominated"
 CLASS_LAUNCH = "launch-dispatch dominated"
 CLASS_CORE = "core-invoke dominated"
@@ -35,6 +43,16 @@ CLASS_TAIL = "worker-occupancy-tail dominated"
 CLASS_REAL = "real-adapter dominated"
 CLASSES = (CLASS_SELECTOR, CLASS_LAUNCH, CLASS_CORE, CLASS_GM,
            CLASS_TAIL, CLASS_REAL)
+
+# confidence vocabulary: only the regret deficit is a measured fact;
+# every dominance rule over unavailable counters is an unverified
+# hypothesis (issue #9 re-review P1-3).
+CONF_MEASURED = "measured"
+CONF_UNVERIFIED = "unverified"
+EVIDENCE_STATUS = (
+    "rule-derived hypotheses over disclosed-unavailable counters; not "
+    "direct causal evidence; must not be used as justification for "
+    "skipping an optimization")
 
 # disclosed rule thresholds (analytic policy, not measured evidence)
 DISPATCH_FRAC = 0.5    # one-shot delta >= 50% of steady -> launch bound
@@ -99,10 +117,15 @@ def selector_geometry(rows, label, candidate):
 
 
 def classify(rec):
-    """Disclosed priority rules -> exactly one attribution class.
+    """Disclosed priority rules -> exactly one hypothesis label.
 
     ``rec`` keys: regret, steady_ms, dispatch_delta_ms,
     transfer_delta_ms, semantic, flow_id, has_real_flow.
+
+    Every returned label is a hypothesis: the dominance rules compare
+    measured tier medians against thresholds while the quantities that
+    would prove dominance (launches, phase splits, waves) are
+    disclosed as unavailable.
     """
     if rec.get("regret") is not None and rec["regret"] > REGRET_MAX:
         return CLASS_SELECTOR
@@ -195,7 +218,11 @@ def attribute(run_dir):
                 "flow_id", "processing_unit")},
         }
         cls = classify(rec)
-        rec["attribution_class"] = cls
+        rec["hypothesis"] = cls
+        # regret vs the bounded oracle is a directly measured deficit;
+        # every dominance rule over unavailable counters is unverified
+        rec["confidence"] = (
+            CONF_MEASURED if cls == CLASS_SELECTOR else CONF_UNVERIFIED)
         rec["evidence"] = {
             "regret_vs_oracle": rec["regret"],
             "dispatch_delta_ms": dispatch,
@@ -211,7 +238,9 @@ def attribute(run_dir):
         "schema": SCHEMA,
         "run": str(run_dir),
         "protocol_id": summary.get("protocol_id"),
-        "classes_used": sorted({r["attribution_class"] for r in out}),
+        "evidence_status": EVIDENCE_STATUS,
+        "hypotheses_used": sorted({r["hypothesis"] for r in out}),
+        "confidence_levels": sorted({r["confidence"] for r in out}),
         "unavailable_quantities": UNAVAILABLE,
         "rule_thresholds": {
             "regret_max": REGRET_MAX,
@@ -243,10 +272,14 @@ def main(argv=None):
     out.write_text(json.dumps(report, indent=2) + "\n")
 
     print(f"attribution report: {out}")
-    print(f"{'label':20} {'class':28} {'steady':>8} {'dispatch':>9} "
-          f"{'transfer':>9} {'flow':>20}")
+    print("note: hypothesis labels are rule-derived over disclosed-"
+          "unavailable counters (confidence=unverified except measured "
+          "selector regret); not direct causal evidence")
+    print(f"{'label':20} {'hypothesis':28} {'conf':>12} {'steady':>8} "
+          f"{'dispatch':>9} {'transfer':>9} {'flow':>20}")
     for r in report["anchors"]:
-        print(f"{r['label']:20} {r['attribution_class']:28} "
+        print(f"{r['label']:20} {r['hypothesis']:28} "
+              f"{r['confidence']:>12} "
               f"{(r['steady_ms'] or 0):8.4f} "
               f"{(r['dispatch_delta_ms'] or 0):9.4f} "
               f"{(r['transfer_delta_ms'] or 0):9.4f} "

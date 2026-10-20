@@ -129,6 +129,17 @@ def test_dry_run_preflight_and_replay(capsys, tmp_path):
     assert str(tmp_path / "validate") in out
 
 
+def _pf_ok(monkeypatch):
+    """Host-test preflight: env hash pinned, identity checks live."""
+    monkeypatch.setattr(ri, "live_env_hash",
+                        lambda device: CFG["device"]["env_hash"])
+
+
+def _gate_ok(monkeypatch):
+    """Host-test evidence gate: no real matrix dirs are written."""
+    monkeypatch.setattr(ri, "_phase_evidence_gate", lambda out_dir: None)
+
+
 def test_measure_phase_spawns_with_device_and_state(tmp_path, capsys,
                                                     monkeypatch):
     calls = []
@@ -138,9 +149,14 @@ def test_measure_phase_spawns_with_device_and_state(tmp_path, capsys,
         return 0
 
     monkeypatch.setattr(ri, "spawn", fake_spawn)
+    _pf_ok(monkeypatch)
+    _gate_ok(monkeypatch)
     out = str(tmp_path / "out")
-    rc = ri.main(["--phase", "closure", "--device", "5",
+    rc = ri.main(["--phase", "preflight", "--device", "5",
                   "--output", out])
+    assert rc == 0
+    rc = ri.main(["--phase", "closure", "--device", "5",
+                  "--output", out, "--resume"])
     assert rc == 0
     (cmd, env), = calls
     assert "--cells" in cmd
@@ -155,15 +171,102 @@ def test_measure_phase_spawns_with_device_and_state(tmp_path, capsys,
     assert state["phases"]["closure"]["status"] == "done"
     assert state["phases"]["closure"]["returncode"] == 0
     assert state["phases"]["closure"]["device"] == "5"
+    # P1-5: the state is bound to device/env/profile/selector identity
+    ident = state["identity"]
+    assert ident["device"] == "5"
+    assert ident["env_hash"] == CFG["device"]["env_hash"]
+    assert ident["profile_hash"] == CFG["device"]["profile_hash"]
+    assert len(ident["selector_table_sha256"]) == 64
 
     # completed phase is never re-run without --resume (state exists)
     with pytest.raises(SystemExit, match="--resume"):
-        ri.main(["--phase", "closure", "--output", out])
+        ri.main(["--phase", "closure", "--device", "5", "--output", out])
     # --resume skips it without spawning
-    rc = ri.main(["--phase", "closure", "--output", out, "--resume"])
+    rc = ri.main(["--phase", "closure", "--device", "5", "--output",
+                  out, "--resume"])
     assert rc == 0
     assert len(calls) == 1
     assert "skipping closure" in capsys.readouterr().out
+
+
+def test_measure_phase_requires_preflight(tmp_path, monkeypatch):
+    """P1-5: a fresh state cannot jump straight to a measure phase."""
+    monkeypatch.setattr(ri, "spawn",
+                        lambda cmd, env=None: pytest.fail("must not run"))
+    out = str(tmp_path / "out")
+    with pytest.raises(SystemExit, match="preflight"):
+        ri.main(["--phase", "closure", "--output", out])
+
+
+def test_measure_phase_refuses_device_change(tmp_path, monkeypatch):
+    """P1-5: device changes require a fresh --output + preflight."""
+    monkeypatch.setattr(ri, "spawn", lambda cmd, env=None: 0)
+    _pf_ok(monkeypatch)
+    _gate_ok(monkeypatch)
+    out = str(tmp_path / "out")
+    ri.main(["--phase", "preflight", "--device", "2", "--output", out])
+    with pytest.raises(SystemExit, match="device changed"):
+        ri.main(["--phase", "closure", "--device", "5", "--output",
+                 out, "--resume"])
+
+
+def test_measure_phase_refuses_table_change_after_preflight(tmp_path,
+                                                            monkeypatch):
+    """P1-5: selector table changed since the stamped preflight."""
+    monkeypatch.setattr(ri, "spawn", lambda cmd, env=None: 0)
+    _pf_ok(monkeypatch)
+    _gate_ok(monkeypatch)
+    out = str(tmp_path / "out")
+    ri.main(["--phase", "preflight", "--output", out])
+    state_path = tmp_path / "out" / "run_state.json"
+    state = json.loads(state_path.read_text())
+    state["identity"]["selector_table_sha256"] = "0" * 64
+    state_path.write_text(json.dumps(state))
+    with pytest.raises(SystemExit, match="selector table changed"):
+        ri.main(["--phase", "closure", "--output", out, "--resume"])
+
+
+def test_phase_done_requires_strict_evidence_gate(tmp_path, capsys,
+                                                  monkeypatch):
+    """P1-5: child rc=0 with failing strict evidence never marks done."""
+    monkeypatch.setattr(ri, "spawn", lambda cmd, env=None: 0)
+    _pf_ok(monkeypatch)
+    monkeypatch.setattr(
+        ri, "_phase_evidence_gate",
+        lambda out_dir: "strict evidence gate failed: result hash")
+    out = str(tmp_path / "out")
+    ri.main(["--phase", "preflight", "--output", out])
+    rc = ri.main(["--phase", "closure", "--output", out, "--resume"])
+    assert rc == 1
+    assert "evidence gate FAILED" in capsys.readouterr().out
+    state = json.loads((tmp_path / "out" / "run_state.json").read_text())
+    assert state["phases"]["closure"]["status"] == "failed"
+
+
+def test_resume_detects_evidence_tamper(tmp_path, monkeypatch):
+    """P1-5: a done phase whose evidence hash no longer matches refuses
+    the --resume skip."""
+    def fake_spawn(cmd, env=None):
+        out = Path(cmd[cmd.index("--out") + 1])
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "summary.json").write_text("{}")
+        (out / "raw_session0.jsonl").write_text("{}\n")
+        return 0
+
+    monkeypatch.setattr(ri, "spawn", fake_spawn)
+    _pf_ok(monkeypatch)
+    _gate_ok(monkeypatch)
+    out = str(tmp_path / "out")
+    ri.main(["--phase", "preflight", "--output", out])
+    ri.main(["--phase", "closure", "--output", out, "--resume"])
+    state_path = tmp_path / "out" / "run_state.json"
+    state = json.loads(state_path.read_text())
+    assert state["phases"]["closure"].get("result_sha256")
+    # tamper the raw evidence after completion
+    raw = tmp_path / "out" / "closure" / "raw_session0.jsonl"
+    raw.write_text("{}\n{}\n")
+    with pytest.raises(SystemExit, match="evidence changed"):
+        ri.main(["--phase", "closure", "--output", out, "--resume"])
 
 
 def test_failed_phase_records_and_resume_retries(tmp_path, capsys,
@@ -176,8 +279,11 @@ def test_failed_phase_records_and_resume_retries(tmp_path, capsys,
         return rc_values[len(calls) - 1]
 
     monkeypatch.setattr(ri, "spawn", fake_spawn)
+    _pf_ok(monkeypatch)
+    _gate_ok(monkeypatch)
     out = str(tmp_path / "out")
-    rc = ri.main(["--phase", "profile", "--output", out])
+    ri.main(["--phase", "preflight", "--output", out])
+    rc = ri.main(["--phase", "profile", "--output", out, "--resume"])
     assert rc == 7
     state = json.loads((tmp_path / "out" / "run_state.json").read_text())
     assert state["phases"]["profile"]["status"] == "failed"
@@ -192,8 +298,11 @@ def test_failed_phase_records_and_resume_retries(tmp_path, capsys,
 
 def test_resume_refuses_when_config_changed(tmp_path, monkeypatch):
     monkeypatch.setattr(ri, "spawn", lambda cmd, env=None: 0)
+    _pf_ok(monkeypatch)
+    _gate_ok(monkeypatch)
     out = str(tmp_path / "out")
-    ri.main(["--phase", "closure", "--output", out])
+    ri.main(["--phase", "preflight", "--output", out])
+    ri.main(["--phase", "closure", "--output", out, "--resume"])
     state_path = tmp_path / "out" / "run_state.json"
     state = json.loads(state_path.read_text())
     state["config_sha256"] = "0" * 64
@@ -207,7 +316,7 @@ def test_state_schema_fail_closed(tmp_path):
     out.mkdir()
     (out / "run_state.json").write_text(
         json.dumps({"schema": "something-else"}))
-    with pytest.raises(SystemExit, match="issue9-launch-state-v1"):
+    with pytest.raises(SystemExit, match="issue9-launch-state-v2"):
         ri.main(["--phase", "closure", "--output", str(out), "--resume"])
 
 
@@ -422,31 +531,51 @@ def test_wp3_classify_rule_priority():
         ia.CLASS_GM, ia.CLASS_TAIL, ia.CLASS_REAL}
 
 
+def test_wp3_confidence_vocabulary():
+    """P1-3: selector deficit = measured; every dominance hypothesis =
+    unverified; evidence status is disclosed at report level."""
+    import issue9_attribute as ia
+
+    assert ia.CONF_MEASURED == "measured"
+    assert ia.CONF_UNVERIFIED == "unverified"
+    assert "not direct causal evidence" in ia.EVIDENCE_STATUS
+    assert "skipping an optimization" in ia.EVIDENCE_STATUS
+    assert ia.SCHEMA == "issue9-attribution-v2"
+
+
 def test_wp3_attribution_report_for_profile_run():
-    """The recorded profile anchors produce a WP3 report: one class per
-    anchor, measured tier medians, unavailable quantities disclosed."""
+    """The recorded profile anchors produce a WP3 report: one hypothesis
+    per anchor (confidence-labeled), measured tier medians, unavailable
+    quantities disclosed (issue #9 re-review P1-3: dominance rules are
+    hypotheses, not direct causal evidence)."""
     import issue9_attribute as ia
 
     run = ROOT / "results" / "p800" / "issue9" / "profile"
     if not (run / "summary.json").is_file():
         pytest.skip("issue9 profile run not present")
     rep = ia.attribute(run)
-    assert rep["schema"] == "issue9-attribution-v1"
+    assert rep["schema"] == "issue9-attribution-v2"
     assert len(rep["anchors"]) == 9
     assert rep["unavailable_quantities"]
+    assert ia.EVIDENCE_STATUS in rep["evidence_status"]
     by = {a["label"]: a for a in rep["anchors"]}
-    # every anchor classified inside the issue's vocabulary
+    # every anchor carries a hypothesis + explicit confidence
     for a in rep["anchors"]:
-        assert a["attribution_class"] in set(ia.CLASSES) | {
+        assert a["hypothesis"] in set(ia.CLASSES) | {
             "unclassified-need-counters"}
+        assert a["confidence"] in (ia.CONF_MEASURED, ia.CONF_UNVERIFIED)
+        # dominance hypotheses over unavailable counters are unverified;
+        # only the measured regret deficit may claim measured confidence
+        if a["hypothesis"] != ia.CLASS_SELECTOR:
+            assert a["confidence"] == ia.CONF_UNVERIFIED, a["label"]
         assert a["plan_creation_ms"] is not None, a["label"]
         assert a["steady_ms"] is not None, a["label"]
         assert a["geometry"]["executed"], a["label"]
-    # measured classes on this run (same-source, WP2-closed selector)
-    assert by["N64B16:c2c-forward"]["attribution_class"] == ia.CLASS_LAUNCH
-    assert by["N1024B256:c2c-forward"]["attribution_class"] == ia.CLASS_CORE
-    assert by["N512B64:r2c"]["attribution_class"] == ia.CLASS_REAL
-    assert by["N16384B16:c2c-forward"]["attribution_class"] == ia.CLASS_TAIL
+    # measured hypotheses on this run (same-source, WP2-closed selector)
+    assert by["N64B16:c2c-forward"]["hypothesis"] == ia.CLASS_LAUNCH
+    assert by["N1024B256:c2c-forward"]["hypothesis"] == ia.CLASS_CORE
+    assert by["N512B64:r2c"]["hypothesis"] == ia.CLASS_REAL
+    assert by["N16384B16:c2c-forward"]["hypothesis"] == ia.CLASS_TAIL
     # selection is no longer the bottleneck at any anchor (WP2 effect)
     assert all(a["regret"] is None or a["regret"] <= 0.10
                for a in rep["anchors"])

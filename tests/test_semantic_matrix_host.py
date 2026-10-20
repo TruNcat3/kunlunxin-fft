@@ -938,3 +938,104 @@ def test_plan_creation_row_requires_validated_err():
     assert row["correct"] is False
     assert "SelectorCorrectnessNotMeasured" in row["reason"]
     assert row["api_ms"] == 0.15
+
+
+# ------------- issue #9 re-review P1-1: timed-path correctness --------------
+
+def _np_to_t(a):
+    import numpy as np
+    import torch
+    return torch.from_numpy(np.asarray(a))
+
+
+def test_timed_path_valid_independent_err():
+    """A correctness-clean timed output yields the semantic's own err
+    (never inherited from the steady tier)."""
+    import numpy as np
+    import run_semantic_matrix as sm
+
+    ref = (np.random.default_rng(0).standard_normal((2, 64))
+           + 1j * np.random.default_rng(1).standard_normal((2, 64))
+           ).astype(np.complex64)
+    out = _np_to_t(ref.copy())
+    err, problem = sm._validate_timed_path(out, ref, sm._err_vs_np,
+                                           "c2c-forward")
+    assert problem is None
+    assert err == 0.0
+
+
+def test_timed_path_rejects_shape_dtype_and_value():
+    """Fail-closed terminal reasons for shape, dtype and value
+    failures on the timed path itself."""
+    import numpy as np
+    import run_semantic_matrix as sm
+
+    ref = (np.random.default_rng(2).standard_normal((2, 64))
+           + 1j * np.random.default_rng(3).standard_normal((2, 64))
+           ).astype(np.complex64)
+    # wrong shape
+    bad_shape = np.zeros((2, 65), dtype=np.complex64)
+    err, problem = sm._validate_timed_path(_np_to_t(bad_shape), ref,
+                                           sm._err_vs_np, "c2c-forward")
+    assert err is None and problem.startswith("TimedPathShape")
+    # wrong dtype (real output for a c2c semantic)
+    bad_dtype = np.zeros((2, 64), dtype=np.float32)
+    err, problem = sm._validate_timed_path(_np_to_t(bad_dtype), ref,
+                                           sm._err_vs_np, "c2c-forward")
+    assert err is None and problem.startswith("TimedPathDtype")
+    # wrong value (correct shape/dtype, garbage content)
+    bad_value = np.zeros((2, 64), dtype=np.complex64)
+    err, problem = sm._validate_timed_path(_np_to_t(bad_value), ref,
+                                           sm._err_vs_np, "c2c-forward")
+    assert err is not None and err > 1e-4
+    assert problem.startswith("TimedPathWrongValue")
+    # no output at all
+    err, problem = sm._validate_timed_path(None, ref, sm._err_vs_np,
+                                           "c2c-forward")
+    assert err is None and problem.startswith("TimedPathNoOutput")
+    # err_fn raising (e.g. half-spectrum fed to a real err) -> error
+    err, problem = sm._validate_timed_path(_np_to_t(bad_value), ref,
+                                           lambda g, r: (_ for _ in ()).throw(
+                                               ValueError("boom")),
+                                           "c2c-forward")
+    assert err is None and problem.startswith("TimedPathError")
+
+
+def test_timed_path_real_and_r2c_half_spectrum():
+    """c2r validates a float32 real output; r2c validates the complex
+    half-spectrum against the rfft reference (b=1 squeeze legal)."""
+    import numpy as np
+    import run_semantic_matrix as sm
+
+    rng = np.random.default_rng(4)
+    a = rng.standard_normal((1, 32))
+    ref_half = np.fft.rfft(a, axis=-1).astype(np.complex64)  # (1, 17)
+    out_half = _np_to_t(ref_half[0].copy())  # b=1 squeezed (17,)
+    err, problem = sm._validate_timed_path(out_half, ref_half,
+                                           sm._err_vs_np, "r2c")
+    assert problem is None and err == 0.0
+    # c2r: real float32 output vs irfft reference
+    ref_real = np.fft.irfft(ref_half[0], n=32).astype(np.float32)
+    out_real = _np_to_t(ref_real.copy())
+    err, problem = sm._validate_timed_path(out_real, ref_real,
+                                           sm._err_real_vs_np, "c2r")
+    assert problem is None and err == 0.0
+
+
+def test_timed_once_returns_samples_and_last_output(monkeypatch):
+    """_timed_once captures the last output of the timed path so the
+    caller can re-derive correctness on it (P1-1)."""
+    import src.xpu.runner as runner_mod
+    import run_semantic_matrix as sm
+
+    monkeypatch.setattr(runner_mod, "_sync", lambda: None)
+    calls = []
+
+    def fn():
+        calls.append(1)
+        return len(calls)
+
+    xs, last = sm._timed_once(fn, warmup=2, trials=3, seed=1)
+    assert len(xs) == 3 and all(x >= 0 for x in xs)
+    assert last == 5  # 2 warmup + 3 timed calls
+    assert len(calls) == 5

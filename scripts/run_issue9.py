@@ -35,7 +35,7 @@ if str(ROOT) not in sys.path:
 
 CONFIG_PATH = ROOT / "config" / "issue9_p800.json"
 CONFIG_SCHEMA = "issue9-config-v1"
-STATE_SCHEMA = "issue9-launch-state-v1"
+STATE_SCHEMA = "issue9-launch-state-v2"
 PHASES = ("preflight", "closure", "profile", "tune-a", "tune-p",
           "validate", "replay")
 MEASURE_PHASES = ("closure", "profile", "tune-a", "tune-p", "validate")
@@ -432,6 +432,98 @@ def _save_state(path, state):
     path.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n")
 
 
+def _identity_block(cfg, args):
+    """Stamped device/env/profile/source/selector identity (P1-5)."""
+    from src.xpu.config import DeviceProfile
+
+    tbl_path = ROOT / "config" / "selector_table.json"
+    return {
+        "device": str(args.device),
+        "env_hash": live_env_hash(args.device),
+        "profile_hash": DeviceProfile.load().hash(),
+        "selector_table_sha256": hashlib.sha256(
+            tbl_path.read_bytes()).hexdigest(),
+        "config_sha256": config_sha256(),
+        "source_commit": _git("rev-parse", "HEAD"),
+    }
+
+
+def _phase_evidence_gate(out_dir):
+    """Strict evidence validation before a measure phase marks done.
+
+    ``run_semantic_matrix`` only enforces the strict output contract on
+    the snapshot branch; every launcher-measured phase now runs the
+    same gate over its own out_dir (P1-5).  Returns ``None`` on pass
+    or a human-readable failure string.
+    """
+    from src.xpu.manifest_contract import validate_benchmark_output
+
+    out = Path(out_dir)
+    if not (out / "summary.json").is_file():
+        return f"{out}: summary.json missing after child rc=0"
+    problems = validate_benchmark_output(str(out), strict=True)
+    if problems:
+        return ("strict evidence gate failed: "
+                + "; ".join(problems[:8])
+                + (" ..." if len(problems) > 8 else ""))
+    return None
+
+
+def _phase_result_sha(out_dir):
+    """Result hash of a completed measure phase (None when absent)."""
+    from src.xpu.manifest_contract import result_sha256
+
+    out = Path(out_dir)
+    if not (out / "summary.json").is_file():
+        return None
+    return result_sha256(out)
+
+
+def _require_preflight_identity(state, cfg, args, state_path):
+    """Measure phases need a passing same-config preflight (P1-5).
+
+    * preflight must be done under the same config SHA;
+    * the state's device must match the requested device (a device
+      change requires a fresh --output and a new preflight, never a
+      warning);
+    * the stamped identity (device/env/profile/source/selector table)
+      must still match the live working tree.
+    """
+    entry = state["phases"].get("preflight", {})
+    if entry.get("status") != "done":
+        raise SystemExit(
+            f"{args.phase} requires a passing preflight under the same "
+            "config; run --phase preflight first (fail closed)")
+    if state.get("device") != str(args.device):
+        raise SystemExit(
+            f"device changed (state {state.get('device')}, arg "
+            f"{args.device}); re-run preflight with a fresh --output "
+            "instead of resuming across devices")
+    ident = state.get("identity")
+    if not ident:
+        # legacy state without a stamped identity: re-verify the
+        # preflight checks now, then stamp the live identity
+        if preflight(cfg, args) != 0:
+            raise SystemExit(
+                "identity stamp: preflight FAILED; refusing to measure")
+        state["identity"] = _identity_block(cfg, args)
+        _save_state(state_path, state)
+        return
+    if ident.get("device") != str(args.device):
+        raise SystemExit(
+            f"state identity device {ident.get('device')!r} != "
+            f"arg {args.device!r}; re-run preflight with a fresh "
+            "--output")
+    live_tbl = hashlib.sha256(
+        (ROOT / "config" / "selector_table.json").read_bytes()).hexdigest()
+    if ident.get("selector_table_sha256") != live_tbl:
+        raise SystemExit(
+            "selector table changed since preflight "
+            f"(stamped {ident.get('selector_table_sha256', '')[:12]}, "
+            f"live {live_tbl[:12]}); re-run preflight with a fresh "
+            "--output")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(
         description=__doc__,
@@ -489,9 +581,26 @@ def main(argv=None):
 
     done = state["phases"].get(args.phase, {})
     if done.get("status") == "done":
+        # P1-5: a recorded-done measure phase must still hash to the
+        # evidence it stamped; tampered output refuses the skip
+        if args.phase in MEASURE_PHASES and done.get("out"):
+            stored = done.get("result_sha256")
+            live = _phase_result_sha(done["out"])
+            if stored and live and stored != live:
+                raise SystemExit(
+                    f"{args.phase}: evidence changed since completion "
+                    f"(result_sha256 {live[:12]} != recorded "
+                    f"{stored[:12]}); refusing to skip")
+            if stored is None and live:
+                done["result_sha256"] = live  # migrate legacy entries
+                state["phases"][args.phase] = done
+                _save_state(state_path, state)
         print(f"skipping {args.phase}: already completed "
               f"(returncode {done.get('returncode')})")
         return 0
+
+    if args.phase in MEASURE_PHASES:
+        _require_preflight_identity(state, cfg, args, state_path)
 
     started = time.strftime("%Y-%m-%dT%H:%M:%S")
     rc = 1
@@ -499,6 +608,8 @@ def main(argv=None):
     cmd = None
     if args.phase == "preflight":
         rc = preflight(cfg, args)
+        if rc == 0:
+            state["identity"] = _identity_block(cfg, args)
     elif args.phase == "replay":
         src = Path(args.replay_src) if args.replay_src else out_root / "validate"
         if not src.is_dir():
@@ -530,8 +641,16 @@ def main(argv=None):
         print(f"measure: CUDA_VISIBLE_DEVICES={args.device} "
               f"{' '.join(cmd)}")
         rc = spawn(cmd, child_env(args.device))
+        if rc == 0:
+            # P1-5: child rc=0 is not enough -- the measured evidence
+            # must pass the strict output contract before the phase
+            # may mark done
+            gate = _phase_evidence_gate(out_dir)
+            if gate:
+                print(f"phase evidence gate FAILED: {gate}")
+                rc = 1
 
-    state["phases"][args.phase] = {
+    entry = {
         "status": "done" if rc == 0 else "failed",
         "returncode": rc,
         "started": started,
@@ -540,6 +659,11 @@ def main(argv=None):
         "cmd": cmd,
         "out": str(out_dir) if out_dir else None,
     }
+    if (rc == 0 and args.phase in MEASURE_PHASES and out_dir
+            and (Path(out_dir) / "summary.json").is_file()):
+        # P1-5: bind the evidence hash so --resume can detect tampering
+        entry["result_sha256"] = _phase_result_sha(out_dir)
+    state["phases"][args.phase] = entry
     _save_state(state_path, state)
     if rc == 0:
         print(f"{args.phase}: OK")

@@ -543,18 +543,61 @@ def _timed_steady(fns, warmup, trials, seed):
 
 
 def _timed_once(fn, warmup, trials, seed):
+    """Time ``fn`` and return ``(samples, last_output)``.
+
+    The last output is captured so the caller can re-derive
+    correctness ON the timed path itself (issue #9 re-review P1-1:
+    one-shot/E2E rows may never inherit steady-tier correctness).
+    """
     from src.xpu.runner import _sync
     for _ in range(warmup):
         fn()
     _sync()
     rng = random.Random(seed)
     xs = []
+    last = None
     for _ in range(trials):
         t0 = time.perf_counter()
-        fn()
+        last = fn()
         _sync()
         xs.append((time.perf_counter() - t0) * 1e3)
-    return xs
+    return xs, last
+
+
+def _validate_timed_path(out, ref, err_fn, semantic):
+    """Independently validate one timed-path output for a semantic.
+
+    Returns ``(err, problem)``: ``err`` is the semantic's own error
+    against the reference (never inherited from the steady tier);
+    ``problem`` is a human-readable terminal reason when the timed
+    path fails its own shape/dtype/value contract.  Exactly one of the
+    two is None.
+    """
+    try:
+        if out is None:
+            return None, "TimedPathNoOutput: timed path returned no output"
+        shape = tuple(out.shape)
+        ref_shape = tuple(ref.shape)
+        # batched cells record ref with an explicit batch dim; b=1
+        # inputs are squeezed by _make_input, so both shapes are legal
+        legal = {ref_shape}
+        if len(ref_shape) == 2 and ref_shape[0] == 1:
+            legal.add(ref_shape[1:])
+        if shape not in legal:
+            return None, (f"TimedPathShape: output shape {shape} not in "
+                          f"legal shapes {sorted(legal)}")
+        dtype = str(getattr(out, "dtype", ""))
+        want = "float32" if semantic == "c2r" else "complex64"
+        if want not in dtype:
+            return None, (f"TimedPathDtype: output dtype {dtype!r} != "
+                          f"{want} ({semantic})")
+        err = err_fn(out, ref)
+        if err > 1e-4:
+            return err, (f"TimedPathWrongValue: err={err:.3e} > 1e-4 "
+                         "(independent timed-path check)")
+        return err, None
+    except Exception as e:  # noqa: BLE001
+        return None, f"TimedPathError: {type(e).__name__}: {e}"
 
 
 def _row(session, case_label, semantic, contender, tier, trial, **kw):
@@ -715,13 +758,16 @@ def run_case(session, n, b, semantic, trials, warmup, seed, table,
                         if plan else "vendor",
                         "fallback": plan.fallback if plan else False}))
 
-    # one-shot + e2e for incumbent/selector only (overhead tiers)
+    # one-shot + e2e for incumbent/selector only (overhead tiers).
+    # P1-1: each timed path re-derives correctness on its own output
+    # (semantic err_fn + shape/dtype contract); failures become
+    # explicit terminal rows, never inherited steady correctness.
     for name in ("incumbent", "selector"):
         if name not in contenders:
             continue
         direction_arg = direction
         try:
-            xs = _timed_once(
+            xs, out = _timed_once(
                 lambda: run_fft(
                     x, direction_arg, profile_hash=(
                         prof if name == "selector" else None),
@@ -730,12 +776,26 @@ def run_case(session, n, b, semantic, trials, warmup, seed, table,
                     norm=norm),
                 max(2, warmup // 2), one_shot_trials,
                 seed=seed * 1000 + 2)
-            for i, ms in enumerate(xs):
+            err, problem = _validate_timed_path(out, ref, err_fn,
+                                                semantic)
+            if problem:
                 raw.append(_row(
                     session, case_label, semantic, f"{name}:one_shot",
-                    TIER_ONE_SHOT, i, api_ms=ms, correct=True,
-                    err=errs.get(name),
-                    notes="includes per-call plan/dispatch overhead"))
+                    TIER_ONE_SHOT, 0, api_ms=None, correct=False,
+                    err=err,
+                    status=("wrong-value" if problem.startswith(
+                        "TimedPathWrongValue") else "error"),
+                    reason=problem + "; steady correctness not "
+                    "inherited"))
+            else:
+                for i, ms in enumerate(xs):
+                    raw.append(_row(
+                        session, case_label, semantic,
+                        f"{name}:one_shot", TIER_ONE_SHOT, i, api_ms=ms,
+                        correct=True, err=err,
+                        notes="includes per-call plan/dispatch "
+                        "overhead; correctness independently "
+                        "re-derived on the timed path"))
         except Exception as e:  # noqa: BLE001
             raw.append(_row(
                 session, case_label, semantic, f"{name}:one_shot",
@@ -750,14 +810,27 @@ def run_case(session, n, b, semantic, trials, warmup, seed, table,
                 y = execute_fft_plan(plan, xd)
                 return y.cpu()
 
-            xs = _timed_once(e2e, max(2, warmup // 2), e2e_trials,
-                             seed=seed * 1000 + 3)
-            for i, ms in enumerate(xs):
+            xs, out = _timed_once(e2e, max(2, warmup // 2), e2e_trials,
+                                  seed=seed * 1000 + 3)
+            err, problem = _validate_timed_path(out, ref, err_fn,
+                                                semantic)
+            if problem:
                 raw.append(_row(
                     session, case_label, semantic, f"{name}:e2e",
-                    TIER_E2E, i, api_ms=ms, correct=True,
-                    err=errs.get(name),
-                    notes="H2D copy + execute + D2H copy"))
+                    TIER_E2E, 0, api_ms=None, correct=False,
+                    err=err,
+                    status=("wrong-value" if problem.startswith(
+                        "TimedPathWrongValue") else "error"),
+                    reason=problem + "; steady correctness not "
+                    "inherited"))
+            else:
+                for i, ms in enumerate(xs):
+                    raw.append(_row(
+                        session, case_label, semantic, f"{name}:e2e",
+                        TIER_E2E, i, api_ms=ms, correct=True, err=err,
+                        notes="H2D copy + execute + D2H copy; "
+                        "correctness independently re-derived on the "
+                        "timed path (post-D2H output)"))
         except Exception as e:  # noqa: BLE001
             raw.append(_row(
                 session, case_label, semantic, f"{name}:e2e",
@@ -1286,6 +1359,11 @@ def main():
                     help="path to the frozen previous-deployed selector "
                          "table for the A1 same-session comparison "
                          "(child sessions get it from the parent)")
+    ap.add_argument("--previous-table-src", default=None,
+                    help="materialize the previous-deployed table from "
+                         "this FILE instead of the fixed A1 commit "
+                         "(issue #9 P1-2 v5-deployed pairing); the file "
+                         "sha256 is bound into the manifest")
     args = ap.parse_args()
 
     global ORACLE_MODE
@@ -1420,11 +1498,30 @@ def main():
     # issue commit (never the working tree), bind its hash into the
     # manifest, and hand the file to every session child. Raw bytes —
     # no strip, so the sha256 matches the committed blob exactly.
-    previous_bytes = subprocess.check_output(
-        ["git", "show",
-         f"{PREVIOUS_SELECTOR_COMMIT}:config/selector_table.json"],
-        cwd=ROOT)
+    # P1-2: --previous-table-src materializes from an explicit FILE
+    # instead (v5-deployed pairing runs); its sha256 is bound the same
+    # way and the source kind is recorded in previous_selector_source.
+    if args.previous_table_src:
+        src_path = Path(args.previous_table_src)
+        if not src_path.is_file():
+            raise SystemExit(
+                f"--previous-table-src {src_path} does not exist")
+        previous_bytes = src_path.read_bytes()
+        previous_source = {
+            "kind": "file",
+            "path": str(src_path),
+        }
+    else:
+        previous_bytes = subprocess.check_output(
+            ["git", "show",
+             f"{PREVIOUS_SELECTOR_COMMIT}:config/selector_table.json"],
+            cwd=ROOT)
+        previous_source = {
+            "kind": "commit",
+            "commit": PREVIOUS_SELECTOR_COMMIT,
+        }
     previous_sha256 = hashlib.sha256(previous_bytes).hexdigest()
+    previous_source["sha256"] = previous_sha256
     previous_table_path = out_dir / PREVIOUS_TABLE_FILE
     previous_table_path.write_bytes(previous_bytes)
 
@@ -1451,6 +1548,7 @@ def main():
         "candidates": ["incumbent", "selector", "oracle:*", "vendor",
                        PREVIOUS_CANDIDATE],
         "previous_selector_source_commit": PREVIOUS_SELECTOR_COMMIT,
+        "previous_selector_source": previous_source,
         "previous_selector_sha256": previous_sha256,
         "oracle_mode": args.oracle_mode,
         "block_sweep": (list(WINNER_BLOCK_SWEEP)
@@ -1471,8 +1569,13 @@ def main():
     # oracle names BEFORE any session runs (stamped + hashed here);
     # aggregation and the strict gate validate raw evidence against
     # these declarations instead of letting observation redefine them.
+    cur_table = load_table(str(ROOT / "config" / "selector_table.json"))
+    # P1-4: bind the measured precision into the evidence identity so
+    # reconfirm/repair paths can check it against the summary instead
+    # of trusting a self-reported field.
+    man["precision"] = cur_table["precision"]
     inventory = _declared_inventory(
-        cases, load_table(str(ROOT / "config" / "selector_table.json")),
+        cases, cur_table,
         args.oracle_mode, args.sessions, args.trials, args.warmup,
         args.one_shot_trials, args.e2e_trials,
         DeviceProfile.load().hash(), sem_map=sem_map)

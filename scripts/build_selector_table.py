@@ -958,23 +958,49 @@ def _semantic_label(e: dict) -> str:
 
 def _reconfirm_previous_fallbacks(summary_path: str, guard: float,
                                   table_env: str, table_profile: str) -> tuple:
-    """WP0-A explicit reconfirm: re-justify the production fallbacks
-    against a paired-confirm summary measured under the CURRENT
-    environment, or drop the cells that no longer clear the guard.
+    """WP0-A explicit reconfirm, hardened (issue #9 re-review P1-4).
 
-    Fails closed with ConfigError when the evidence is from another
-    env/profile (rebinding old evidence is exactly what this forbids).
-    Returns ``(fallbacks, drop_reasons)``.
+    Re-justify the production fallbacks against a paired-confirm
+    summary measured under the CURRENT environment, or drop the cells
+    that no longer clear the guard.
+
+    Fail-closed gates before any cell is touched:
+    * the evidence must be a run directory (summary.json +
+      manifest.json) that passes ``validate_benchmark_output(strict)``
+      -- raw sessions, result/cases hashes, and the declared
+      candidate-registry census are recomputed, so a forged summary or
+      result hash never rebinds a fallback;
+    * env/profile/protocol/precision must come from the validated
+      manifest and agree with the output table;
+    * the evidence must bind the previous-deployed table identity
+      (``previous_selector_sha256``) it paired against;
+    * every carried fallback cell needs paired, correctness-clean
+      current/previous samples (``selector_ms`` +
+      ``previous_deployed_ms`` + ``selector_vs_previous``); cells
+      without a paired sample refuse the reconfirm instead of being
+      silently dropped.
+    Returns ``(fallbacks, drop_reasons)``.  Drops are only for guard
+    failures on well-formed paired evidence.
     """
     from src.xpu.selector import TABLE_PATH
 
     sfile = Path(summary_path)
-    if sfile.name == "summary.json" and (sfile.parent / "manifest.json").is_file():
-        man = json.loads((sfile.parent / "manifest.json").read_text())
-    else:
-        man = {}
+    if sfile.name != "summary.json" or not (
+            sfile.parent / "manifest.json").is_file():
+        raise ConfigError(
+            f"reconfirm evidence {summary_path} must be a run "
+            "directory with summary.json + manifest.json -- refusing "
+            "to rebind fallbacks from a bare summary")
+    run_dir = str(sfile.parent)
+    problems = validate_benchmark_output(run_dir, strict=True)
+    if problems:
+        raise ConfigError(
+            f"reconfirm evidence {run_dir} failed the strict output "
+            "gate: " + "; ".join(problems[:6])
+            + (" ..." if len(problems) > 6 else "")
+            + "; refusing to rebind fallbacks")
     summary = json.loads(sfile.read_text())
-    ev_man = summary.get("manifest") or man
+    ev_man = summary.get("manifest") or {}
     if not ev_man:
         raise ConfigError(
             f"reconfirm evidence {summary_path} carries no manifest -- "
@@ -994,18 +1020,60 @@ def _reconfirm_previous_fallbacks(summary_path: str, guard: float,
             "as the fallback geometry source")
     with open(TABLE_PATH) as f:
         prod = json.load(f)
+    # protocol must be the matrix protocol this builder trusts
+    if ev_man.get("protocol_id") != sm.PROTOCOL_ID:
+        raise ConfigError(
+            f"reconfirm evidence protocol_id "
+            f"{ev_man.get('protocol_id')!r} != trusted matrix protocol "
+            f"{sm.PROTOCOL_ID!r}")
+    # precision must come from the validated evidence and agree with
+    # the table we are about to write (no self-reported precision)
+    prod_precision = prod.get("precision", "fp32")
+    if ev_man.get("precision") != prod_precision:
+        raise ConfigError(
+            f"reconfirm evidence precision "
+            f"{ev_man.get('precision')!r} != output table precision "
+            f"{prod_precision!r} (precision must come from validated "
+            "evidence, never from a self-reported summary claim)")
+    # the paired previous-deployed table identity must be bound
+    prev_sha = ev_man.get("previous_selector_sha256")
+    if not prev_sha:
+        raise ConfigError(
+            "reconfirm evidence carries no previous_selector_sha256 -- "
+            "refusing to rebind fallbacks without the compared table "
+            "identity")
+    result_sha = ev_man.get("result_sha256")
+    cases_sha = ev_man.get("cases_sha256")
+    if not result_sha or not cases_sha:
+        raise ConfigError(
+            "reconfirm evidence is missing result/cases hash bindings "
+            "(strict gate should have stamped them); refusing")
+    commit = ev_man.get("commit")
     cases = {c["label"]: c for c in summary.get("cases", [])}
     ident = {k: (prod.get("env") or {}).get(k) for k in
              ("device_model", "multiprocessor_count", "max_shared_mem")}
-    result_sha = ev_man.get("result_sha256")
-    commit = ev_man.get("commit")
     kept, drops = [], []
     for e in prod.get("previous_fallbacks") or []:
         cell = f"N{e['N']}B{e['batch']}:{_semantic_label(e)}"
         case = cases.get(cell)
-        if case is None or case.get("selector_vs_previous") is None:
-            drops.append(f"{cell}: absent from reconfirm evidence")
-            continue
+        # P1-4: a carried fallback without paired, correctness-clean
+        # current/previous samples in the evidence refuses the whole
+        # reconfirm (an absent cell is an operator error, not a drop)
+        if case is None:
+            raise ConfigError(
+                f"reconfirm evidence {run_dir} carries no case for "
+                f"{cell} -- every previous_fallbacks cell needs a "
+                "paired confirmation sample (add the cell to the "
+                "reconfirm run)")
+        if (case.get("selector_vs_previous") is None
+                or not isinstance(case.get("selector_ms"), (int, float))
+                or not isinstance(case.get("previous_deployed_ms"),
+                                  (int, float))):
+            raise ConfigError(
+                f"reconfirm evidence {run_dir} case {cell} lacks "
+                "paired current/previous samples (selector_ms / "
+                "previous_deployed_ms / selector_vs_previous) -- "
+                "correctness-clean paired evidence is required")
         delta = case["selector_vs_previous"]
         if delta <= guard / 100.0:
             drops.append(
@@ -1018,9 +1086,13 @@ def _reconfirm_previous_fallbacks(summary_path: str, guard: float,
             "carry_contract": "fallback-env-binding-v1",
             "source_env_hash": table_env,
             "source_profile_hash": table_profile,
-            "source_precision": prod.get("precision", "fp32"),
+            "source_precision": prod_precision,
             "source_device": ident,
             "source_result_sha256": result_sha,
+            "source_cases_sha256": cases_sha,
+            "source_protocol_id": ev_man.get("protocol_id"),
+            "source_previous_selector_sha256": prev_sha,
+            "source_semantic_key": _semantic_label(e),
             "paired_confirm": str(sfile),
             "paired_confirm_commit": commit,
             "selector_vs_previous": delta,
