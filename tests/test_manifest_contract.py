@@ -1201,3 +1201,23 @@ def test_strict_gate_surfaces_declared_inventory_census(tmp_path):
         "".join(json.dumps(r) + "\n" for r in kept))
     fails = validate_benchmark_output(tmp_path, strict=True)
     assert any("oracle:m0_dit" in f and "absent" in f for f in fails), fails
+
+
+def test_err_none_on_ok_row_flagged_but_error_row_allowed(tmp_path):
+    """Strict: ok rows require a validated err; status!='ok' rows may
+    omit the timing fields (issue #9 WP5 plan_creation regression)."""
+    man = _valid_manifest()
+
+    bad = _valid_row()
+    bad["err"] = None
+    summary = _write_bench_dir(tmp_path, man, [bad])
+    assert any("missing row field 'err'" in f
+               for f in validate_benchmark_output(summary))
+
+    err_row = _valid_row()
+    del err_row["err"]
+    err_row["status"] = "error"
+    err_row["api_ms"] = None
+    summary = _write_bench_dir(tmp_path, man, [err_row])
+    assert not [f for f in validate_benchmark_output(summary)
+                if "missing row field" in f]

@@ -587,6 +587,31 @@ def _row(session, case_label, semantic, contender, tier, trial, **kw):
     return row
 
 
+def _plan_creation_row(session, case_label, semantic, xs, errs):
+    """plan_creation tier emission (selector only).
+
+    The strict contract requires every ``status='ok'`` row to carry a
+    validated ``err``. The plan-creation probe itself never computes
+    correctness, so it borrows the selector's setup-probe error; when
+    the selector never passed that probe (setup raised, contender
+    deleted), an ``ok`` row would be unvalidated -- record the row as
+    an explicit error row instead (issue #9 WP5 strict gate).
+    """
+    err = errs.get("selector")
+    notes = f"samples={xs}"
+    if err is None:
+        return _row(
+            session, case_label, semantic, "selector:plan_creation",
+            TIER_PLAN_CREATION, 0, api_ms=_median(xs) if xs else None,
+            correct=False, err=None, status="error", notes=notes,
+            reason="SelectorCorrectnessNotMeasured: selector setup "
+                   "did not validate for this cell")
+    return _row(
+        session, case_label, semantic, "selector:plan_creation",
+        TIER_PLAN_CREATION, 0, api_ms=_median(xs), correct=True,
+        err=err, notes=notes)
+
+
 def run_case(session, n, b, semantic, trials, warmup, seed, table,
              previous_table, raw, e2e_trials, one_shot_trials):
     import torch
@@ -747,10 +772,8 @@ def run_case(session, n, b, semantic, trials, warmup, seed, table,
             t0 = _t.perf_counter()
             _entry_plan(direction, n, b, semantic, prof, table)
             xs.append((_t.perf_counter() - t0) * 1e3)
-        raw.append(_row(
-            session, case_label, semantic, "selector:plan_creation",
-            TIER_PLAN_CREATION, 0, api_ms=_median(xs), correct=True,
-            err=errs.get("selector"), notes=f"samples={xs}"))
+        raw.append(_plan_creation_row(
+            session, case_label, semantic, xs, errs))
     except Exception as e:  # noqa: BLE001
         raw.append(_row(
             session, case_label, semantic, "selector:plan_creation",

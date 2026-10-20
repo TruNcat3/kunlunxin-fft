@@ -916,3 +916,25 @@ def test_filtered_schedule_snapshot_and_replay_roundtrip(tmp_path,
     assert [c["label"] for c in regen["cases"]] == ["N1024B256:r2c"]
     assert regen["metrics"] == orig["metrics"]
     assert validate_benchmark_output(replay, strict=True) == []
+
+
+def test_plan_creation_row_requires_validated_err():
+    """Issue #9 WP5: an ok plan_creation row must carry the selector's
+    validated setup error; when the selector never passed the probe,
+    the row is an explicit error row (strict skips err for non-ok)."""
+    import run_semantic_matrix as sm
+
+    row = sm._plan_creation_row(0, "N64B4", "c2c-forward",
+                                [0.12, 0.10, 0.11], {"selector": 3.1e-7})
+    assert row["status"] == "ok"
+    assert row["err"] == 3.1e-7
+    assert row["correct"] is True
+    assert row["api_ms"] == 0.11
+
+    row = sm._plan_creation_row(0, "N2048B14", "c2c-forward",
+                                [0.17, 0.13, 0.15], {})
+    assert row["status"] == "error"
+    assert row["err"] is None
+    assert row["correct"] is False
+    assert "SelectorCorrectnessNotMeasured" in row["reason"]
+    assert row["api_ms"] == 0.15
