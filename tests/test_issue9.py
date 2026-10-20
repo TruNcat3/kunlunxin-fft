@@ -311,3 +311,75 @@ def test_v5_anchor_model_rules():
     # no anchor data at all -> unavailable, never a crash
     ms, kind = ri._ms_for_call({}, 64, 4, "c2c-forward")
     assert ms is None and kind == "unavailable"
+
+
+# ------------- issue #9 WP2: selection closure ----------------------------
+
+_TRIPLE = {"c2c-forward": ("c2c", "forward", "backward"),
+           "c2r": ("c2r", "inverse", "backward"),
+           "r2c": ("r2c", "forward", "backward")}
+
+
+def test_wp2_closure_domain_exact_entries_select_and_deploy():
+    """WP2: every frozen closure cell is served by an exact semantic
+    entry whose select() -> plan_fft() deployment matches the entry's
+    recorded runner (declared -> entry -> plan -> deployed chain)."""
+    from src.xpu.entry import plan_fft
+    from src.xpu.selector import load_table, select
+    import src.xpu.runner as runner_mod
+
+    table = load_table(str(ROOT / "config" / "selector_table.json"))
+    cells = sm.parse_cells_spec(ri.phase_cells_spec(CFG, "closure"))
+    assert sum(len(s) for _, _, s in cells) == 10
+    checked = 0
+    for n, b, sems in cells:
+        for sem in sems:
+            tt, tdir, norm = _TRIPLE[sem]
+            sel = select(direction="dit", n=n, batch=b,
+                         precision=table["precision"],
+                         profile_hash=table["profile_hash"], table=table,
+                         env_hash=table["env_hash"], transform_type=tt,
+                         transform_direction=tdir, normalization=norm)
+            assert sel.entry_tier == "semantic", (n, b, sem, sel.entry_tier)
+            assert sel.executed, (n, b, sem)
+            plan = plan_fft(direction="dit", n=n, batch=b,
+                            precision=table["precision"],
+                            profile_hash=table["profile_hash"], table=table,
+                            env_hash=table["env_hash"], transform_type=tt,
+                            transform_direction=tdir, norm=norm)
+            assert plan.executed == sel.executed
+            assert plan.block == sel.block
+            assert hasattr(runner_mod, plan.executed), plan.executed
+            assert plan.fallback is False
+            checked += 1
+    assert checked == 10
+
+
+def test_wp2_closure_entries_carry_guard_cleared_evidence():
+    """Each promoted closure entry's evidence reason names its oracle
+    winner and a >=2% guard win over the incumbent (issue #9 WP2)."""
+    from src.xpu.selector import load_table, semantic_key_of
+
+    table = load_table(str(ROOT / "config" / "selector_table.json"))
+    cells = sm.parse_cells_spec(ri.phase_cells_spec(CFG, "closure"))
+    guard = table["guard_pct"]
+    assert guard == 2.0
+    found = 0
+    for n, b, sems in cells:
+        for sem in sems:
+            tt, tdir, norm = _TRIPLE[sem]
+            entry = next(
+                (e for e in table["entries"]
+                 if e["N"] == n and e["batch"] == b and e["direction"] == "dit"
+                 and semantic_key_of(e) == (tt, tdir, norm)),
+                None)
+            assert entry is not None, (n, b, sem, "missing exact entry")
+            ev = entry["evidence"]
+            assert ev["challenger"].startswith("oracle:"), ev
+            assert ev["gain_pct"] >= guard, (n, b, sem, ev["gain_pct"])
+            assert ev["sessions"] >= 3, ev
+            assert ev["semantic"] == sem, ev
+            assert ev["executed"] == entry["executed"], ev
+            assert ev["protocol_id"] == CFG["protocol"]["protocol_id"]
+            found += 1
+    assert found == 10
