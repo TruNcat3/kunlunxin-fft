@@ -383,3 +383,70 @@ def test_wp2_closure_entries_carry_guard_cleared_evidence():
             assert ev["protocol_id"] == CFG["protocol"]["protocol_id"]
             found += 1
     assert found == 10
+
+
+# ------------- issue #9 WP3: same-source attribution -----------------------
+
+def test_wp3_classify_rule_priority():
+    """Disclosed classification rules pick exactly one class each."""
+    import issue9_attribute as ia
+
+    base = {"regret": 0.0, "steady_ms": 1.0, "dispatch_delta_ms": 0.1,
+            "transfer_delta_ms": 0.1, "semantic": "c2c-forward",
+            "flow_id": "local-fused-tile", "has_real_flow": False}
+    # 1) selection still losing to the oracle wins first
+    rec = dict(base, regret=0.42)
+    assert ia.classify(rec) == ia.CLASS_SELECTOR
+    # 2) per-call dispatch overhead >= 50% of steady
+    rec = dict(base, dispatch_delta_ms=0.6)
+    assert ia.classify(rec) == ia.CLASS_LAUNCH
+    # 3) e2e transfer delta >= steady
+    rec = dict(base, dispatch_delta_ms=0.0, transfer_delta_ms=1.5)
+    assert ia.classify(rec) == ia.CLASS_GM
+    # 4) dedicated real flow on r2c/c2r
+    rec = dict(base, semantic="c2r", has_real_flow=True,
+               flow_id="dedicated-c2r-hermitian-v1")
+    assert ia.classify(rec) == ia.CLASS_REAL
+    # 5) fused local tile core
+    rec = dict(base)
+    assert ia.classify(rec) == ia.CLASS_CORE
+    # 6) worker-grid flows
+    for flow in ("batch-spread", "batch-folded", "baseline-global-stage"):
+        assert ia.classify(dict(base, flow_id=flow)) == ia.CLASS_TAIL
+    # no counter-level evidence left -> honest fallback
+    assert ia.classify(dict(base, flow_id=None)) == \
+        "unclassified-need-counters"
+    # vocabulary matches the issue's six classes
+    assert set(ia.CLASSES) == {
+        ia.CLASS_SELECTOR, ia.CLASS_LAUNCH, ia.CLASS_CORE,
+        ia.CLASS_GM, ia.CLASS_TAIL, ia.CLASS_REAL}
+
+
+def test_wp3_attribution_report_for_profile_run():
+    """The recorded profile anchors produce a WP3 report: one class per
+    anchor, measured tier medians, unavailable quantities disclosed."""
+    import issue9_attribute as ia
+
+    run = ROOT / "results" / "p800" / "issue9" / "profile"
+    if not (run / "summary.json").is_file():
+        pytest.skip("issue9 profile run not present")
+    rep = ia.attribute(run)
+    assert rep["schema"] == "issue9-attribution-v1"
+    assert len(rep["anchors"]) == 9
+    assert rep["unavailable_quantities"]
+    by = {a["label"]: a for a in rep["anchors"]}
+    # every anchor classified inside the issue's vocabulary
+    for a in rep["anchors"]:
+        assert a["attribution_class"] in set(ia.CLASSES) | {
+            "unclassified-need-counters"}
+        assert a["plan_creation_ms"] is not None, a["label"]
+        assert a["steady_ms"] is not None, a["label"]
+        assert a["geometry"]["executed"], a["label"]
+    # measured classes on this run (same-source, WP2-closed selector)
+    assert by["N64B16:c2c-forward"]["attribution_class"] == ia.CLASS_LAUNCH
+    assert by["N1024B256:c2c-forward"]["attribution_class"] == ia.CLASS_CORE
+    assert by["N512B64:r2c"]["attribution_class"] == ia.CLASS_REAL
+    assert by["N16384B16:c2c-forward"]["attribution_class"] == ia.CLASS_TAIL
+    # selection is no longer the bottleneck at any anchor (WP2 effect)
+    assert all(a["regret"] is None or a["regret"] <= 0.10
+               for a in rep["anchors"])
