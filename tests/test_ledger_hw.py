@@ -83,13 +83,17 @@ def test_phase_names_r2c_c2r_inverse():
         "plan-validate", "real-input-pack", "core-invoke",
         "epilogue-scale", "half-spectrum-crop"]
 
+    # issue #9 WP2: (512,4) c2r is a closed cell whose promoted
+    # winner is the dedicated half-length real_flow chain (guard >=2%
+    # over the full-length real_compat path, same err threshold) --
+    # the ledger records the deployed flow, not the pre-WP2 one.
     c2r = plan_fft("dit", 512, 4, profile_hash=PROF,
                    transform_type="c2r", transform_direction="inverse")
     half = _x(512 // 2 + 1, 4)
     _, led = _run_with_ledger(c2r, half, sync=False)
     assert [p["name"] for p in led.phases] == [
-        "plan-validate", "hermitian-rebuild", "inverse-conj",
-        "core-invoke", "epilogue-scale", "real-output-cast"]
+        "plan-validate", "half-spectrum-pre",
+        "core-invoke", "real-output-epilogue"]
 
     inv = plan_fft("dit", 512, 4, profile_hash=PROF,
                    transform_direction="inverse")
