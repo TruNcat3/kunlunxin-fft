@@ -1,0 +1,347 @@
+{
+  "schema": "issue9-config-v1",
+  "issue": 9,
+  "title": "[P800] Ascend-aligned selection closure, bounded performance tuning, evidence-matrix convergence",
+  "domain_lock": {
+    "frozen": true,
+    "rule": "The six domains below are the complete tested surface for issue #9. No shape, semantic, or cell may be added to any domain (to improve averages or to fish a better headline number); the regression domain is the full v5 release domain and may not be narrowed either."
+  },
+  "source": {
+    "frozen_base_commit": "a94b8907f101792ed4afb08924e05e2c0bc74e94",
+    "frozen_base_note": "issue #9 starting point: issue #8 fully closed (v5 snapshot, 14/14 gates, A-3 verify, closing comment). No issue #8 work is redone.",
+    "previous_selector_commit": "54260cf9f2dfda5dc830f749c2debf4101d59d48",
+    "selector_table": "config/selector_table.json",
+    "selector_table_sha256_at_freeze": "b614237fb79df8a72f0550f75286c15d563ddf9ccbb8d79bb40bec2e04e6373c",
+    "previous_selector_table_sha256": "acc1f21c9c93fe20589993f22589ccc24e5b08db05be29d63321d9b63a6b5449",
+    "v5_release": "results/p800/releases/20261019-wp2-semantic-matrix-v5",
+    "v5_result_sha256": "c42dabc69825edeac4a576c3e401f84b125a96f6078a775ec8bd3641874dd013",
+    "v5_cases_sha256": "ef268fecdbe525d9707a1e26037eee06ee2239acc00b6efae85121501535a92d",
+    "v4_evidence_commit": "b37b948bc17dacab93525cbe14a83820eec7508d",
+    "v4_result_sha256": "7eb8c04151441edb12706f474a741fe4ecc4b084ccf9f360b17af2963587bca7",
+    "baseline_result": {
+      "vendor_geomean_ms": 0.11214,
+      "vendor_worst_ms": 0.02705,
+      "previous_geomean_speedup_vs_vendor": 0.11214,
+      "selector_regret_mean_pct": 43.19,
+      "selector_regret_max_pct": 300.94,
+      "regret_gt_10pct_cells": 66,
+      "previous_regressions_gt_2pct": [
+        "N2048B16:c2c-inverse"
+      ],
+      "intentional_semantic_corrections": [
+        {
+          "label": "N2048B16:c2c-inverse",
+          "delta_pct": 20.03
+        },
+        {
+          "label": "N2048B16:r2c",
+          "delta_pct": -29.95
+        },
+        {
+          "label": "N2048B16:c2r",
+          "delta_pct": -48.33
+        }
+      ],
+      "vendor_unsupported_failures": 72
+    }
+  },
+  "device": {
+    "device": "kunlunxin-p800",
+    "profile_hash": "a78b86793c7142a0",
+    "env_hash": "6b50bd316032c0fe",
+    "precision": "fp32",
+    "card_pool": "cards 2,3,4,5,7 healthy idle; card 1 hardware-faulty; cards 0,6 other-tenant",
+    "contamination_policy": "cross-tenant cards, driver/runtime changes, or profile/env drift void the whole round; no manual trial cherry-picking"
+  },
+  "protocol": {
+    "protocol_id": "semantic-matrix-v1:plan-reuse:interleave:correctness-first",
+    "oracle_mode": "full",
+    "error_threshold": 0.0001,
+    "timing_scope": "api wall time (dispatch+alloc+layout+sync), ms; tiers: plan_creation / steady / one_shot / e2e",
+    "carry_contract": "fallback-env-binding-v1",
+    "declared_inventory_schema": "declared-inventory-v1",
+    "declared_terminal_statuses": [
+      "ok",
+      "wrong-value",
+      "vendor-unsupported",
+      "error"
+    ],
+    "exploration_confirmation_split": true,
+    "gm_bytes_kind": "analytic estimate only; never recorded as measured without hardware counters",
+    "app_proxy_disclosure": "non-power-of-2 batches (OFDM B=14/140) run as padded-proxy with the actually executed batch disclosed; never reported as native workload"
+  },
+  "measurement": {
+    "sessions": 3,
+    "trials": 30,
+    "warmup": 5,
+    "one_shot_trials": 10,
+    "e2e_trials": 10,
+    "seed": 1234,
+    "guard_pct": 2.0,
+    "interleave": "previous/current/incumbent/selector/oracle/vendor interleaved per session with seeded shuffle",
+    "confirmation": "candidates frozen before >=3 sessions x 30 steady trials; promotion only by measurement, never by model"
+  },
+  "budgets": {
+    "implementation_rounds": 2,
+    "max_candidates_per_cell": 24,
+    "device_hours_total": 16,
+    "rule": "two rounds maximum; per-cell non-vendor legal candidates capped and deduped by descriptor; after two rounds with no stable gain keep the incumbent and submit the negative result instead of widening the search"
+  },
+  "targets": {
+    "closure_regret_max_pct": 10.0,
+    "global_mean_regret_pct": 15.0,
+    "new_stable_regressions_gt_2pct": 0,
+    "fallbacks_kept": 6,
+    "holdout_excluded_from_calibration": true
+  },
+  "domains": {
+    "closure": {
+      "purpose": "confirm existing candidates and deployment closure only; no new kernels in this phase",
+      "cells": [
+        "N64B4:c2c-forward+c2r",
+        "N64B16:c2c-forward+c2r",
+        "N512B4:c2c-forward+c2r",
+        "N512B16:c2c-forward+c2r",
+        "N512B64:r2c+c2r"
+      ],
+      "cell_count": 10
+    },
+    "tune_a": {
+      "purpose": "large-batch core/dataflow optimization (architecture-mapping axis) pressure domain",
+      "cells": [
+        "N1024B256",
+        "N2048B256"
+      ],
+      "cell_count": 8
+    },
+    "holdout": {
+      "purpose": "excluded from model calibration and rule changes; confirmation evidence only",
+      "cells": [
+        "N128B64",
+        "N2048B4"
+      ],
+      "cell_count": 8
+    },
+    "regression": {
+      "purpose": "full v5 release domain; re-verify only after the selector is frozen",
+      "scope": "all",
+      "cells": [
+        "N64B1",
+        "N64B4",
+        "N64B16",
+        "N64B64",
+        "N128B1",
+        "N128B4",
+        "N128B16",
+        "N128B64",
+        "N256B1",
+        "N256B4",
+        "N256B16",
+        "N256B64",
+        "N512B1",
+        "N512B4",
+        "N512B16",
+        "N512B64",
+        "N1024B1",
+        "N1024B4",
+        "N1024B16",
+        "N1024B64",
+        "N2048B1",
+        "N2048B4",
+        "N2048B16",
+        "N2048B64",
+        "N1024B256",
+        "N2048B256",
+        "N4096B1",
+        "N4096B16",
+        "N16384B1",
+        "N16384B16",
+        "N65536B1",
+        "N65536B16"
+      ],
+      "cell_count": 128
+    },
+    "scale": {
+      "purpose": "clean long-length evidence; every point runs a legality/memory/timeout probe first",
+      "cells": [
+        "N8192B1:c2c-forward",
+        "N8192B16:c2c-forward",
+        "N8192B256:c2c-forward",
+        "N16384B1:c2c-forward",
+        "N16384B16:c2c-forward",
+        "N16384B256:c2c-forward",
+        "N32768B1:c2c-forward",
+        "N32768B16:c2c-forward",
+        "N32768B256:c2c-forward",
+        "N65536B1:c2c-forward",
+        "N65536B16:c2c-forward",
+        "N65536B256:c2c-forward"
+      ],
+      "cell_count": 12,
+      "single_semantic_disclosed": "c2c-forward only"
+    },
+    "apps": {
+      "purpose": "application proxies reported separately; never part of the headline main matrix",
+      "cells": [
+        "N2048B14:c2c-forward",
+        "N2048B140:c2c-forward",
+        "N4096B14:c2c-forward",
+        "N4096B140:c2c-forward",
+        "N1024B64:c2c-forward",
+        "N1024B256:c2c-forward",
+        "N2048B64:c2c-forward",
+        "N2048B256:c2c-forward",
+        "N1024B32:c2c-forward",
+        "N1024B128:c2c-forward",
+        "N4096B32:c2c-forward",
+        "N4096B128:c2c-forward"
+      ],
+      "cell_count": 12,
+      "workloads": {
+        "OFDM": {
+          "shapes": [
+            "N2048B14",
+            "N2048B140",
+            "N4096B14",
+            "N4096B140"
+          ],
+          "padded_proxy": [
+            "N2048B14",
+            "N2048B140",
+            "N4096B14",
+            "N4096B140"
+          ],
+          "note": "B=14/140 is not a power of two: run as padded-proxy and disclose the executed batch"
+        },
+        "Radar": {
+          "shapes": [
+            "N1024B64",
+            "N1024B256",
+            "N2048B64",
+            "N2048B256"
+          ],
+          "padded_proxy": [],
+          "note": "native power-of-two batches"
+        },
+        "DL": {
+          "shapes": [
+            "N1024B32",
+            "N1024B128",
+            "N4096B32",
+            "N4096B128"
+          ],
+          "padded_proxy": [],
+          "note": "native power-of-two batches"
+        }
+      }
+    },
+    "profile_anchors": {
+      "purpose": "WP3 same-source attribution anchors; re-measured fresh under this config, never spliced from the old phase ledger",
+      "cells": [
+        "N64B16:c2c-forward",
+        "N512B64:r2c",
+        "N512B64:c2r",
+        "N1024B256",
+        "N2048B16:c2c-forward",
+        "N16384B16:c2c-forward"
+      ],
+      "cell_count": 9,
+      "record_per_anchor": [
+        "plan creation / first call / plan-reuse steady API wall / one-shot",
+        "e2e H2D / transform / D2H (or 'unavailable')",
+        "requested candidate, resolved plan, actual runner",
+        "visible launches, workspace/live set, materialized global boundaries",
+        "pack/core/stitch/hermitian/crop/scale phases",
+        "worker/block/wave/tail and batch ownership",
+        "GM bytes / bandwidth / occupancy as 'analytic estimate' unless counters exist"
+      ],
+      "attribution_classes": [
+        "selector-or-coverage dominated",
+        "launch-dispatch dominated",
+        "core-invoke dominated",
+        "boundary-GM-traffic dominated",
+        "worker-occupancy-tail dominated",
+        "real-adapter dominated"
+      ]
+    }
+  },
+  "phases": {
+    "preflight": {
+      "domains": [],
+      "checks": [
+        "env_hash and profile_hash match this file",
+        "git working tree state recorded",
+        "selector table sha matches source.selector_table_sha256_at_freeze",
+        "fallback binding violations are zero (fallback-env-binding-v1)",
+        "card pool: chosen device is not other-tenant and not the hardware-faulty card"
+      ]
+    },
+    "closure": {
+      "domains": [
+        "closure"
+      ],
+      "axis": null,
+      "gate": "per-cell selector regret <= 10% for every legal deployable cell; every measured runner closed to its deployed runner"
+    },
+    "profile": {
+      "domains": [
+        "profile_anchors"
+      ],
+      "axis": null,
+      "gate": "every anchor classified into exactly one attribution class with measured vs analytic quantities separated"
+    },
+    "tune-a": {
+      "domains": [
+        "tune_a"
+      ],
+      "axis": "architecture-mapping",
+      "gate": "stable gain vs incumbent after >=2% guard on re-measurement, else keep incumbent"
+    },
+    "tune-p": {
+      "domains": [
+        "tune_a"
+      ],
+      "axis": "processing-unit",
+      "gate": "stable gain vs incumbent after >=2% guard on re-measurement, else keep incumbent"
+    },
+    "validate": {
+      "domains": [
+        "regression",
+        "holdout",
+        "scale",
+        "apps"
+      ],
+      "axis": null,
+      "gate": "no new stable >2% regressions vs previous; 6 fallbacks and the 3 intentional semantic corrections intact; strict gates green; holdout and scale/app-proxy evidence reported separately from the headline matrix"
+    },
+    "replay": {
+      "domains": [],
+      "axis": null,
+      "gate": "recorded run reproduces byte-identical analysis into a fresh replay directory"
+    }
+  },
+  "outputs": {
+    "root": "results/p800/issue9",
+    "runner": "scripts/run_semantic_matrix.py",
+    "evidence_policy": "raw evidence is immutable; aggregation drift, re-analysis, and replays always write to a new directory (--replay-out)",
+    "reporting": {
+      "separate_reports": [
+        "steady",
+        "e2e",
+        "app-proxies",
+        "scale",
+        "ablation"
+      ],
+      "headline": "main matrix only; app proxies and scale slices never fold into the headline average",
+      "per_report_statistics": [
+        "p50",
+        "MAD",
+        "p95",
+        "session median",
+        "device slot",
+        "load",
+        "abnormal rounds"
+      ]
+    }
+  }
+}
