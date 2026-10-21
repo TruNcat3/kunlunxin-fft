@@ -1,0 +1,29 @@
+{
+  "schema": "issue10-wp3-summary-v1",
+  "issue": "kunlunxin-fft#10",
+  "created_utc": "2026-10-21T11:31:03Z",
+  "script": "/workspace/kunlunxin-fft/scripts/issue10_wp3_perf.py",
+  "steps": {
+    "blockmax": {
+      "status": "PASS",
+      "elapsed_s": 9.252497911453247,
+      "log": "wp3_logs/blockmax.log"
+    },
+    "perf": {
+      "status": "PASS",
+      "elapsed_s": 79.09135627746582,
+      "log": "wp3_logs/perf.log"
+    },
+    "gonogo": {
+      "status": "PASS",
+      "elapsed_s": 8.465112209320068,
+      "log": "wp3_logs/gonogo.log"
+    }
+  },
+  "gates": {
+    "blockmax_runs": true,
+    "perf_all_correct": true,
+    "gonogo_written": true,
+    "full_pipeline_go": false
+  }
+}

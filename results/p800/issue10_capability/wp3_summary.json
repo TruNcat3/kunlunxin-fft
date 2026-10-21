@@ -1,0 +1,659 @@
+{
+  "schema": "issue10-wp3-perf-v1",
+  "protocol": {
+    "timing": "warmup=5, rounds=5, trials=32, sync per round, per-trial wall p50/MAD (pooled)",
+    "tol_rel": 0.0001,
+    "dtype": "fp32 (complex64)",
+    "directions": "c2c_forward on all cells; c2c_inverse on B=16",
+    "gm_bytes": "analytic estimate, not measured bandwidth"
+  },
+  "cells": {
+    "256x1_c2c_forward": {
+      "n": 256,
+      "batch": 1,
+      "direction": "c2c_forward",
+      "paths": {
+        "vendor": {
+          "p50_ms": 0.03164462395943701,
+          "mad_ms": 0.0005443798727355897,
+          "rel_err": 3.8157155698546055e-07,
+          "correct": true,
+          "launches": "vendor-internal",
+          "gm_bytes_analytic": null,
+          "speedup_vs_vendor": 1.0
+        },
+        "triton_multipass": {
+          "p50_ms": 0.2568969939602539,
+          "mad_ms": 0.0014437100617215037,
+          "rel_err": 1.5308167828248585e-07,
+          "correct": true,
+          "launches": 8,
+          "gm_bytes_analytic": 47104,
+          "speedup_vs_vendor": 0.12318020336327075
+        },
+        "triton_resident_loop": {
+          "p50_ms": 0.1624027790967375,
+          "mad_ms": 0.0021524683688767254,
+          "rel_err": 1.5308167828248585e-07,
+          "correct": true,
+          "launches": 8,
+          "gm_bytes_analytic": 47104,
+          "speedup_vs_vendor": 0.19485272441420134
+        },
+        "hybrid_vendor_p": {
+          "p50_ms": 0.19418550073169172,
+          "mad_ms": 0.0012478121789172292,
+          "rel_err": 1.8433592587661121e-07,
+          "correct": true,
+          "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 triton twiddle + transpose/permute copies",
+          "gm_bytes_analytic": 16384,
+          "speedup_vs_vendor": 0.16296079697093732
+        }
+      }
+    },
+    "256x16_c2c_forward": {
+      "n": 256,
+      "batch": 16,
+      "direction": "c2c_forward",
+      "paths": {
+        "vendor": {
+          "p50_ms": 0.030942152079660445,
+          "mad_ms": 0.00025315239327028394,
+          "rel_err": 4.766395398696602e-07,
+          "correct": true,
+          "launches": "vendor-internal",
+          "gm_bytes_analytic": null,
+          "speedup_vs_vendor": 1.0
+        },
+        "triton_multipass": {
+          "p50_ms": 0.4156057839281857,
+          "mad_ms": 0.014852463209535927,
+          "rel_err": 1.7606780038808273e-07,
+          "correct": true,
+          "launches": 8,
+          "gm_bytes_analytic": 753664,
+          "speedup_vs_vendor": 0.0744507253657641
+        },
+        "triton_resident_loop": {
+          "p50_ms": 0.8028086886042729,
+          "mad_ms": 0.011622876627370715,
+          "rel_err": 1.7606780038808273e-07,
+          "correct": true,
+          "launches": 8,
+          "gm_bytes_analytic": 753664,
+          "speedup_vs_vendor": 0.03854237319411064
+        },
+        "hybrid_vendor_p": {
+          "p50_ms": 0.2850923119694926,
+          "mad_ms": 0.007516406185459346,
+          "rel_err": 3.252373813892172e-07,
+          "correct": true,
+          "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 triton twiddle + transpose/permute copies",
+          "gm_bytes_analytic": 262144,
+          "speedup_vs_vendor": 0.108533800388737
+        }
+      }
+    },
+    "256x16_c2c_inverse": {
+      "n": 256,
+      "batch": 16,
+      "direction": "c2c_inverse",
+      "paths": {
+        "vendor": {
+          "p50_ms": 0.03160400228807703,
+          "mad_ms": 0.0006340633262880147,
+          "rel_err": 4.766395398696602e-07,
+          "correct": true,
+          "launches": "vendor-internal",
+          "gm_bytes_analytic": null,
+          "speedup_vs_vendor": 1.0
+        },
+        "triton_multipass": {
+          "p50_ms": 0.4858339380007237,
+          "mad_ms": 0.007492963050026447,
+          "rel_err": 1.7606780038808273e-07,
+          "correct": true,
+          "launches": 8,
+          "gm_bytes_analytic": 753664,
+          "speedup_vs_vendor": 0.06505103866998675
+        },
+        "triton_resident_loop": {
+          "p50_ms": 0.8873353144736029,
+          "mad_ms": 0.013848126400262117,
+          "rel_err": 1.7606780038808273e-07,
+          "correct": true,
+          "launches": 8,
+          "gm_bytes_analytic": 753664,
+          "speedup_vs_vendor": 0.03561675250897185
+        },
+        "hybrid_vendor_p": {
+          "p50_ms": 0.2801818118314259,
+          "mad_ms": 0.0021937157725915313,
+          "rel_err": 3.252373813892172e-07,
+          "correct": true,
+          "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 triton twiddle + transpose/permute copies",
+          "gm_bytes_analytic": 262144,
+          "speedup_vs_vendor": 0.11279819372105382
+        }
+      }
+    },
+    "256x64_c2c_forward": {
+      "n": 256,
+      "batch": 64,
+      "direction": "c2c_forward",
+      "paths": {
+        "vendor": {
+          "p50_ms": 0.03168555849697441,
+          "mad_ms": 0.0004927715053781867,
+          "rel_err": 5.641440881777061e-07,
+          "correct": true,
+          "launches": "vendor-internal",
+          "gm_bytes_analytic": null,
+          "speedup_vs_vendor": 1.0
+        },
+        "triton_multipass": {
+          "p50_ms": 0.7298637210624292,
+          "mad_ms": 0.002223059709649533,
+          "rel_err": 2.0852184903565662e-07,
+          "correct": true,
+          "launches": 8,
+          "gm_bytes_analytic": 3014656,
+          "speedup_vs_vendor": 0.043412979139244225
+        },
+        "triton_resident_loop": {
+          "p50_ms": 3.0274906239355914,
+          "mad_ms": 0.003913657565135509,
+          "rel_err": 2.0852184903565662e-07,
+          "correct": true,
+          "launches": 8,
+          "gm_bytes_analytic": 3014656,
+          "speedup_vs_vendor": 0.010465947688315122
+        },
+        "hybrid_vendor_p": {
+          "p50_ms": 0.4643387801479548,
+          "mad_ms": 0.0007678099791519344,
+          "rel_err": 3.252373813892172e-07,
+          "correct": true,
+          "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 triton twiddle + transpose/permute copies",
+          "gm_bytes_analytic": 1048576,
+          "speedup_vs_vendor": 0.0682380189888044
+        }
+      }
+    },
+    "256x256_c2c_forward": {
+      "n": 256,
+      "batch": 256,
+      "direction": "c2c_forward",
+      "paths": {
+        "vendor": {
+          "p50_ms": 0.05948996840743348,
+          "mad_ms": 6.59347278997302e-05,
+          "rel_err": 5.641440881777061e-07,
+          "correct": true,
+          "launches": "vendor-internal",
+          "gm_bytes_analytic": null,
+          "speedup_vs_vendor": 1.0
+        },
+        "triton_multipass": {
+          "p50_ms": 2.0709889649879187,
+          "mad_ms": 0.0021202577045187354,
+          "rel_err": 2.72914443506968e-07,
+          "correct": true,
+          "launches": 8,
+          "gm_bytes_analytic": 12058624,
+          "speedup_vs_vendor": 0.028725391304912393
+        },
+        "triton_resident_loop": {
+          "p50_ms": 9.022442187415436,
+          "mad_ms": 0.0096973089966923,
+          "rel_err": 2.72914443506968e-07,
+          "correct": true,
+          "launches": 8,
+          "gm_bytes_analytic": 12058624,
+          "speedup_vs_vendor": 0.006593554956817622
+        },
+        "hybrid_vendor_p": {
+          "p50_ms": 1.1863329709740356,
+          "mad_ms": 0.008335126040037721,
+          "rel_err": 3.4205560864615605e-07,
+          "correct": true,
+          "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 triton twiddle + transpose/permute copies",
+          "gm_bytes_analytic": 4194304,
+          "speedup_vs_vendor": 0.050146097143864594
+        }
+      }
+    },
+    "1024x1_c2c_forward": {
+      "n": 1024,
+      "batch": 1,
+      "direction": "c2c_forward",
+      "paths": {
+        "vendor": {
+          "p50_ms": 0.2293119323439896,
+          "mad_ms": 0.00014589750207960606,
+          "rel_err": 4.160174238148441e-07,
+          "correct": true,
+          "launches": "vendor-internal",
+          "gm_bytes_analytic": null,
+          "speedup_vs_vendor": 1.0
+        },
+        "triton_multipass": {
+          "p50_ms": 0.4875670274486765,
+          "mad_ms": 0.01061725924955681,
+          "rel_err": 1.353071536227736e-07,
+          "correct": true,
+          "launches": 10,
+          "gm_bytes_analytic": 237568,
+          "speedup_vs_vendor": 0.47031878579633446
+        },
+        "triton_resident_loop": {
+          "p50_ms": 0.23032850003801286,
+          "mad_ms": 0.0032324387575499713,
+          "rel_err": 1.353071536227736e-07,
+          "correct": true,
+          "launches": 10,
+          "gm_bytes_analytic": 237568,
+          "speedup_vs_vendor": 0.9955864441705847
+        },
+        "hybrid_vendor_p": {
+          "p50_ms": 0.17411781300324947,
+          "mad_ms": 0.001787120709195733,
+          "rel_err": 4.0736378030811794e-07,
+          "correct": true,
+          "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 triton twiddle + transpose/permute copies",
+          "gm_bytes_analytic": 65536,
+          "speedup_vs_vendor": 1.3169929508574179
+        }
+      }
+    },
+    "1024x16_c2c_forward": {
+      "n": 1024,
+      "batch": 16,
+      "direction": "c2c_forward",
+      "paths": {
+        "vendor": {
+          "p50_ms": 0.23022537789074704,
+          "mad_ms": 0.00020062725525349379,
+          "rel_err": 5.469233739521425e-07,
+          "correct": true,
+          "launches": "vendor-internal",
+          "gm_bytes_analytic": null,
+          "speedup_vs_vendor": 1.0
+        },
+        "triton_multipass": {
+          "p50_ms": 0.6045282789273188,
+          "mad_ms": 0.004245215677656233,
+          "rel_err": 3.0779301289511567e-07,
+          "correct": true,
+          "launches": 10,
+          "gm_bytes_analytic": 3801088,
+          "speedup_vs_vendor": 0.3808347531719465
+        },
+        "triton_resident_loop": {
+          "p50_ms": 2.38415537023684,
+          "mad_ms": 0.002859007508959621,
+          "rel_err": 3.0779301289511567e-07,
+          "correct": true,
+          "launches": 10,
+          "gm_bytes_analytic": 3801088,
+          "speedup_vs_vendor": 0.0965647544471385
+        },
+        "hybrid_vendor_p": {
+          "p50_ms": 0.3412417208892293,
+          "mad_ms": 0.0008115312084555626,
+          "rel_err": 5.42397777721144e-07,
+          "correct": true,
+          "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 triton twiddle + transpose/permute copies",
+          "gm_bytes_analytic": 1048576,
+          "speedup_vs_vendor": 0.6746694902686903
+        }
+      }
+    },
+    "1024x16_c2c_inverse": {
+      "n": 1024,
+      "batch": 16,
+      "direction": "c2c_inverse",
+      "paths": {
+        "vendor": {
+          "p50_ms": 0.23002912348601967,
+          "mad_ms": 4.0003214962780476e-05,
+          "rel_err": 5.469233739521425e-07,
+          "correct": true,
+          "launches": "vendor-internal",
+          "gm_bytes_analytic": null,
+          "speedup_vs_vendor": 1.0
+        },
+        "triton_multipass": {
+          "p50_ms": 0.7071479412843473,
+          "mad_ms": 0.010288218618370593,
+          "rel_err": 3.0779301289511567e-07,
+          "correct": true,
+          "launches": 10,
+          "gm_bytes_analytic": 3801088,
+          "speedup_vs_vendor": 0.3252913712344726
+        },
+        "triton_resident_loop": {
+          "p50_ms": 2.461701187712606,
+          "mad_ms": 0.004445188096724451,
+          "rel_err": 3.0779301289511567e-07,
+          "correct": true,
+          "launches": 10,
+          "gm_bytes_analytic": 3801088,
+          "speedup_vs_vendor": 0.0934431541221138
+        },
+        "hybrid_vendor_p": {
+          "p50_ms": 0.35505018604453653,
+          "mad_ms": 0.005709560355171561,
+          "rel_err": 5.42397777721144e-07,
+          "correct": true,
+          "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 triton twiddle + transpose/permute copies",
+          "gm_bytes_analytic": 1048576,
+          "speedup_vs_vendor": 0.6478777720092941
+        }
+      }
+    },
+    "1024x64_c2c_forward": {
+      "n": 1024,
+      "batch": 64,
+      "direction": "c2c_forward",
+      "paths": {
+        "vendor": {
+          "p50_ms": 0.23184597375802696,
+          "mad_ms": 0.0013340686564333737,
+          "rel_err": 6.873731868620284e-07,
+          "correct": true,
+          "launches": "vendor-internal",
+          "gm_bytes_analytic": null,
+          "speedup_vs_vendor": 1.0
+        },
+        "triton_multipass": {
+          "p50_ms": 1.2633172518690117,
+          "mad_ms": 0.0020402512745931745,
+          "rel_err": 3.0779301289511567e-07,
+          "correct": true,
+          "launches": 10,
+          "gm_bytes_analytic": 15204352,
+          "speedup_vs_vendor": 0.183521576559667
+        },
+        "triton_resident_loop": {
+          "p50_ms": 9.313735004980117,
+          "mad_ms": 0.010312622180208564,
+          "rel_err": 3.0779301289511567e-07,
+          "correct": true,
+          "launches": 10,
+          "gm_bytes_analytic": 15204352,
+          "speedup_vs_vendor": 0.024892910699526812
+        },
+        "hybrid_vendor_p": {
+          "p50_ms": 0.9505842826911248,
+          "mad_ms": 0.0011534066288731992,
+          "rel_err": 6.181268672045129e-07,
+          "correct": true,
+          "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 triton twiddle + transpose/permute copies",
+          "gm_bytes_analytic": 4194304,
+          "speedup_vs_vendor": 0.24389838752821155
+        }
+      }
+    },
+    "1024x256_c2c_forward": {
+      "n": 1024,
+      "batch": 256,
+      "direction": "c2c_forward",
+      "paths": {
+        "vendor": {
+          "p50_ms": 0.4576501887640916,
+          "mad_ms": 5.1215465646237135e-05,
+          "rel_err": 7.766323914838997e-07,
+          "correct": true,
+          "launches": "vendor-internal",
+          "gm_bytes_analytic": null,
+          "speedup_vs_vendor": 1.0
+        },
+        "triton_multipass": {
+          "p50_ms": 3.6272227225708775,
+          "mad_ms": 0.005965841410215944,
+          "rel_err": 3.0779301289511567e-07,
+          "correct": true,
+          "launches": 10,
+          "gm_bytes_analytic": 60817408,
+          "speedup_vs_vendor": 0.1261709643348621
+        },
+        "triton_resident_loop": {
+          "p50_ms": 36.98152321885573,
+          "mad_ms": 0.0013824683264829218,
+          "rel_err": 3.0779301289511567e-07,
+          "correct": true,
+          "launches": 10,
+          "gm_bytes_analytic": 60817408,
+          "speedup_vs_vendor": 0.012375103806723407
+        },
+        "hybrid_vendor_p": {
+          "p50_ms": 2.6392290310468525,
+          "mad_ms": 0.004532434104476124,
+          "rel_err": 6.410866280608332e-07,
+          "correct": true,
+          "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 triton twiddle + transpose/permute copies",
+          "gm_bytes_analytic": 16777216,
+          "speedup_vs_vendor": 0.17340298374278046
+        }
+      }
+    },
+    "2048x1_c2c_forward": {
+      "n": 2048,
+      "batch": 1,
+      "direction": "c2c_forward",
+      "paths": {
+        "vendor": {
+          "p50_ms": 0.6292563411989249,
+          "mad_ms": 0.0006921836757101119,
+          "rel_err": 3.98604173111741e-07,
+          "correct": true,
+          "launches": "vendor-internal",
+          "gm_bytes_analytic": null,
+          "speedup_vs_vendor": 1.0
+        },
+        "triton_multipass": {
+          "p50_ms": 0.71887974627316,
+          "mad_ms": 0.011637872376013547,
+          "rel_err": 1.5347187817798438e-07,
+          "correct": true,
+          "launches": 11,
+          "gm_bytes_analytic": 524288,
+          "speedup_vs_vendor": 0.8753290720195365
+        },
+        "triton_resident_loop": {
+          "p50_ms": 0.41145222348859534,
+          "mad_ms": 0.0011827796697616577,
+          "rel_err": 1.5347187817798438e-07,
+          "correct": true,
+          "launches": 11,
+          "gm_bytes_analytic": 524288,
+          "speedup_vs_vendor": 1.5293545769752457
+        },
+        "hybrid_vendor_p": {
+          "p50_ms": 0.20848215353908017,
+          "mad_ms": 0.002492437488399446,
+          "rel_err": 4.3878663747390837e-07,
+          "correct": true,
+          "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 triton twiddle + transpose/permute copies",
+          "gm_bytes_analytic": 131072,
+          "speedup_vs_vendor": 3.018274372731718
+        }
+      }
+    },
+    "2048x16_c2c_forward": {
+      "n": 2048,
+      "batch": 16,
+      "direction": "c2c_forward",
+      "paths": {
+        "vendor": {
+          "p50_ms": 0.645197564153932,
+          "mad_ms": 0.000815314706414938,
+          "rel_err": 4.1605709062195243e-07,
+          "correct": true,
+          "launches": "vendor-internal",
+          "gm_bytes_analytic": null,
+          "speedup_vs_vendor": 1.0
+        },
+        "triton_multipass": {
+          "p50_ms": 1.061866532836575,
+          "mad_ms": 0.00029309740057215095,
+          "rel_err": 2.560330832720924e-07,
+          "correct": true,
+          "launches": 11,
+          "gm_bytes_analytic": 8388608,
+          "speedup_vs_vendor": 0.607607024237226
+        },
+        "triton_resident_loop": {
+          "p50_ms": 5.001700526918285,
+          "mad_ms": 0.0017711936379782856,
+          "rel_err": 2.560330832720924e-07,
+          "correct": true,
+          "launches": 11,
+          "gm_bytes_analytic": 8388608,
+          "speedup_vs_vendor": 0.12899564071890962
+        },
+        "hybrid_vendor_p": {
+          "p50_ms": 0.5367401827243157,
+          "mad_ms": 0.005487374437507242,
+          "rel_err": 6.441821937930594e-07,
+          "correct": true,
+          "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 triton twiddle + transpose/permute copies",
+          "gm_bytes_analytic": 2097152,
+          "speedup_vs_vendor": 1.202066819143524
+        }
+      }
+    },
+    "2048x16_c2c_inverse": {
+      "n": 2048,
+      "batch": 16,
+      "direction": "c2c_inverse",
+      "paths": {
+        "vendor": {
+          "p50_ms": 0.6443104066420346,
+          "mad_ms": 0.0009224677341990173,
+          "rel_err": 4.1605709062195243e-07,
+          "correct": true,
+          "launches": "vendor-internal",
+          "gm_bytes_analytic": null,
+          "speedup_vs_vendor": 1.0
+        },
+        "triton_multipass": {
+          "p50_ms": 1.1132035579066724,
+          "mad_ms": 0.008499155228491873,
+          "rel_err": 2.560330832720924e-07,
+          "correct": true,
+          "launches": 11,
+          "gm_bytes_analytic": 8388608,
+          "speedup_vs_vendor": 0.5787893885765425
+        },
+        "triton_resident_loop": {
+          "p50_ms": 5.073061220173258,
+          "mad_ms": 0.002321503416169435,
+          "rel_err": 2.560330832720924e-07,
+          "correct": true,
+          "launches": 11,
+          "gm_bytes_analytic": 8388608,
+          "speedup_vs_vendor": 0.12700623522537144
+        },
+        "hybrid_vendor_p": {
+          "p50_ms": 0.5164268732187338,
+          "mad_ms": 0.005674875865224749,
+          "rel_err": 6.441821937930594e-07,
+          "correct": true,
+          "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 triton twiddle + transpose/permute copies",
+          "gm_bytes_analytic": 2097152,
+          "speedup_vs_vendor": 1.2476314461062825
+        }
+      }
+    },
+    "2048x64_c2c_forward": {
+      "n": 2048,
+      "batch": 64,
+      "direction": "c2c_forward",
+      "paths": {
+        "vendor": {
+          "p50_ms": 0.6363352440530434,
+          "mad_ms": 0.0005146503099240363,
+          "rel_err": 4.807927595908839e-07,
+          "correct": true,
+          "launches": "vendor-internal",
+          "gm_bytes_analytic": null,
+          "speedup_vs_vendor": 1.0
+        },
+        "triton_multipass": {
+          "p50_ms": 2.1866942479391582,
+          "mad_ms": 0.005831439921166748,
+          "rel_err": 3.211140388245278e-07,
+          "correct": true,
+          "launches": 11,
+          "gm_bytes_analytic": 33554432,
+          "speedup_vs_vendor": 0.2910033008285247
+        },
+        "triton_resident_loop": {
+          "p50_ms": 19.648201901873108,
+          "mad_ms": 0.005087058525532484,
+          "rel_err": 3.211140388245278e-07,
+          "correct": true,
+          "launches": 11,
+          "gm_bytes_analytic": 33554432,
+          "speedup_vs_vendor": 0.03238643654167561
+        },
+        "hybrid_vendor_p": {
+          "p50_ms": 1.4414782199310139,
+          "mad_ms": 0.0053499097703024745,
+          "rel_err": 7.300051215011358e-07,
+          "correct": true,
+          "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 triton twiddle + transpose/permute copies",
+          "gm_bytes_analytic": 8388608,
+          "speedup_vs_vendor": 0.441446312025094
+        }
+      }
+    },
+    "2048x256_c2c_forward": {
+      "n": 2048,
+      "batch": 256,
+      "direction": "c2c_forward",
+      "paths": {
+        "vendor": {
+          "p50_ms": 1.3920329729444347,
+          "mad_ms": 0.0008484348654747009,
+          "rel_err": 5.557731146021434e-07,
+          "correct": true,
+          "launches": "vendor-internal",
+          "gm_bytes_analytic": null,
+          "speedup_vs_vendor": 1.0
+        },
+        "triton_multipass": {
+          "p50_ms": 7.588803811813705,
+          "mad_ms": 0.006101101462263614,
+          "rel_err": 3.211140388245278e-07,
+          "correct": true,
+          "launches": 11,
+          "gm_bytes_analytic": 134217728,
+          "speedup_vs_vendor": 0.18343246280493083
+        },
+        "triton_resident_loop": {
+          "p50_ms": 78.43011141085299,
+          "mad_ms": 0.007898896001279354,
+          "rel_err": 3.211140388245278e-07,
+          "correct": true,
+          "launches": 11,
+          "gm_bytes_analytic": 134217728,
+          "speedup_vs_vendor": 0.017748705795562703
+        },
+        "hybrid_vendor_p": {
+          "p50_ms": 4.819771253096405,
+          "mad_ms": 0.004852743586525321,
+          "rel_err": 7.798443860984944e-07,
+          "correct": true,
+          "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 triton twiddle + transpose/permute copies",
+          "gm_bytes_analytic": 33554432,
+          "speedup_vs_vendor": 0.28881722800644105
+        }
+      }
+    }
+  },
+  "all_correct": true,
+  "rows": 60
+}

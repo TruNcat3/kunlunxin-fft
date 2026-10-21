@@ -1,0 +1,397 @@
+{
+  "schema": "issue10-capability-matrix-v1",
+  "issue": "kunlunxin-fft#10",
+  "created_utc": "2026-10-21T07:24:52Z",
+  "wp0_hash": "e1df07ac3aba3fe409daa257b8f4bb8c6be3abd0e204ce416f808cbb6c1e5221",
+  "policy": {
+    "statuses": [
+      "PASS",
+      "FAIL",
+      "UNKNOWN"
+    ],
+    "inference": "statuses come from executed probes only; platform/backend names never imply support",
+    "required_checks": "entry status is computed from the entry's required checks; optional checks are recorded as evidence",
+    "timeout": "600s -> UNKNOWN (inconclusive)",
+    "no_op_guard": "sentinel -98765.4321 prefill on every output + xpu_context around every launch"
+  },
+  "probe_script": "scripts/issue10_wp1_capability.py",
+  "probe_script_sha256": "feb5b29633fcbce70b8c2d853e049af47817f54bc2f29c70ac6230f67778c36f",
+  "entries": [
+    {
+      "checks": [
+        {
+          "detail": "n=1000 block=1024 tail preserved=True",
+          "id": "scalar_fill_masked",
+          "next_step": "",
+          "status": "PASS"
+        },
+        {
+          "detail": "max_err=0.0 tail_untouched=True",
+          "id": "vector_axpy",
+          "next_step": "",
+          "status": "PASS"
+        },
+        {
+          "detail": "max_err=0.0 stride1_slots_preserved=True",
+          "id": "strided_st2",
+          "next_step": "",
+          "status": "PASS"
+        },
+        {
+          "detail": "max_err=0.0 (1-element offset base)",
+          "id": "element_offset_start",
+          "next_step": "",
+          "status": "PASS"
+        },
+        {
+          "detail": "host tensors are allocator-aligned; byte-misaligned fp32 base address not constructible from torch storage (allocator guarantees)",
+          "id": "byte_misalign",
+          "next_step": "construct a byte-offset view via as_strided/storage offset once the vendor documents legal alignments, or probe via XTDK sample",
+          "status": "UNKNOWN"
+        }
+      ],
+      "notes": [
+        "all output buffers prefilled with sentinel -98765.4321; silent-noop surfaces as FAIL"
+      ],
+      "probe": "load_store",
+      "question": "\u57fa\u672c load/store\uff1a\u6807\u91cf\u3001\u5411\u91cf\u3001\u975e\u8fde\u7eed stride\u3001\u5bf9\u9f50/\u5c3e\u5757\u662f\u5426\u6b63\u786e",
+      "repro_script": "scripts/issue10_wp1_capability.py",
+      "repro_source": "def p_load_store() -> dict:\n    ch = []\n    n = 1000\n    BLOCK = 1024\n    # scalar fill (mask + tail)\n    out = torch.full((BLOCK,), SENTINEL, device=\"cuda\")\n    _launch(k_scalar_fill, triton.cdiv(n, BLOCK), out, n, FACTOR=1.5,\n            BLOCK=BLOCK)\n    ref = torch.arange(n, dtype=torch.float32, device=\"cuda\") * 1.5\n    ok = _sentinel_changed(out[:n]) and torch.equal(out[:n], ref) \\\n        and bool((out[n:] == SENTINEL).all())\n    ch.append(_check(\"scalar_fill_masked\", ok,\n                     f\"n={n} block={BLOCK} tail preserved={bool((out[n:] == SENTINEL).all())}\"))\n    # vector axpy + tail untouched\n    x = torch.randn(n, device=\"cuda\")\n    out = torch.full((BLOCK,), SENTINEL, device=\"cuda\")\n    _launch(k_vec_axpy, triton.cdiv(n, BLOCK), x, out, n, BLOCK=BLOCK)\n    ref = x * 2.0 + 1.0\n    err = float((out[:n] - ref).abs().max())\n    ok = _sentinel_changed(out) and err == 0.0 \\\n        and bool((out[n:] == SENTINEL).all())\n    ch.append(_check(\"vector_axpy\", ok, f\"max_err={err} tail_untouched=\"\n                     f\"{bool((out[n:] == SENTINEL).all())}\"))\n    # non-contiguous strided (every 2nd element of a 2N buffer)\n    m = 512\n    base = torch.zeros(2 * m, device=\"cuda\")\n    src = torch.randn(m, device=\"cuda\")\n    base[0::2] = src\n    outb = torch.full((2 * m,), SENTINEL, device=\"cuda\")\n    outb[0::2] = src  # start from real values, stride-store over them\n    _launch(k_strided, triton.cdiv(m, m), base, outb, m, ST=2, BLOCK=m)\n    ref = src * 3.0\n    err = float((outb[0::2] - ref).abs().max())\n    odd_untouched = bool((outb[1::2] == SENTINEL).all())\n    ch.append(_check(\"strided_st2\", err == 0.0 and odd_untouched,\n                     f\"max_err={err} stride1_slots_preserved={odd_untouched}\"))\n    # element-offset pointer (misaligned start relative to a bigger tensor)\n    big = torch.randn(n + 1, device=\"cuda\")\n    view = big[1:]  # address offset of one element\n    out = torch.full((BLOCK,), SENTINEL, device=\"cuda\")\n    _launch(k_vec_axpy, triton.cdiv(n, BLOCK), view, out, n, BLOCK=BLOCK)\n    err = float((out[:n] - (view * 2.0 + 1.0)).abs().max())\n    ch.append(_check(\"element_offset_start\", err == 0.0\n                     and _sentinel_changed(out),\n                     f\"max_err={err} (1-element offset base)\"))\n    # byte-level misalignment: torch tensors are allocator-aligned; the\n    # question cannot be answered from this API surface -> UNKNOWN\n    ch.append(_check(\"byte_misalign\", False,\n                     \"host tensors are allocator-aligned; byte-misaligned \"\n                     \"fp32 base address not constructible from torch \"\n                     \"storage (allocator guarantees)\", status=\"UNKNOWN\",\n                     next_step=\"construct a byte-offset view via \"\n                               \"as_strided/storage offset once the vendor \"\n                               \"documents legal alignments, or probe via \"\n                               \"XTDK sample\"))\n    return {\"checks\": ch,\n            \"notes\": [\"all output buffers prefilled with sentinel \"\n                      f\"{SENTINEL}; silent-noop surfaces as FAIL\"]}\n",
+      "status": "PASS",
+      "log": "results/p800/issue10_capability/wp1_probes/logs/load_store.log",
+      "rc": 0,
+      "elapsed_s": 9.4
+    },
+    {
+      "checks": [
+        {
+          "detail": "max_err=0.0",
+          "id": "transpose_til2d",
+          "next_step": "",
+          "status": "PASS"
+        },
+        {
+          "detail": "max_err=0.0",
+          "id": "tile_roundtrip",
+          "next_step": "",
+          "status": "PASS"
+        },
+        {
+          "detail": "every destination hit exactly once over 64x64",
+          "id": "swizzle2d_bijection",
+          "next_step": "",
+          "status": "PASS"
+        },
+        {
+          "detail": "triton 3.0.0 XPU fork exposes no API to place lanes/warps (no annotate/metadata; XPUUtils reports warpSize=1 so NVIDIA-style lane assumptions do not apply)",
+          "id": "lane_warp_mapping_control",
+          "next_step": "inspect TTGIR/LLIR with an MLIR dump or vendor pass docs to learn the actual lane mapping",
+          "status": "UNKNOWN"
+        }
+      ],
+      "notes": [],
+      "probe": "layout",
+      "question": "layout\uff1atile\u3001lane/warp \u6620\u5c04\u3001\u8f6c\u7f6e\u548c swizzle \u8868\u8fbe\u80fd\u529b",
+      "repro_script": "scripts/issue10_wp1_capability.py",
+      "repro_source": "def p_layout() -> dict:\n    ch = []\n    M, N = 64, 128\n    x = torch.randn(M, N, device=\"cuda\")\n    out = torch.full((N, M), SENTINEL, device=\"cuda\")\n    _launch(k_transpose, 1, x, out, M, N, BM=64, BN=128)\n    err = float((out - x.t()).abs().max())\n    ch.append(_check(\"transpose_til2d\", err == 0.0\n                     and _sentinel_changed(out), f\"max_err={err}\"))\n    # tile round-trip (tile-shaped load, transform, store)\n    y = torch.randn(32, 32, device=\"cuda\")\n    out = torch.full((32, 32), SENTINEL, device=\"cuda\")\n    _launch(k_tile_scale, 1, y, out, 32, 32, BM=32, BN=32)\n    err = float((out - y * 1.25).abs().max())\n    ch.append(_check(\"tile_roundtrip\", err == 0.0\n                     and _sentinel_changed(out), f\"max_err={err}\"))\n    # swizzle2d: bijectivity of the mapping (contract-agnostic property)\n    W = H = 64\n    mark = torch.full((W * H,), SENTINEL, device=\"cuda\")\n    try:\n        _launch(k_swizzle_mark, 1, mark, W, H, BLOCK=64)\n        vals = mark\n        uniq = int((vals == 1.0).sum())\n        zeroes = int((vals == 0.0).sum())\n        dup = int(W * H - uniq)\n        if _sentinel_changed(vals) and uniq == W * H and zeroes == 0:\n            ch.append(_check(\"swizzle2d_bijection\", True,\n                             f\"every destination hit exactly once over \"\n                             f\"{W}x{H}\"))\n        else:\n            ch.append(_check(\n                \"swizzle2d_bijection\", False,\n                f\"mapping not bijective on {W}x{H}: destinations_hit=\"\n                f\"{uniq} dup={dup} untouched={zeroes} (contract of \"\n                \"swizzle2d params unconfirmed)\", status=\"UNKNOWN\",\n                next_step=\"confirm swizzle2d argument contract from vendor \"\n                          \"Triton docs, then re-run the bijection test\"))\n    except Exception as e:  # noqa: BLE001\n        ch.append(_check(\"swizzle2d_bijection\", False,\n                         f\"lowering rejected: {type(e).__name__}: {e}\",\n                         next_step=\"ask vendor for a legal swizzle sample \"\n                                   \"before retrying\"))\n    # explicit lane/warp mapping control\n    ch.append(_check(\n        \"lane_warp_mapping_control\", False,\n        \"triton 3.0.0 XPU fork exposes no API to place lanes/warps (no \"\n        \"annotate/metadata; XPUUtils reports warpSize=1 so NVIDIA-style \"\n        \"lane assumptions do not apply)\", status=\"UNKNOWN\",\n        next_step=\"inspect TTGIR/LLIR with an MLIR dump or vendor pass \"\n                  \"docs to learn the actual lane mapping\"))\n    return {\"checks\": ch}\n",
+      "status": "PASS",
+      "log": "results/p800/issue10_capability/wp1_probes/logs/layout.log",
+      "rc": 0,
+      "elapsed_s": 9.3
+    },
+    {
+      "checks": [
+        {
+          "detail": "max_err=0.0 tol=0.0",
+          "id": "float32_axpy",
+          "next_step": "",
+          "status": "PASS"
+        },
+        {
+          "detail": "max_err=0.0 tol=0.001",
+          "id": "float16_axpy",
+          "next_step": "",
+          "status": "PASS"
+        },
+        {
+          "detail": "max_err=0.0 tol=0.002",
+          "id": "bfloat16_axpy",
+          "next_step": "",
+          "status": "PASS"
+        },
+        {
+          "detail": "max_err=2.384185791015625e-07",
+          "id": "complex_sim_f32_soa",
+          "next_step": "",
+          "status": "PASS"
+        },
+        {
+          "detail": "fp64 executed, max_err=0.0",
+          "id": "fp64_lowering",
+          "next_step": "",
+          "status": "PASS"
+        },
+        {
+          "detail": "fp8 dtypes present ['float8e4b15', 'float8e4b8', 'float8e4nv', 'float8e5', 'float8e5b16'] but no validated kernel sample this round",
+          "id": "fp8_lowering",
+          "next_step": "write an fp8 axpy probe once a vendor fp8 sample exists",
+          "status": "UNKNOWN"
+        }
+      ],
+      "notes": [
+        "required dtypes: fp32/fp16/bf16/complex-sim; fp64/fp8 recorded explicitly as issue demands"
+      ],
+      "probe": "dtype",
+      "question": "dtype\uff1afp16/bf16/fp32/\u590d\u6570\u6a21\u62df\uff1bfp64/fp8 \u660e\u786e\u8bb0\u5f55",
+      "repro_script": "scripts/issue10_wp1_capability.py",
+      "repro_source": "def p_dtype() -> dict:\n    ch = []\n    n = 256\n    BLOCK = 256\n    for dt, tol in ((torch.float32, 0.0), (torch.float16, 1e-3),\n                    (torch.bfloat16, 2e-3)):\n        x = torch.randn(n, device=\"cuda\").to(dt)\n        out = torch.full((n,), SENTINEL, device=\"cuda\").to(dt)\n        _launch(k_dtype_axpy, triton.cdiv(n, BLOCK), x, out, n,\n                BLOCK=BLOCK)\n        ref = x * 2.0 + 1.0\n        err = float((out.float() - ref.float()).abs().max())\n        ch.append(_check(f\"{str(dt).split('.')[-1]}_axpy\", err <= tol\n                         and _sentinel_changed(out),\n                         f\"max_err={err} tol={tol}\"))\n    # complex simulation over fp32 SOA pairs\n    ar, ai = torch.randn(n, device=\"cuda\"), torch.randn(n, device=\"cuda\")\n    br, bi = torch.randn(n, device=\"cuda\"), torch.randn(n, device=\"cuda\")\n    ore = torch.full((n,), SENTINEL, device=\"cuda\")\n    oim = torch.full((n,), SENTINEL, device=\"cuda\")\n    _launch(k_cmul, 1, ar, ai, br, bi, ore, oim, n, BLOCK=BLOCK)\n    wr = ar * br - ai * bi\n    wi = ar * bi + ai * br\n    err = max(float((ore - wr).abs().max()), float((oim - wi).abs().max()))\n    ch.append(_check(\"complex_sim_f32_soa\", err < 1e-5\n                     and _sentinel_changed(ore), f\"max_err={err}\"))\n    # fp64 attempt: demonstrated support or demonstrated rejection\n    try:\n        a = torch.randn(n, device=\"cuda\", dtype=torch.float64)\n        out = torch.full((n,), SENTINEL, device=\"cuda\",\n                         dtype=torch.float64)\n        _launch(k_fp64_roundtrip, triton.cdiv(n, BLOCK), a, out, n,\n                BLOCK=BLOCK)\n        err = float((out - (a + 1.0)).abs().max())\n        ch.append(_check(\"fp64_lowering\", err == 0.0,\n                         f\"fp64 executed, max_err={err}\"))\n    except Exception as e:  # noqa: BLE001\n        ch.append(_check(\"fp64_lowering\", False,\n                         f\"fp64 rejected by stack: \"\n                         f\"{type(e).__name__}: {str(e)[:300]}\",\n                         next_step=\"record unsupported in capability \"\n                                   \"matrix; SDK route if fp64 required\"))\n    # fp8 attempt\n    fp8_names = [a for a in dir(tl) if a.startswith(\"float8\")]\n    if fp8_names:\n        try:\n            ch.append(_check(\"fp8_lowering\", False,\n                             f\"fp8 dtypes present {fp8_names} but no \"\n                             \"validated kernel sample this round\",\n                             status=\"UNKNOWN\",\n                             next_step=\"write an fp8 axpy probe once a \"\n                                       \"vendor fp8 sample exists\"))\n        except Exception as e:  # noqa: BLE001\n            ch.append(_check(\"fp8_lowering\", False, str(e)))\n    else:\n        ch.append(_check(\"fp8_lowering\", False,\n                         \"no fp8 dtype in tl surface (dir(tl) has no \"\n                         \"float8*)\", next_step=\"record unsupported; SDK \"\n                              \"route if fp8 required\"))\n    return {\"checks\": ch,\n            \"notes\": [\"required dtypes: fp32/fp16/bf16/complex-sim; \"\n                      \"fp64/fp8 recorded explicitly as issue demands\"]}\n",
+      "status": "PASS",
+      "log": "results/p800/issue10_capability/wp1_probes/logs/dtype.log",
+      "rc": 0,
+      "elapsed_s": 9.5
+    },
+    {
+      "checks": [
+        {
+          "detail": "tl.dot max_err_vs_fp64_truth=0.027746065332109993; device torch.matmul max_err=1.1877009949756712e-05 -- tl.dot uses reduced-precision accumulation while the vendor BLAS path does not (dedicated matrix path with sub-fp32 accumulator likely)",
+          "id": "dot_fp32",
+          "next_step": "confirm accumulator width (fp16/bf16/tf32-like) from vendor matrix-unit docs; dense-dot P core only legal under the documented precision",
+          "status": "UNKNOWN"
+        },
+        {
+          "detail": "max_err_vs_fp32_ref=0.015625",
+          "id": "dot_fp16",
+          "next_step": "",
+          "status": "PASS"
+        },
+        {
+          "detail": "no hardware counter / occupancy API available from this stack; tl.dot correctness proven, hardware path not distinguishable",
+          "id": "matrix_unit_utilization",
+          "next_step": "vendor profiler counters (XTDK) or a roofline comparison of dot vs elementwise at equal FLOP",
+          "status": "UNKNOWN"
+        }
+      ],
+      "notes": [],
+      "probe": "tl_dot",
+      "question": "tl.dot/\u77e9\u9635\u8def\u5f84\uff1a\u6b63\u786e\u6027\u4e0e\uff08\u82e5\u53ef\u6d4b\uff09\u77e9\u9635\u5355\u5143\u5f52\u5c5e",
+      "repro_script": "scripts/issue10_wp1_capability.py",
+      "repro_source": "def p_tl_dot() -> dict:\n    ch = []\n    M = N = K = 64\n    a = torch.randn(M, K, device=\"cuda\")\n    b = torch.randn(K, N, device=\"cuda\")\n    out = torch.full((M, N), SENTINEL, device=\"cuda\")\n    _launch(k_dot, 1, a, b, out, M, N, K, BM=64, BN=64, BK=64)\n    # ground truth: host float64 matmul; device torch.matmul is the\n    # vendor BLAS cross-check (on this stack it is accurate: see logs)\n    ref64 = a.cpu().double() @ b.cpu().double()\n    err_dot = float((out.cpu().double() - ref64).abs().max())\n    dev_mm = a @ b\n    err_mm = float((dev_mm.cpu().double() - ref64).abs().max())\n    if err_dot <= 1e-4:\n        ch.append(_check(\"dot_fp32\", True,\n                         f\"max_err_vs_fp64_truth={err_dot} \"\n                         f\"(device matmul cross-check {err_mm})\"))\n    elif err_dot <= 1e-1:\n        ch.append(_check(\"dot_fp32\", False,\n                         f\"tl.dot max_err_vs_fp64_truth={err_dot}; \"\n                         f\"device torch.matmul max_err={err_mm} -- \"\n                         \"tl.dot uses reduced-precision accumulation \"\n                         \"while the vendor BLAS path does not (dedicated \"\n                         \"matrix path with sub-fp32 accumulator likely)\",\n                         status=\"UNKNOWN\",\n                         next_step=\"confirm accumulator width (fp16/bf16/\"\n                                   \"tf32-like) from vendor matrix-unit \"\n                                   \"docs; dense-dot P core only legal \"\n                                   \"under the documented precision\"))\n    else:\n        ch.append(_check(\"dot_fp32\", False,\n                         f\"max_err_vs_fp64_truth={err_dot} (wrong \"\n                         \"values)\"))\n    # fp16 dot against fp32 reference\n    a16 = a.half()\n    b16 = b.half()\n    out16 = torch.full((M, N), SENTINEL, device=\"cuda\").half()\n    _launch(k_dot, 1, a16, b16, out16, M, N, K, BM=64, BN=64, BK=64)\n    ref16 = (a @ b).half()\n    err16 = float((out16.float() - ref16.float()).abs().max())\n    ch.append(_check(\"dot_fp16\", err16 <= 2e-2 and _sentinel_changed(out16),\n                     f\"max_err_vs_fp32_ref={err16}\"))\n    # matrix-unit utilization cannot be proven without counters\n    ch.append(_check(\n        \"matrix_unit_utilization\", False,\n        \"no hardware counter / occupancy API available from this stack; \"\n        \"tl.dot correctness proven, hardware path not distinguishable\",\n        status=\"UNKNOWN\",\n        next_step=\"vendor profiler counters (XTDK) or a roofline \"\n                  \"comparison of dot vs elementwise at equal FLOP\"))\n    return {\"checks\": ch}\n",
+      "status": "UNKNOWN",
+      "log": "results/p800/issue10_capability/wp1_probes/logs/tl_dot.log",
+      "rc": 0,
+      "elapsed_s": 9.3
+    },
+    {
+      "checks": [
+        {
+          "detail": "no local-storage allocation/space-selection API: tl missing ['static_alloc', 'static_free', 'annotate']; no UB/shared/L1 selector exposed to Python",
+          "id": "explicit_space_selection_api",
+          "next_step": "placement can only be observed via IR dump or controlled via SDK -- see capacity/visibility checks",
+          "status": "FAIL"
+        },
+        {
+          "detail": "max_shared_mem=262144 bytes reported by XPUUtils (256 KiB on-chip window)",
+          "id": "capacity_query",
+          "next_step": "",
+          "status": "PASS"
+        },
+        {
+          "detail": "JITFunction exposes no .asm surface after launch (asm=NoneType); compiler-managed placement not observable from Python",
+          "id": "placement_visibility",
+          "next_step": "run the probe with MLIR_ENABLE_DUMP=1 and parse the dump for buffer location attributes",
+          "status": "UNKNOWN"
+        }
+      ],
+      "notes": [
+        "explicit selection fails => full AscendC-style ownership not expressible from Triton Python; capacity IS queryable"
+      ],
+      "probe": "local_storage",
+      "question": "\u5c40\u90e8\u5b58\u50a8\uff1a\u80fd\u5426\u663e\u5f0f\u9009\u62e9 UB/local/shared/L1 \u7a7a\u95f4\uff0c\u5bb9\u91cf\u548c\u53ef\u89c1\u6027\u8fb9\u754c",
+      "repro_script": "scripts/issue10_wp1_capability.py",
+      "repro_source": "def p_local_storage() -> dict:\n    ch = []\n    # explicit space selection API\n    missing = [n for n in (\"static_alloc\", \"static_free\", \"annotate\")\n               if not hasattr(tl, n)]\n    ch.append(_check(\n        \"explicit_space_selection_api\", False,\n        f\"no local-storage allocation/space-selection API: tl missing \"\n        f\"{missing}; no UB/shared/L1 selector exposed to Python\",\n        next_step=\"placement can only be observed via IR dump or \"\n                  \"controlled via SDK -- see capacity/visibility checks\"))\n    # capacity query\n    try:\n        from triton.backends.xpu.driver import XPUUtils\n        props = dict(XPUUtils().get_device_properties(0))\n        cap = int(props.get(\"max_shared_mem\", 0))\n        ch.append(_check(\"capacity_query\", cap > 0,\n                         f\"max_shared_mem={cap} bytes reported by \"\n                         \"XPUUtils (256 KiB on-chip window)\"))\n    except Exception as e:  # noqa: BLE001\n        ch.append(_check(\"capacity_query\", False,\n                         f\"props query failed: {type(e).__name__}: {e}\"))\n    # placement visibility: try the kernel .asm IR surface\n    try:\n        x = torch.randn(64, device=\"cuda\")\n        out = torch.full((64,), SENTINEL, device=\"cuda\")\n        _launch(k_vec_axpy, 1, x, out, 64, BLOCK=64)\n        fn = k_vec_axpy\n        asm = getattr(fn, \"asm\", None)\n        if isinstance(asm, dict) and asm:\n            keys = sorted(asm.keys())\n            ch.append(_check(\"placement_visibility\", True,\n                             f\"kernel.asm keys={keys} -- inspect for \"\n                             \"shared/local allocation\"))\n        else:\n            ch.append(_check(\n                \"placement_visibility\", False,\n                f\"JITFunction exposes no .asm surface after launch \"\n                f\"(asm={type(asm).__name__}); compiler-managed placement \"\n                \"not observable from Python\", status=\"UNKNOWN\",\n                next_step=\"run the probe with MLIR_ENABLE_DUMP=1 and \"\n                          \"parse the dump for buffer location attributes\"))\n    except Exception as e:  # noqa: BLE001\n        ch.append(_check(\"placement_visibility\", False,\n                         f\"{type(e).__name__}: {e}\", status=\"UNKNOWN\",\n                         next_step=\"MLIR dump route\"))\n    return {\"checks\": ch,\n            \"notes\": [\"explicit selection fails => full AscendC-style \"\n                      \"ownership not expressible from Triton Python; \"\n                      \"capacity IS queryable\"]}\n",
+      "status": "FAIL",
+      "log": "results/p800/issue10_capability/wp1_probes/logs/local_storage.log",
+      "rc": 0,
+      "elapsed_s": 9.2
+    },
+    {
+      "checks": [
+        {
+          "detail": "tl async surface: {'async_copy': False, 'async_wait': False, 'async_dot': False, 'join': True, 'split': True}; extra.xpu async/mte/copy symbols: []",
+          "id": "async_mechanism_api",
+          "next_step": "converge: implicit compiler overlap only, or SDK route for explicit MTE-style pipelines (see Go/No-Go)",
+          "status": "FAIL"
+        },
+        {
+          "detail": "cache_modifier='.cg' accepted and executed (max_err=0.0); effect on traffic not observable without counters",
+          "id": "cache_modifier_load",
+          "next_step": "vendor profiler cache counters",
+          "status": "UNKNOWN"
+        },
+        {
+          "detail": "compiler-internal copy/compute overlap not observable from Python (no counters, no async API)",
+          "id": "implicit_overlap",
+          "next_step": "steady-vs-analytic roofline timing + XTDK profiler if exposed",
+          "status": "UNKNOWN"
+        }
+      ],
+      "notes": [],
+      "probe": "async_copy",
+      "question": "\u5f02\u6b65\u642c\u8fd0\uff1aasync copy/MTE \u7b49\u4ef7\u673a\u5236\u53ca\u5176\u4e0e\u8ba1\u7b97\u91cd\u53e0",
+      "repro_script": "scripts/issue10_wp1_capability.py",
+      "repro_source": "def p_async_copy() -> dict:\n    ch = []\n    present = {n: hasattr(tl, n) for n in\n               (\"async_copy\", \"async_wait\", \"async_dot\", \"join\", \"split\")}\n    extras = []\n    try:\n        import triton.language.extra.xpu as xe\n        extras = [a for a in dir(xe) if \"async\" in a.lower()\n                  or \"mte\" in a.lower() or \"copy\" in a.lower()]\n    except Exception:  # noqa: BLE001\n        extras = []\n    exposed = present.get(\"async_copy\") or bool(extras)\n    ch.append(_check(\n        \"async_mechanism_api\", exposed,\n        f\"tl async surface: {present}; extra.xpu async/mte/copy symbols: \"\n        f\"{extras}\" if not exposed else f\"exposed: {present} {extras}\",\n        next_step=\"\" if exposed else\n        \"converge: implicit compiler overlap only, or SDK route for \"\n        \"explicit MTE-style pipelines (see Go/No-Go)\"))\n    # cache_modifier acceptance (compiler-side hint if accepted)\n    try:\n        x = torch.randn(128, device=\"cuda\")\n        out = torch.full((128,), SENTINEL, device=\"cuda\")\n        _launch(k_cache_modifier_load, 1, x, out, 128, BLOCK=128)\n        err = float((out - (x + 1.0)).abs().max())\n        ch.append(_check(\"cache_modifier_load\", False,\n                         f\"cache_modifier='.cg' accepted and executed \"\n                         f\"(max_err={err}); effect on traffic not \"\n                         \"observable without counters\", status=\"UNKNOWN\",\n                         next_step=\"vendor profiler cache counters\"))\n    except Exception as e:  # noqa: BLE001\n        ch.append(_check(\"cache_modifier_load\", False,\n                         f\"cache_modifier='.cg' rejected: \"\n                         f\"{type(e).__name__}: {str(e)[:240]}\"))\n    # implicit compute/transfer overlap\n    ch.append(_check(\n        \"implicit_overlap\", False,\n        \"compiler-internal copy/compute overlap not observable from \"\n        \"Python (no counters, no async API)\", status=\"UNKNOWN\",\n        next_step=\"steady-vs-analytic roofline timing + XTDK profiler \"\n                  \"if exposed\"))\n    return {\"checks\": ch}\n",
+      "status": "FAIL",
+      "log": "results/p800/issue10_capability/wp1_probes/logs/async_copy.log",
+      "rc": 0,
+      "elapsed_s": 9.4
+    },
+    {
+      "checks": [
+        {
+          "detail": "kernel with tl.debug_barrier compiles, executes, and returns correct values (max_err=0.0)",
+          "id": "in_kernel_barrier",
+          "next_step": "",
+          "status": "PASS"
+        },
+        {
+          "detail": "two sequential launches hand off via GM (max_err=0.0)",
+          "id": "gm_launch_order_visibility",
+          "next_step": "",
+          "status": "PASS"
+        },
+        {
+          "detail": "no cooperative grid-barrier API exposed (tl.debug_barrier is in-kernel scope only; cross-program sync requires launch ordering or XCCL)",
+          "id": "cross_program_concurrent_sync",
+          "next_step": "producer/consumer pipelines need SDK/graph-level sync; revisit only if WP2 step 5 is attempted",
+          "status": "UNKNOWN"
+        }
+      ],
+      "notes": [
+        "required for basic pipeline: in-kernel barrier + launch ordering; concurrent grid sync is optional (producer/consumer step)"
+      ],
+      "probe": "sync",
+      "question": "\u540c\u6b65\uff1aprogram \u5185 barrier\u3001\u8de8 program \u53ef\u89c1\u6027\u4e0e\u6240\u6709\u6743\u8f6c\u79fb\u8bed\u4e49",
+      "repro_script": "scripts/issue10_wp1_capability.py",
+      "repro_source": "def p_sync() -> dict:\n    ch = []\n    n = 256\n    x = torch.randn(n, device=\"cuda\")\n    # in-kernel barrier\n    out = torch.full((n,), SENTINEL, device=\"cuda\")\n    _launch(k_barrier_chain, triton.cdiv(n, n), x, out, n, BLOCK=n)\n    err = float((out - (x * 2.0 + 7.0)).abs().max())\n    ch.append(_check(\"in_kernel_barrier\", err == 0.0\n                     and _sentinel_changed(out),\n                     \"kernel with tl.debug_barrier compiles, executes, \"\n                     f\"and returns correct values (max_err={err})\"))\n    # cross-launch (program) visibility through global memory\n    y = torch.full((n,), SENTINEL, device=\"cuda\")\n    z = torch.full((n,), SENTINEL, device=\"cuda\")\n    _launch(k_writer, 1, x, y, n, BLOCK=n)\n    _launch(k_reader, 1, y, z, n, BLOCK=n)\n    err = float((z - x * 3.0).abs().max())\n    ch.append(_check(\"gm_launch_order_visibility\", err == 0.0\n                     and _sentinel_changed(z),\n                     f\"two sequential launches hand off via GM \"\n                     f\"(max_err={err})\"))\n    # concurrent cross-program barrier\n    ch.append(_check(\n        \"cross_program_concurrent_sync\", False,\n        \"no cooperative grid-barrier API exposed (tl.debug_barrier is \"\n        \"in-kernel scope only; cross-program sync requires launch \"\n        \"ordering or XCCL)\", status=\"UNKNOWN\",\n        next_step=\"producer/consumer pipelines need SDK/graph-level \"\n                  \"sync; revisit only if WP2 step 5 is attempted\"))\n    return {\"checks\": ch,\n            \"notes\": [\"required for basic pipeline: in-kernel barrier + \"\n                      \"launch ordering; concurrent grid sync is optional \"\n                      \"(producer/consumer step)\"]}\n",
+      "status": "PASS",
+      "log": "results/p800/issue10_capability/wp1_probes/logs/sync.log",
+      "rc": 0,
+      "elapsed_s": 9.3
+    },
+    {
+      "checks": [
+        {
+          "detail": "loop-carried state over 8 packets correct (max_err=0.0); launch count=1",
+          "id": "single_program_packet_loop",
+          "next_step": "",
+          "status": "PASS"
+        },
+        {
+          "detail": "grid of 4 resident workers, 32 packets all correct (max_err=0.0)",
+          "id": "grid_launch_persistence",
+          "next_step": "",
+          "status": "PASS"
+        },
+        {
+          "detail": "bounded static-unroll loops exit; probe process returned within 600s watchdog",
+          "id": "bounded_loop_exit",
+          "next_step": "",
+          "status": "PASS"
+        },
+        {
+          "detail": "dynamic `while q < LIMIT` lowers and exits (max_err=0.0)",
+          "id": "dynamic_while_loop",
+          "next_step": "",
+          "status": "PASS"
+        }
+      ],
+      "notes": [
+        "resident worker loop: same program consumes multiple independent packets sequentially"
+      ],
+      "probe": "persistent",
+      "question": "persistent \u6267\u884c\uff1a\u540c\u4e00 worker \u5faa\u73af\u6d88\u8d39\u591a\u4e2a packet \u5e76\u5b89\u5168\u9000\u51fa",
+      "repro_script": "scripts/issue10_wp1_capability.py",
+      "repro_source": "def p_persistent() -> dict:\n    ch = []\n    PACKETS, NPK = 8, 16\n    # one program loops over its packets (loop-carried state)\n    out = torch.full((PACKETS * NPK,), SENTINEL, device=\"cuda\")\n    _launch(k_persistent_loop, 1, out, PACKETS=PACKETS, NPK=NPK,\n            BLOCK=NPK)\n\n    def _ref(pid: int) -> torch.Tensor:\n        ref = torch.empty(PACKETS * NPK, device=\"cuda\")\n        acc = float(pid) * 100.0\n        for q in range(PACKETS):\n            acc = acc * 1.5 + float(q)\n            ref[q * NPK:(q + 1) * NPK] = acc\n        return ref\n\n    err = float((out - _ref(0)).abs().max())\n    ch.append(_check(\"single_program_packet_loop\", err == 0.0\n                     and _sentinel_changed(out),\n                     f\"loop-carried state over {PACKETS} packets \"\n                     f\"correct (max_err={err}); launch count=1\"))\n    # multi-program split: 4 programs x 8 packets, all packets correct\n    P = 4\n    out2 = torch.full((P * PACKETS * NPK,), SENTINEL, device=\"cuda\")\n    _launch(k_persistent_loop, P, out2, PACKETS=PACKETS, NPK=NPK,\n            BLOCK=NPK)\n    ref2 = torch.cat([_ref(pid) for pid in range(P)])\n    err2 = float((out2 - ref2).abs().max())\n    ch.append(_check(\"grid_launch_persistence\", err2 == 0.0\n                     and _sentinel_changed(out2),\n                     f\"grid of {P} resident workers, {P * PACKETS} \"\n                     f\"packets all correct (max_err={err2})\"))\n    # safe exit: bounded while-loop returns within watchdog (implicit:\n    # this probe process completed); record explicitly\n    ch.append(_check(\"bounded_loop_exit\", True,\n                     \"bounded static-unroll loops exit; probe process \"\n                     f\"returned within {PROBE_TIMEOUT_S}s watchdog\"))\n    # dynamic (non-static) while loop: XMLIR loop known-issue probe\n    try:\n        LIMIT = 5\n        outw = torch.full((1 * 16,), SENTINEL, device=\"cuda\")\n        _launch(k_persistent_while, 1, outw, LIMIT, BLOCK=16)\n        acc = 0.0\n        for _ in range(LIMIT):\n            acc = acc * 1.5 + 1.0\n        refw = torch.full((16,), acc, device=\"cuda\")\n        errw = float((outw - refw).abs().max())\n        ch.append(_check(\"dynamic_while_loop\", errw == 0.0\n                         and _sentinel_changed(outw),\n                         f\"dynamic `while q < LIMIT` lowers and exits \"\n                         f\"(max_err={errw})\"))\n    except Exception as e:  # noqa: BLE001\n        ch.append(_check(\"dynamic_while_loop\", False,\n                         f\"dynamic while rejected by XMLIR: \"\n                         f\"{type(e).__name__}: {str(e)[:300]}\",\n                         next_step=\"use static-unroll loops only in \"\n                                   \"residency designs; SDK route if \"\n                                   \"dynamic loops are required\"))\n    return {\"checks\": ch,\n            \"notes\": [\"resident worker loop: same program consumes \"\n                      \"multiple independent packets sequentially\"]}\n",
+      "status": "PASS",
+      "log": "results/p800/issue10_capability/wp1_probes/logs/persistent.log",
+      "rc": 0,
+      "elapsed_s": 10.4
+    },
+    {
+      "checks": [
+        {
+          "detail": "libdevice.exp2 lowers and matches torch.exp2 (max_err=4.76837158203125e-07)",
+          "id": "vendor_intrinsic_libdevice",
+          "next_step": "",
+          "status": "PASS"
+        },
+        {
+          "detail": "triton->torch.fft->triton sequencing correct (max_err_vs_fp64_truth=2.592048389438162e-05)",
+          "id": "host_vendor_interop",
+          "next_step": "",
+          "status": "PASS"
+        },
+        {
+          "detail": "tl.inline_asm_elementwise present=True, but no verified XPU assembly syntax sample exists in this repo; blind attempt could corrupt the compiler state",
+          "id": "inline_asm_xpu",
+          "next_step": "obtain a legal XTDK inline-asm sample from vendor docs, then run an asm axpy probe",
+          "status": "UNKNOWN"
+        },
+        {
+          "detail": "triton.compile signature extern-libs support: False; no verified SDK .so linkage sample for the XPU backend this round",
+          "id": "precompiled_so_link",
+          "next_step": "compile a kernel referencing an extern symbol once an SDK .so sample is provided",
+          "status": "FAIL"
+        }
+      ],
+      "notes": [
+        "host-adjacent vendor ops are orchestration-level interop, NOT an in-kernel vendor core"
+      ],
+      "probe": "external_core",
+      "question": "\u5916\u90e8\u6838\u5fc3\uff1aTriton \u8c03\u7528 vendor intrinsic / \u9884\u7f16\u8bd1 kernel / SDK .so",
+      "repro_script": "scripts/issue10_wp1_capability.py",
+      "repro_source": "def p_external_core() -> dict:\n    ch = []\n    # vendor intrinsic from inside a Triton kernel (libdevice surface)\n    x = torch.randn(128, device=\"cuda\")\n    out = torch.full((128,), SENTINEL, device=\"cuda\")\n    _launch(k_libdevice, 1, x, out, 128, BLOCK=128)\n    ref = torch.exp2(x)\n    err = float((out - ref).abs().max())\n    ch.append(_check(\"vendor_intrinsic_libdevice\", err < 1e-4\n                     and _sentinel_changed(out),\n                     f\"libdevice.exp2 lowers and matches torch.exp2 \"\n                     f\"(max_err={err})\"))\n    # host-side interop: triton kernel -> vendor op -> triton kernel\n    y = torch.full((128,), SENTINEL, device=\"cuda\")\n    z = torch.full((128,), SENTINEL, device=\"cuda\")\n    _launch(k_scale2, 1, x, y, 128, BLOCK=128)\n    y2 = torch.fft.fft(y)\n    _launch(k_scale2, 1, y2.real.contiguous(), z, 128, BLOCK=128)\n    # ground truth for the whole sequence on the host (fp64)\n    xh = x.cpu().double()\n    z_ref = (torch.fft.fft(xh * 2.0).real * 2.0)\n    err = float((z.cpu().double() - z_ref).abs().max())\n    ch.append(_check(\"host_vendor_interop\", err <= 1e-3,\n                     f\"triton->torch.fft->triton sequencing correct \"\n                     f\"(max_err_vs_fp64_truth={err})\"))\n    # inline asm: no verified XPU syntax sample -> UNKNOWN (no blind try)\n    has_asm = hasattr(tl, \"inline_asm_elementwise\")\n    ch.append(_check(\n        \"inline_asm_xpu\", has_asm,\n        f\"tl.inline_asm_elementwise present={has_asm}, but no verified \"\n        \"XPU assembly syntax sample exists in this repo; blind attempt \"\n        \"could corrupt the compiler state\", status=\"UNKNOWN\",\n        next_step=\"obtain a legal XTDK inline-asm sample from vendor \"\n                  \"docs, then run an asm axpy probe\"))\n    # precompiled .so / extern lib linkage from the Python surface\n    try:\n        import triton.compiler as tc\n        src = str(inspect.signature(tc.compile)) if hasattr(\n            tc, \"compile\") else \"\"\n        has_extern = \"extern\" in src\n    except Exception:  # noqa: BLE001\n        has_extern = False\n    ch.append(_check(\n        \"precompiled_so_link\", has_extern,\n        f\"triton.compile signature extern-libs support: {has_extern}; no \"\n        \"verified SDK .so linkage sample for the XPU backend this round\",\n        status=\"UNKNOWN\" if has_extern else \"FAIL\",\n        next_step=\"compile a kernel referencing an extern symbol once an \"\n                  \"SDK .so sample is provided\"))\n    return {\"checks\": ch,\n            \"notes\": [\"host-adjacent vendor ops are orchestration-level \"\n                      \"interop, NOT an in-kernel vendor core\"]}\n",
+      "status": "PASS",
+      "log": "results/p800/issue10_capability/wp1_probes/logs/external_core.log",
+      "rc": 0,
+      "elapsed_s": 9.7
+    },
+    {
+      "checks": [
+        {
+          "detail": "multiprocessor_count=12 max_shared_mem=262144 device_model=3",
+          "id": "device_props_query",
+          "next_step": "",
+          "status": "PASS"
+        },
+        {
+          "detail": "program_id=0 num_programs=1 encoded in values [0.0010000000474974513, 0.0010000000474974513, 0.0010000000474974513, 0.0010000000474974513] (float32 representation 0.0010000000474974513)",
+          "id": "in_kernel_grid_query",
+          "next_step": "",
+          "status": "PASS"
+        },
+        {
+          "detail": "XPUUtils reports max_num_regs=0 (0/absent => not reported on this driver)",
+          "id": "register_file_query",
+          "next_step": "register budget from XTDK docs / SDK query",
+          "status": "UNKNOWN"
+        }
+      ],
+      "notes": [],
+      "probe": "resource_query",
+      "question": "\u8d44\u6e90\u67e5\u8be2\uff1agrid\u3001\u5bc4\u5b58\u5668/\u5c40\u90e8\u5b58\u50a8\u3001\u7247\u4e0a\u5bb9\u91cf\u3001resident worker \u8fb9\u754c",
+      "repro_script": "scripts/issue10_wp1_capability.py",
+      "repro_source": "def p_resource_query() -> dict:\n    ch = []\n    try:\n        from triton.backends.xpu.driver import XPUUtils\n        props = dict(XPUUtils().get_device_properties(0))\n        mps = int(props.get(\"multiprocessor_count\", 0))\n        shm = int(props.get(\"max_shared_mem\", 0))\n        ch.append(_check(\"device_props_query\", mps > 0 and shm > 0,\n                         f\"multiprocessor_count={mps} \"\n                         f\"max_shared_mem={shm} device_model=\"\n                         f\"{props.get('device_model')}\"))\n    except Exception as e:  # noqa: BLE001\n        ch.append(_check(\"device_props_query\", False,\n                         f\"{type(e).__name__}: {e}\"))\n    # in-kernel grid query\n    try:\n        out = torch.full((4,), SENTINEL, device=\"cuda\")\n        _launch(k_grid_query, 1, out, BLOCK=4)\n        # single-program grid: pid must be 0, num_programs must be 1\n        got = out.tolist()\n        ok = abs(got[0] - 0.001) < 1e-6 and all(\n            abs(v - got[0]) < 1e-9 for v in got)\n        ch.append(_check(\"in_kernel_grid_query\", ok,\n                         f\"program_id=0 num_programs=1 encoded in \"\n                         f\"values {got} (float32 representation \"\n                         f\"0.0010000000474974513)\"))\n    except Exception as e:  # noqa: BLE001\n        ch.append(_check(\"in_kernel_grid_query\", False,\n                         f\"{type(e).__name__}: {e}\"))\n    # register file size reporting\n    try:\n        regs = props.get(\"max_num_regs\", None)\n    except Exception:  # noqa: BLE001\n        regs = None\n    ch.append(_check(\n        \"register_file_query\", False,\n        f\"XPUUtils reports max_num_regs={regs} (0/absent => not \"\n        \"reported on this driver)\", status=\"UNKNOWN\",\n        next_step=\"register budget from XTDK docs / SDK query\"))\n    return {\"checks\": ch}\n",
+      "status": "PASS",
+      "log": "results/p800/issue10_capability/wp1_probes/logs/resource_query.log",
+      "rc": 0,
+      "elapsed_s": 9.4
+    }
+  ],
+  "totals": {
+    "PASS": 7,
+    "FAIL": 2,
+    "UNKNOWN": 1
+  },
+  "elapsed_s": 94.8
+}

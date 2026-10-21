@@ -1,0 +1,49 @@
+{
+  "schema": "issue10-wp2-radix2-v1",
+  "op_constraints": "op-subset (ops_supported.json): FFT stages cannot slice/index-register values; partner/group values are fetched via address-computed GM loads inside one kernel (in-kernel scratch ping-pong). Constraints: supported = load/store(addr-arithmetic gather), where(same shape), //, %, cos/sin, full sum; unsupported = slice, reg/scalar index, trans, sum(axis), join/split/cat, chained None, python math in jit; reshape passes the frontend but crashes the XPU lowering (GlobalEncodingAttr UNREACHABLE) -> no kernel here uses reshape.  NOTE (stale-read bug): the GM ping-pong pattern is unreliable: store->permuted-load from the same buffer returns stale values at grid>1 (this WP) and \u2014 per WP3's size sweep \u2014 also at grid=1 for n=32/64; see wp2_concurrency.json and wp3_blockmax.json.  The scalar codegen kernel sidesteps the whole op-subset: unrolling happens in python, the jit body is pure scalar load/compute/store.",
+  "cases": [
+    {
+      "probe": "radix2_single_tile",
+      "ownership": "grid=1 program owns the whole packet: input load, all log2(N) DIT stages, output store; registers v_re/v_im are the packet-private live set",
+      "local_live_data_range": "register v (2x16B fp32 SoA) across 3 stages; GM scratch ping-pong S0/S1 (2x2x16B)",
+      "required_global_boundaries": [
+        "input RE/IM buffers (rev-addressed load)",
+        "scratch S0/S1 (per-stage partner load + stage store)",
+        "output ORE/OIM (final store)"
+      ],
+      "synchronization_scope": "single program; in-program program-order RAW only; no barrier, no cross-program sync (grid=1)",
+      "expected_launch_count": 1,
+      "expected_gm_bytes": {
+        "per_packet_bytes": 576,
+        "formula": "4*N*4 (stage0 v+b loads) + (L-1)*2*N*4 (partner loads) + (L-1)*2*N*4 (scratch stores) + 2*N*4 (final stores), L=log2(N)"
+      },
+      "latency_ms": 0.017581827705726027,
+      "rel_err": 2.6008092138896903e-08,
+      "pass": true,
+      "n": 8,
+      "logn": 3
+    },
+    {
+      "probe": "radix2_single_tile",
+      "ownership": "grid=1 program owns the whole packet: input load, all log2(N) DIT stages, output store; registers v_re/v_im are the packet-private live set",
+      "local_live_data_range": "register v (2x32B fp32 SoA) across 4 stages; GM scratch ping-pong S0/S1 (2x2x32B)",
+      "required_global_boundaries": [
+        "input RE/IM buffers (rev-addressed load)",
+        "scratch S0/S1 (per-stage partner load + stage store)",
+        "output ORE/OIM (final store)"
+      ],
+      "synchronization_scope": "single program; in-program program-order RAW only; no barrier, no cross-program sync (grid=1)",
+      "expected_launch_count": 1,
+      "expected_gm_bytes": {
+        "per_packet_bytes": 1408,
+        "formula": "4*N*4 (stage0 v+b loads) + (L-1)*2*N*4 (partner loads) + (L-1)*2*N*4 (scratch stores) + 2*N*4 (final stores), L=log2(N)"
+      },
+      "latency_ms": 0.018489783542463556,
+      "rel_err": 2.648289309289475e-08,
+      "pass": true,
+      "n": 16,
+      "logn": 4
+    }
+  ],
+  "all_pass": true
+}

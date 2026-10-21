@@ -1,0 +1,144 @@
+{
+  "schema": "issue10-wp0-environment-v1",
+  "issue": "kunlunxin-fft#10",
+  "created_unix": 1792565830,
+  "created_utc": "2026-10-21T06:57:10Z",
+  "purpose": "WP0 provenance: recorded BEFORE capability/perf claims; gates verify wp0_hash and env binding",
+  "python": {
+    "version": "3.10.18",
+    "executable": "/root/miniconda/envs/python310_torch29_cuda/bin/python3",
+    "platform": "Linux-6.8.0-87-generic-x86_64-with-glibc2.35"
+  },
+  "packages": {
+    "torch": {
+      "name": "torch",
+      "version": "2.9.0+cu129",
+      "file": "/root/miniconda/envs/python310_torch29_cuda/lib/python3.10/site-packages/torch/__init__.py",
+      "dist_version": "2.9.0+cu129",
+      "source_kind": "site-packages (wheel/site)"
+    },
+    "triton": {
+      "name": "triton",
+      "version": "3.0.0",
+      "file": "/root/miniconda/envs/python310_torch29_cuda/lib/python3.10/site-packages/triton/__init__.py",
+      "dist_version": "3.0.0+03c4c9be",
+      "source_kind": "site-packages (wheel/site)"
+    },
+    "flag_gems": {
+      "name": "flag_gems",
+      "version": "4.2.1.rc.0",
+      "file": "/env/FlagGems/src/flag_gems/__init__.py",
+      "dist_version": "4.2.1rc0",
+      "git_root": "/env/FlagGems",
+      "git_head": "73c5aff1e304c293ab525ecb03e9449644496fbb",
+      "git_dirty": true,
+      "source_kind": "git-checkout"
+    },
+    "torch_xmlir": {
+      "name": "torch_xmlir",
+      "version": "XMLIR--bc1b1dc6f-dev+2026032411",
+      "build_ids": {
+        "XPYTORCH": "XMLIR--bc1b1dc6f-dev+2026032411",
+        "XRE": "5.13.0.0",
+        "XHPC": "20770323",
+        "XTDK": "3.6.0.1",
+        "compile_date": "20260324-11:53:49"
+      },
+      "file": "/root/miniconda/envs/python310_torch29_cuda/lib/python3.10/site-packages/torch_xmlir/__init__.py",
+      "dist_version": null,
+      "source_kind": "site-packages (wheel/site)"
+    }
+  },
+  "triton_backend": {
+    "triton_file": "/root/miniconda/envs/python310_torch29_cuda/lib/python3.10/site-packages/triton/__init__.py",
+    "extra_xpu_file": "/root/miniconda/envs/python310_torch29_cuda/lib/python3.10/site-packages/triton/language/extra/xpu/__init__.py",
+    "backends_xpu_file": "/root/miniconda/envs/python310_torch29_cuda/lib/python3.10/site-packages/triton/backends/xpu/__init__.py",
+    "tl_surface_probe": {
+      "async_copy": false,
+      "static_alloc": false,
+      "debug_barrier": true,
+      "dot": true,
+      "inline_asm_elementwise": true,
+      "permute": true,
+      "trans": true,
+      "split": true,
+      "join": true,
+      "swizzle2d": true
+    }
+  },
+  "device": {
+    "torch_xmlir_versions": {
+      "XPYTORCH": "XMLIR--bc1b1dc6f-dev+2026032411",
+      "XHPC": "20770323",
+      "XTDK": "3.6.0.1",
+      "XRE": "5.13.0.0",
+      "CUPTI": "1.1.0.0",
+      "XCCL": "20260209_9",
+      "compile_date": "20260324-11:53:49",
+      "arch": "x86_64"
+    },
+    "device_properties": {
+      "device_model": 3,
+      "max_num_regs": 0,
+      "max_shared_mem": 262144,
+      "mem_bus_width": 0,
+      "mem_clock_rate": 0,
+      "multiprocessor_count": 12,
+      "sm_clock_rate": 0,
+      "warpSize": 1
+    }
+  },
+  "xpu_smi": {
+    "available": true,
+    "raw_head": "Wed Oct 21 14:57:16 2026       \n+-----------------------------------------------------------------------------+\n| XPU-SMI               Driver Version: 515.58       XPU-RT Version: N/A      |\n|-------------------------------+----------------------+----------------------+\n| XPU  Name        Persistence-M| Bus-Id        Disp.A | Volatile Uncorr. ECC |\n| Fan  Temp  Perf  Pwr:Usage/Cap|         Memory-Usage | XPU-Util  Compute M. |",
+    "driver_version": "515.58",
+    "model": "P800 OAM",
+    "cards_seen": 8
+  },
+  "compiler": {
+    "cc": {
+      "path": "/usr/bin/cc",
+      "first_line": "cc (Ubuntu 11.4.0-1ubuntu1~22.04.2) 11.4.0"
+    },
+    "c++": {
+      "path": "/usr/bin/c++",
+      "first_line": "c++ (Ubuntu 11.4.0-1ubuntu1~22.04.2) 11.4.0"
+    }
+  },
+  "environment_variables": {
+    "CUDA_VISIBLE_DEVICES": "1,2",
+    "LD_LIBRARY_PATH": null,
+    "PYTHONPATH": null,
+    "TRITON_CACHE_DIR": null,
+    "MLIR_ENABLE_DUMP": null,
+    "XPU_VISIBLE_DEVICES": null,
+    "XCCL_": null,
+    "OMP_NUM_THREADS": null
+  },
+  "repo": {
+    "live_env_fingerprint": {
+      "torch": "2.9.0+cu129",
+      "triton": "3.0.0",
+      "xpytorch": "XMLIR--bc1b1dc6f-dev+2026032411",
+      "xre": "5.13.0.0",
+      "xhpc": "20770323",
+      "driver": "515.58",
+      "device_model": 3,
+      "multiprocessor_count": 12,
+      "max_shared_mem": 262144
+    },
+    "live_env_hash": "6b50bd316032c0fe",
+    "calibration_env_hash": "6b50bd316032c0fe",
+    "calibration_profile_hash": "e72eb352dffb26fd",
+    "calibration_device_profile_hash": "a78b86793c7142a0",
+    "calibration_git_rev": "3a57d1a69bee9eb3e512781bf2e11d37b8abcdd0",
+    "git_rev": "61eaf85103d37d9def0dd0ab184817bb05bc18f3",
+    "git_dirty": false,
+    "git_untracked": [
+      "?? results/p800/issue10_capability/",
+      "?? results/p800/issue9_v61/run_state.json",
+      "?? scripts/issue10_wp0_env.py"
+    ]
+  },
+  "wp0_hash": "e1df07ac3aba3fe409daa257b8f4bb8c6be3abd0e204ce416f808cbb6c1e5221"
+}

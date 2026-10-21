@@ -1,0 +1,60 @@
+{
+  "schema": "issue10-wp2-summary-v1",
+  "issue": "kunlunxin-fft#10",
+  "created_utc": "2026-10-21T10:52:55Z",
+  "script": "/workspace/kunlunxin-fft/scripts/issue10_wp2_minikernels.py",
+  "tol_rel": 1e-05,
+  "steps": {
+    "opsubset": {
+      "status": "PASS",
+      "elapsed_s": 167.74558234214783,
+      "log": "wp2_logs/opsubset.log"
+    },
+    "radix2": {
+      "status": "PASS",
+      "elapsed_s": 9.497012615203857,
+      "log": "wp2_logs/radix2.log"
+    },
+    "radix4": {
+      "status": "PASS",
+      "elapsed_s": 9.145652770996094,
+      "log": "wp2_logs/radix4.log"
+    },
+    "fusion": {
+      "status": "PASS",
+      "elapsed_s": 9.478792190551758,
+      "log": "wp2_logs/fusion.log"
+    },
+    "concurrency": {
+      "status": "PASS",
+      "elapsed_s": 9.482263326644897,
+      "log": "wp2_logs/concurrency.log"
+    },
+    "resident": {
+      "status": "PASS",
+      "elapsed_s": 9.827725172042847,
+      "log": "wp2_logs/resident.log"
+    },
+    "producer_consumer": {
+      "status": "PASS",
+      "elapsed_s": 8.129991054534912,
+      "log": "wp2_logs/producer_consumer.log"
+    },
+    "p_axis": {
+      "status": "PASS",
+      "elapsed_s": 9.167160987854004,
+      "log": "wp2_logs/p_axis.log"
+    }
+  },
+  "gates": {
+    "opsubset_runs": true,
+    "radix2_pass": true,
+    "radix4_pass": true,
+    "fusion_pass": true,
+    "concurrency_pass": true,
+    "resident_pass": true,
+    "producer_consumer_recorded": true,
+    "p_axis_pass": true,
+    "all": true
+  }
+}
