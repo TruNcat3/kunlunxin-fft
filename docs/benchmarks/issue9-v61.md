@@ -18,6 +18,7 @@ Issue #9 的目标是证明 cuButterfly 的方法能够在 P800 上形成可复�
 | v6 可比较 cell | `140` | current/M0 的同语义比较集合 |
 | current/M0 几何平均延迟比 | `0.6086x` | 相对旧 incumbent/M0，几何平均延迟约降低 `39%` |
 | 10-cell paired closure | `37.0%--75.2%` | paired median 改善，中位数约 `60.7%`，全部通过 `2%` guard |
+| scale slice | `N=16384/65536, B=16` | selector 相对旧 incumbent 约改善 `47%--52%` |
 | vendor-supported 子集 | `106` | 仅统计厂商调用成功且语义匹配的 cell |
 | 相对 vendor | `4 / 0 / 102` | win / tie / loss；几何平均 `cuButterfly/vendor ≈ 0.122x` |
 
@@ -54,6 +55,11 @@ pipeline 或第三方局部核心算作已完成能力。
 最新 v6 vendor-supported 子集为 106 个 cell：4 个胜出、0 个持平、102 个落后，
 几何平均 `cuButterfly/vendor ≈ 0.122x`。这不是 selector 没有搜索到某个神奇参数的证据；Issue #9
 明确记录了当前实现还没有加入：
+
+作为历史 paired closure 的交叉检查，v5 的 10-cell 对照相对 vendor 几何平均约为 `0.127x`，且
+没有胜出 cell；它与 v6 的 106-cell 统计使用不同 release 协议，不应合并平均。规模切片中
+`N=16384/65536, B=16` 的 selector 相对旧 incumbent 约改善 `47%--52%`，说明迁移库内部的
+选择闭环在较大形状上也有收益，但不改变相对厂商性能的结论。
 
 - 真正的 batched `M2/hybrid/h_dif` 物理 kernel；
 - 跨 worker 的 resident/persistent pipeline；
