@@ -1,18 +1,23 @@
 #!/usr/bin/env python3
 """Issue #9 release gates over the semantic-matrix snapshot + pairing.
 
-Canonical re-review gate set (release-correction): the 19 v6 gates
-plus the P1-2 v5-production pairing and the P1-1 timed-path
-independent-correctness checks.
+Canonical re-review gate set (release-correction round 2): the 19 v6
+gates plus the P1-2 v5-production pairing, the P1-1 timed-path
+independent-correctness checks, real SHA binding for the identity
+gate (no unconditional passes), report label-set equality gates, and
+the closure exit guard gate (v5 paired delta + guard; the
+bounded-oracle gap is informational only).
 
 Usage:
     scripts/issue9_release_gates.py RELEASE_DIR \
-        --v5-pair DIR --identity JSON
+        --v5-pair DIR --identity JSON --reports DIR
 
 * RELEASE_DIR   -- immutable snapshot (validate phase output)
 * --v5-pair     -- paired run of the changed cells with
                    --previous-table-src v5 bound table
 * --identity    -- issue9_v5_path_identity.json report
+* --reports     -- issue9_release_reports.py output dir (label-set
+                   equality gates vs the frozen config domains)
 
 Exit 0 only when every hard gate passes.
 """
@@ -55,6 +60,9 @@ def main(argv=None):
     ap.add_argument("--stable-ref", default=None,
                     help="prior release dir (v6) for the two-round "
                     "stability definition of an A1 regression")
+    ap.add_argument("--reports", default=None,
+                    help="issue9_release_reports output dir (label-set "
+                    "equality gates vs frozen config domains)")
     args = ap.parse_args(argv)
 
     rel = Path(args.release_dir)
@@ -223,9 +231,13 @@ def main(argv=None):
     print("  vs incumbent >2% regressions:", losses)
     regs_o = [c["selector_regret"] for c in cases
               if c.get("selector_regret") is not None]
-    print(f"  regret mean {sum(regs_o)/len(regs_o):.4f}  "
-          f"max {max(regs_o):.4f}"
-          f"  >10% cells {sum(1 for r in regs_o if r > 0.10)}")
+    print(f"  bounded_oracle_gap (informational; deployed promotion "
+          f"entry may sit outside oracle:* set, so gap <= 0 is "
+          f"possible -- NOT an optimality claim): mean "
+          f"{sum(regs_o)/len(regs_o):.4f}  max {max(regs_o):.4f}"
+          f"  cells >10% {sum(1 for r in regs_o if r > 0.10)}")
+    print("  closure exit metrics: v5 paired delta + guard "
+          "(see P1-2 v5 pair below and closure_official in reports)")
     print("  vendor:", met["win"], met["tie"], met["loss"],
           "geomean", round(met["geomean_speedup_vs_vendor"], 4),
           "worst", round(met["worst_speedup_vs_vendor"], 4))
@@ -282,8 +294,22 @@ def main(argv=None):
              cnt["changed"] == 10 and changed_labels == closure_labels)
         gate("identity: identical + changed == 144",
              cnt["identical"] + cnt["changed"] == 144)
-        gate("identity: current table sha == release previous-table "
-             "working table", True)  # informational; release binds A1
+        # real SHA bindings (re-review: never gate(..., True)):
+        # (a) the release's previous-table FILE must hash to the
+        #     manifest-bound A1 sha; (b) the identity report's
+        #     current-table sha must match the live working table.
+        rel_prev = rel / "previous_selector_table.json"
+        gate("identity: sha256(release previous_selector_table) == "
+             "manifest.previous_selector_sha256",
+             rel_prev.is_file()
+             and hashlib.sha256(rel_prev.read_bytes()).hexdigest()
+             == m.get("previous_selector_sha256"))
+        gate("identity: report current_table_sha256 == live "
+             "config/selector_table.json",
+             ident["current_table_sha256"]
+             == hashlib.sha256(
+                 (ROOT / "config/selector_table.json").read_bytes()
+             ).hexdigest())
         gate("identity: frozen base commit == config",
              ident["frozen_base_commit"]
              == cfg["source"]["frozen_base_commit"])
@@ -321,6 +347,72 @@ def main(argv=None):
             print("  BAD:", w)
         gate("v5 pair: strict OK",
              not validate_benchmark_output(args.v5_pair, strict=True))
+
+    # ---------------- closure exit: guard + report label sets ----------
+    print("\n=== closure official exit (guard_vs_incumbent) ===")
+    import run_issue9 as ri
+    closure_labels = set()
+    for n, b, sems in sm.parse_cells_spec(
+            ri.phase_cells_spec(cfg, "closure")):
+        closure_labels |= {f"N{n}B{b}:{sem}" for sem in sems}
+    clo_cases = [c for c in cases if c["label"] in closure_labels]
+    clo_bad = [c["label"] for c in clo_cases
+               if c.get("guard_pass_2pct") is not True
+               or not isinstance(c.get("guard_vs_incumbent"),
+                                 (int, float))
+               or c["guard_vs_incumbent"] < 0.02]
+    for c in sorted(clo_cases, key=lambda x: x["label"]):
+        print(f"  {c['label']:24s} guard={c.get('guard_vs_incumbent')}"
+              f" pass2pct={c.get('guard_pass_2pct')}")
+    gate("closure 10 cells all guard >=2% vs incumbent",
+         len(clo_cases) == 10 and not clo_bad)
+    if clo_bad:
+        for lab in clo_bad:
+            print("  BAD:", lab)
+
+    print("\n=== report label-set equality (frozen config domains) ===")
+    if not args.reports or not Path(
+            args.reports, "scale_report.json").is_file():
+        gate("reports dir provided (--reports)", False)
+        print("  MISSING --reports")
+    else:
+        def _cfg_labels(domain):
+            labs = set()
+            for n, b, sems in sm.parse_cells_spec(
+                    ",".join(cfg["domains"][domain]["cells"])):
+                labs |= {f"N{n}B{b}:{s}" for s in sems}
+            return labs
+        for fname, domain in (("scale_report.json", "scale"),
+                              ("shape_proxy_report.json", "apps")):
+            rp = json.loads(
+                (Path(args.reports) / fname).read_text())
+            cells = {c["label"] for c in rp.get("cells", [])}
+            want = _cfg_labels(domain)
+            missing, extra = sorted(want - cells), sorted(cells - want)
+            print(f"  {fname}: {len(cells)} cells vs config {domain} "
+                  f"{len(want)} labels; missing={missing} extra={extra}")
+            gate(f"report {fname} cells == config {domain} label set",
+                 cells == want)
+        steady_r = json.loads(
+            (Path(args.reports) / "steady_report.json").read_text())
+        co = steady_r.get("closure_official", {})
+        co_cells = {c["label"] for c in co.get("cells", [])}
+        agg = co.get("aggregate", {})
+        print(f"  closure_official: cells={len(co_cells)} "
+              f"missing={co.get('missing_labels')} "
+              f"all_faster={agg.get('all_cells_faster_than_v5_deployed')}"
+              f" all_guard={agg.get('all_guard_pass_2pct')} "
+              f"oracle_regret={co.get('oracle_regret')}")
+        gate("closure_official covers all 10 closure labels",
+             co_cells == closure_labels)
+        gate("closure_official: every cell faster than v5-deployed "
+             "(paired median < 0)",
+             agg.get("all_cells_faster_than_v5_deployed") is True)
+        gate("closure_official: every cell guard >=2% and oracle "
+             "regret marked N/A",
+             agg.get("all_guard_pass_2pct") is True
+             and isinstance(co.get("oracle_regret"), str)
+             and co["oracle_regret"].startswith("N/A"))
 
     print("\n=== HARD GATES ===")
     ok = True

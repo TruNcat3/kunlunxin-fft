@@ -43,7 +43,8 @@
   mean selector_vs_A1previous: -22.4384% over 140 cells
   vs incumbent >=2% positives: 80
   vs incumbent >2% regressions: ['N512B1:c2c-inverse']
-  regret mean 0.3615  max 1.5466  >10% cells 68
+  bounded_oracle_gap (informational; deployed promotion entry may sit outside oracle:* set, so gap <= 0 is possible -- NOT an optimality claim): mean 0.3615  max 1.5466  cells >10% 68
+  closure exit metrics: v5 paired delta + guard (see P1-2 v5 pair below and closure_official in reports)
   vendor: 4 0 102 geomean 0.122 worst 0.024
 
 === strict validation (release dir) ===
@@ -79,6 +80,23 @@
     N64B4:c2c-forward            current-vs-v5deployed -65.6326%
     N64B4:c2r                    current-vs-v5deployed -57.0895%
 
+=== closure official exit (guard_vs_incumbent) ===
+  N512B16:c2c-forward      guard=0.36613923588691577 pass2pct=True
+  N512B16:c2r              guard=0.6364807777043026 pass2pct=True
+  N512B4:c2c-forward       guard=0.4538047468803331 pass2pct=True
+  N512B4:c2r               guard=0.5204161633712189 pass2pct=True
+  N512B64:c2r              guard=0.7291607197706517 pass2pct=True
+  N512B64:r2c              guard=0.7115120380203654 pass2pct=True
+  N64B16:c2c-forward       guard=0.6608248312563684 pass2pct=True
+  N64B16:c2r               guard=0.5622861082010187 pass2pct=True
+  N64B4:c2c-forward        guard=0.6667478648531664 pass2pct=True
+  N64B4:c2r                guard=0.5617476574427076 pass2pct=True
+
+=== report label-set equality (frozen config domains) ===
+  scale_report.json: 12 cells vs config scale 12 labels; missing=[] extra=[]
+  shape_proxy_report.json: 12 cells vs config apps 12 labels; missing=[] extra=[]
+  closure_official: cells=10 missing=[] all_faster=True all_guard=True oracle_regret=N/A (deployed promotion entry is outside the bounded oracle:* candidate set)
+
 === HARD GATES ===
   [PASS] top==summary result_sha256
   [PASS] top==summary cases_sha256
@@ -105,9 +123,16 @@
   [PASS] raw previous_fallback rows only on 6-cell labels
   [PASS] identity: changed cells == closure 10
   [PASS] identity: identical + changed == 144
-  [PASS] identity: current table sha == release previous-table working table
+  [PASS] identity: sha256(release previous_selector_table) == manifest.previous_selector_sha256
+  [PASS] identity: report current_table_sha256 == live config/selector_table.json
   [PASS] identity: frozen base commit == config
   [PASS] v5 pair: previous table sha == v5 bound blob
   [PASS] v5 pair: no cell >2% slower than v5-deployed
   [PASS] v5 pair: strict OK
+  [PASS] closure 10 cells all guard >=2% vs incumbent
+  [PASS] report scale_report.json cells == config scale label set
+  [PASS] report shape_proxy_report.json cells == config apps label set
+  [PASS] closure_official covers all 10 closure labels
+  [PASS] closure_official: every cell faster than v5-deployed (paired median < 0)
+  [PASS] closure_official: every cell guard >=2% and oracle regret marked N/A
 ALL HARD GATES PASSED

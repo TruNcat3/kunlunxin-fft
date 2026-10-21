@@ -36,6 +36,6 @@
       "path": "/workspace/kunlunxin-fft/results/p800/issue9/tune-p"
     }
   },
-  "schema": "issue9-release-reports-v1",
+  "schema": "issue9-release-reports-v2",
   "scope_statement": "Existing candidate sets were fully scanned (tune-p: full legal processing-unit/flow set) and the deployed winner re-blocked (tune-a: winner-block sweep) within the pre-declared two-round budget; no promotable >=2% gain was found. This is NOT a controlled A/P (architecture-mapping / processing-unit) ablation and NOT 'two-axis implementation and optimization': a94b890..HEAD adds no new physical kernel."
 }

@@ -2258,7 +2258,7 @@
   ],
   "release": "results/p800/releases/20261020-issue9-semantic-matrix-v6-1",
   "report": "e2e",
-  "schema": "issue9-release-reports-v1",
+  "schema": "issue9-release-reports-v2",
   "timing_scope": "e2e and one_shot tiers",
   "unsupported": "cells without one_shot/e2e rows: contenders failed the correctness gate first",
   "vendor_e2e": {

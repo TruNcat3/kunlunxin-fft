@@ -21,24 +21,54 @@ REL_V61 = ROOT / "results/p800/releases/20261020-issue9-semantic-matrix-v6-1"
 REL_V6 = ROOT / "results/p800/releases/20261020-issue9-semantic-matrix-v6"
 V5_PAIR = ROOT / "results/p800/issue9_v61/v5_pair"
 IDENTITY = ROOT / "results/p800/issue9_v61/v5_path_identity.json"
+REPORTS = ROOT / "results/p800/issue9_v61/reports"
+
+
+def _gates_argv(identity=None, reports=REPORTS):
+    return [
+        str(REL_V61),
+        "--v5-pair", str(V5_PAIR),
+        "--identity", str(identity or IDENTITY),
+        "--stable-ref", str(REL_V6),
+        "--reports", str(reports),
+    ]
 
 
 def test_release_gates_all_pass_v61(capsys):
-    rc = gates.main([
-        str(REL_V61),
-        "--v5-pair", str(V5_PAIR),
-        "--identity", str(IDENTITY),
-        "--stable-ref", str(REL_V6),
-    ])
+    rc = gates.main(_gates_argv())
     out = capsys.readouterr().out
     assert rc == 0, out[-4000:]
     assert "ALL HARD GATES PASSED" in out
     assert "HARD GATE FAILURES" not in out
-    assert out.count("[PASS]") >= 30
+    assert out.count("[PASS]") >= 34
+    assert "[FAIL]" not in out
     # two-round stability definition: single-round crossings land in
     # the disclosed noise band, only intentional cells stay >2%
     assert "noise-band (single-round)" in out
     assert "N2048B16:c2c-inverse" in out
+    # round-2 additions: real SHA identity bindings, label-set
+    # equality, closure official exit metrics
+    assert "sha256(release previous_selector_table)" in out
+    assert "report scale_report.json cells == config scale label set" \
+        in out
+    assert "closure_official" in out
+    assert "bounded_oracle_gap (informational" in out
+
+
+def test_release_gates_rejects_tampered_identity(tmp_path, capsys):
+    ident = json.loads(IDENTITY.read_text())
+    ident["current_table_sha256"] = "00" * 32
+    bad = tmp_path / "tampered_identity.json"
+    bad.write_text(json.dumps(ident))
+    rc = gates.main(_gates_argv(identity=bad))
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "HARD GATE FAILURES PRESENT" in out
+    assert "[FAIL] identity: report current_table_sha256 == live " \
+        "config/selector_table.json" in out
+    # a tampered previous-table file binding must fail too
+    ident2 = json.loads(IDENTITY.read_text())
+    assert ident2["current_table_sha256"] != "00" * 32
 
 
 def _write_synthetic_release(root: Path):
@@ -57,6 +87,7 @@ def _write_synthetic_release(root: Path):
          "previous_deployed_ms": 0.8, "oracle_ms": 0.48,
          "vendor_ms": 0.2, "selector_source": "table",
          "selector_regret": 0.0417, "guard_vs_incumbent": 0.5,
+         "guard_pass_2pct": True,
          "selector_vs_previous": -0.375, "vendor_status": "ok",
          "selector_previous_fallback": False},
         # scale domain
@@ -65,6 +96,7 @@ def _write_synthetic_release(root: Path):
          "previous_deployed_ms": 4.5, "oracle_ms": 4.3,
          "vendor_ms": None, "selector_source": "abstain",
          "selector_regret": 0.0233, "guard_vs_incumbent": 0.88,
+         "guard_pass_2pct": True,
          "selector_vs_previous": -0.022, "vendor_status": "unsupported",
          "selector_previous_fallback": True},
         # apps domain, non-power-of-2 capability probe failure
@@ -116,6 +148,26 @@ def _write_fake_tune(path: Path, oracle_mode: str, regrets):
     }))
 
 
+def _write_fake_pair(path: Path):
+    """Paired run rows: selector vs previous-deployed on shared trials."""
+    path.mkdir(parents=True, exist_ok=True)
+    (path / "summary.json").write_text(json.dumps({
+        "manifest": {"oracle_mode": "full"}, "cases": [], "metrics": {},
+    }))
+    with open(path / "raw_session0.jsonl", "w") as f:
+        for session in range(3):
+            for trial in range(4):
+                for cand, ms in (("selector", 0.40),
+                                 ("previous-deployed", 0.80),
+                                 ("incumbent", 1.00)):
+                    f.write(json.dumps({
+                        "session": session, "trial": trial,
+                        "label": "N64B4:c2c-forward",
+                        "candidate": cand, "tier": "steady",
+                        "status": "ok", "api_ms": ms, "err": 1e-6,
+                    }) + "\n")
+
+
 def test_release_reports_five_summaries(tmp_path, capsys):
     rel = tmp_path / "release"
     rel.mkdir()
@@ -124,10 +176,12 @@ def test_release_reports_five_summaries(tmp_path, capsys):
                      {"N64B4:c2c-forward": 0.001})
     _write_fake_tune(tmp_path / "tune-a", "winner-block",
                      {"N64B4:c2c-forward": -0.0005})
+    _write_fake_pair(tmp_path / "pair")
     out = tmp_path / "reports"
     rc = rep.main([str(rel), "--out", str(out),
                    "--tune-p", str(tmp_path / "tune-p"),
-                   "--tune-a", str(tmp_path / "tune-a")])
+                   "--tune-a", str(tmp_path / "tune-a"),
+                   "--v5-pair", str(tmp_path / "pair")])
     assert rc == 0
     for name in ("steady_report", "e2e_report", "scale_report",
                  "shape_proxy_report", "ablation_scope_report"):
@@ -138,11 +192,12 @@ def test_release_reports_five_summaries(tmp_path, capsys):
     assert (out / "ablation_scope_report.md").is_file()
 
     steady = json.loads((out / "steady_report.json").read_text())
+    assert steady["schema"] == "issue9-release-reports-v2"
     assert set(steady["comparisons"]) == {
         "current_vs_v5_production",
         "current_vs_A1_historical_previous",
         "current_vs_incumbent_M0",
-        "current_vs_bounded_oracle",
+        "bounded_oracle_gap",
         "current_vs_vendor"}
     # the five comparisons never mix: each block carries its own stats
     assert steady["comparisons"]["current_vs_incumbent_M0"]["cells"] == 2
@@ -150,10 +205,33 @@ def test_release_reports_five_summaries(tmp_path, capsys):
         "geomean_speedup"] == 0.122
     assert "informational only" in steady["comparisons"][
         "current_vs_A1_historical_previous"]["note"]
+    gap = steady["comparisons"]["bounded_oracle_gap"]
+    assert "EXCLUDES" in gap["definition"]
+    assert gap["oracle_regret_as_exit_metric"].startswith("N/A")
+    assert "mean_gap" in gap and "cells_gap_gt_10pct" in gap
     assert "N2048B14:c2c-forward" in steady["unsupported"][
         "capability_probe_failures"]
     assert steady["cells"] and all(
         "selector_ms" in c for c in steady["cells"])
+    clo_cell, = (c for c in steady["cells"]
+                 if c["label"] == "N64B4:c2c-forward")
+    assert clo_cell["bounded_oracle_gap"] == 0.0417
+    assert "oracle:m2_dit_t64" in clo_cell["oracle_candidates"]
+
+    # closure official exit metrics: paired deltas + guard, oracle
+    # regret marked N/A
+    co = steady["closure_official"]
+    assert co["oracle_regret"].startswith("N/A")
+    cell, = (c for c in co["cells"] if c["label"] == "N64B4:c2c-forward")
+    paired = cell["paired_vs_v5_deployed"]
+    assert paired["n"] == 12
+    assert paired["median_rel_delta"] == -0.5
+    assert paired["mad_rel"] == 0.0
+    assert paired["win_fraction"] == 1.0
+    assert cell["guard_pass_2pct"] is True
+    assert len(co["missing_labels"]) == 9  # fixture covers 1/10
+    assert co["aggregate"]["all_cells_faster_than_v5_deployed"] is True
+    assert co["aggregate"]["all_guard_pass_2pct"] is True
 
     e2e = json.loads((out / "e2e_report.json").read_text())
     assert e2e["vendor_e2e"]["status"] == "unavailable"
@@ -163,10 +241,20 @@ def test_release_reports_five_summaries(tmp_path, capsys):
     assert "N64B4:c2c-forward" in labels
 
     scale = json.loads((out / "scale_report.json").read_text())
+    # domain string is derived from the frozen config -- never a
+    # hardcoded N range (re-review: no N524288)
+    dom = scale["coverage"]["domain"]
+    assert "N524288" not in dom and "524288" not in json.dumps(scale)
+    for token in ("8192", "16384", "32768", "65536", "c2c-forward"):
+        assert token in dom, token
     lab, = (c for c in scale["cells"]
             if c["label"] == "N8192B1:c2c-forward")
     assert lab["measured"] is True
     assert lab["vendor_status"] == "unsupported"
+    assert lab["incumbent_ms"] == 5.0
+    assert abs(lab["selector_vs_incumbent"] - (4.4 / 5.0 - 1)) < 1e-12
+    assert lab["guard_pass_2pct"] is True
+    assert lab["bounded_oracle_gap"] == 0.0233
     assert "NOT a completed scale" in scale["interpretation"]
 
     proxy = json.loads((out / "shape_proxy_report.json").read_text())

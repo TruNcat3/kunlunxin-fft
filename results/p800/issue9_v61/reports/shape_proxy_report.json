@@ -122,7 +122,7 @@
   ],
   "release": "results/p800/releases/20261020-issue9-semantic-matrix-v6-1",
   "report": "shape_proxy",
-  "schema": "issue9-release-reports-v1",
+  "schema": "issue9-release-reports-v2",
   "timing_scope": "steady tier",
   "unsupported": {
     "capability_probe_failures": [

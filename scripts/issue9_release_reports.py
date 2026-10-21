@@ -48,9 +48,17 @@ for p in (ROOT, ROOT / "scripts"):
 
 from src.xpu.manifest_contract import iter_raw_rows  # noqa: E402
 
-SCHEMA = "issue9-release-reports-v1"
+SCHEMA = "issue9-release-reports-v2"
 NONPOW2 = {"N2048B14:c2c-forward", "N2048B140:c2c-forward",
            "N4096B14:c2c-forward", "N4096B140:c2c-forward"}
+GAP_DEFINITION = (
+    "bounded_oracle_gap = (selector_ms - min(oracle:* in-run candidate "
+    "median)) / min(...); the bounded candidate set EXCLUDES the "
+    "deployed promotion entry, so gap <= 0 is possible and is NOT a "
+    "'beats oracle' gain. Formal exit metrics are closure_official "
+    "(v5 paired delta + guard_vs_incumbent); oracle regret as an "
+    "optimality claim is N/A.")
+
 
 
 def _median(xs):
@@ -113,11 +121,95 @@ def _case_by_label(summary):
     return {c["label"]: c for c in summary["cases"]}
 
 
-def steady_report(rel, rows, summary, cfg):
+def _oracle_candidates_by_label(rows):
+    out = {}
+    for _p, _ln, r in rows:
+        cand = r.get("candidate")
+        if (r.get("tier") == "steady" and isinstance(cand, str)
+                and cand.startswith("oracle:")):
+            out.setdefault(r.get("label"), set()).add(cand)
+    return {k: sorted(v) for k, v in out.items()}
+
+
+def closure_official(cfg, summary, pair_rows):
+    """Closure exit metrics: v5 paired delta + guard (P1-2 / P2).
+
+    The bounded-oracle gap is explicitly NOT an exit metric here (the
+    deployed promotion entry sits outside the ``oracle:*`` set); trial-
+    level paired deltas vs the v5-deployed plan are computed from the
+    paired run's raw rows, paired by (label, session, trial).
+    """
+    labels = sorted(_labels_of(cfg, "closure"))
+    cases = _case_by_label(summary)
+    sel, prev = {}, {}
+    for _p, _ln, r in pair_rows:
+        if r.get("tier") != "steady" or r.get("status") != "ok":
+            continue
+        if not isinstance(r.get("api_ms"), (int, float)):
+            continue
+        key = (r.get("label"), r.get("session"), r.get("trial"))
+        cand = r.get("candidate")
+        if cand == "selector":
+            sel[key] = r["api_ms"]
+        elif cand in ("previous-deployed", "previous_deployed"):
+            prev[key] = r["api_ms"]
+    by_label = {}
+    for k, v in sel.items():
+        if k in prev and prev[k] > 0:
+            by_label.setdefault(k[0], []).append(v / prev[k] - 1)
+    cells, missing = [], []
+    for lab in labels:
+        c = cases.get(lab)
+        if c is None:
+            missing.append(lab)
+            continue
+        ds = sorted(by_label.get(lab, []))
+        med = _median(ds) if ds else None
+        cells.append({
+            "label": lab,
+            "selector_ms": c.get("selector_ms"),
+            "incumbent_ms": c.get("incumbent_ms"),
+            "guard_vs_incumbent": c.get("guard_vs_incumbent"),
+            "guard_pass_2pct": c.get("guard_pass_2pct"),
+            "bounded_oracle_gap": c.get("selector_regret"),
+            "paired_vs_v5_deployed": {
+                "n": len(ds),
+                "median_rel_delta": med,
+                "mad_rel": (_median([abs(d - med) for d in ds])
+                            if ds else None),
+                "win_fraction": (sum(1 for d in ds if d < 0) / len(ds)
+                                 if ds else None),
+            },
+        })
+    meds = [x["paired_vs_v5_deployed"]["median_rel_delta"] for x in cells
+            if x["paired_vs_v5_deployed"]["median_rel_delta"] is not None]
+    return {
+        "basis": "v5-deployed paired run (same-session interleaved "
+                 "trials) + guard_vs_incumbent vs incumbent; "
+                 "bounded-oracle gap is informational only",
+        "oracle_regret": "N/A (deployed promotion entry is outside the "
+                         "bounded oracle:* candidate set)",
+        "cells": cells,
+        "missing_labels": missing,
+        "aggregate": {
+            "cells": len(meds),
+            "median_of_cell_medians": _median(meds),
+            "min_cell_median": min(meds) if meds else None,
+            "max_cell_median": max(meds) if meds else None,
+            "all_cells_faster_than_v5_deployed": bool(meds) and
+            all(m < 0 for m in meds),
+            "all_guard_pass_2pct": all(c.get("guard_pass_2pct")
+                                       for c in cells) if cells else False,
+        },
+    }
+
+
+def steady_report(rel, rows, summary, cfg, pair_rows=None):
     cases = _case_by_label(summary)
     labels = sorted(cases)
     m = summary["manifest"]
     recs = []
+    orc_by_label = _oracle_candidates_by_label(rows)
     for lab in labels:
         c = cases[lab]
         st = _tier_stats(rows, "steady", lab)
@@ -127,9 +219,10 @@ def steady_report(rel, rows, summary, cfg):
             "selector_ms": c.get("selector_ms"),
             "previous_ms": c.get("previous_deployed_ms"),
             "oracle_ms": c.get("oracle_ms"),
+            "oracle_candidates": orc_by_label.get(lab, []),
             "vendor_ms": c.get("vendor_ms"),
             "selector_source": c.get("selector_source"),
-            "selector_regret": c.get("selector_regret"),
+            "bounded_oracle_gap": c.get("selector_regret"),
             "guard_vs_incumbent": c.get("guard_vs_incumbent"),
             "selector_vs_previous": c.get("selector_vs_previous"),
             "vendor_status": c.get("vendor_status"),
@@ -200,12 +293,17 @@ def steady_report(rel, rows, summary, cfg):
             },
             "current_vs_incumbent_M0": _vs("selector_ms",
                                            "incumbent_ms"),
-            "current_vs_bounded_oracle": {
-                "mean_regret": summary["metrics"].get(
+            "bounded_oracle_gap": {
+                "definition": GAP_DEFINITION,
+                "mean_gap": summary["metrics"].get(
                     "mean_selector_regret"),
-                "max_regret": summary["metrics"].get(
+                "max_gap": summary["metrics"].get(
                     "max_selector_regret"),
-                "cells_gt_10pct": sum(1 for r in regs if r > 0.10),
+                "cells_gap_gt_10pct": sum(1 for r in regs if r > 0.10),
+                "oracle_regret_as_exit_metric": "N/A; see "
+                                                "closure_official for "
+                                                "the closure exit "
+                                                "metrics",
             },
             "current_vs_vendor": {
                 "win": summary["metrics"].get("win"),
@@ -217,11 +315,15 @@ def steady_report(rel, rows, summary, cfg):
                         "are never counted as wins",
             },
         },
+        "gap_definition": GAP_DEFINITION,
+        "closure_official": closure_official(cfg, summary,
+                                             pair_rows or []),
         "limitations": [
             "sync API wall time only; device/kernel timers unavailable",
             "steady tier = plan-reuse; one_shot/e2e are separate reports",
-            "regret bounded by the declared candidate set (no physical "
-            "kernel search this issue)",
+            "bounded-oracle gap covers only the declared candidate set "
+            "(no physical kernel search this issue); it is not a "
+            "regret vs the deployed entry nor a global optimality gap",
         ],
         "cells": recs,
     }
@@ -279,20 +381,33 @@ def e2e_report(rel, rows, summary):
 
 def scale_report(rel, summary, cfg):
     labs = _labels_of(cfg, "scale")
+    ns = sorted({int(l.split("B")[0][1:]) for l in labs})
+    bs = sorted({int(l.split("B")[1].split(":")[0]) for l in labs})
+    sems = sorted({l.split(":", 1)[1] for l in labs})
+    domain = (f"scale (N={','.join(map(str, ns))}; "
+              f"B={','.join(map(str, bs))}; {'/'.join(sems)})")
     cases = _case_by_label(summary)
     recs = []
     for lab in sorted(labs):
         c = cases.get(lab)
         if c is None:
             continue
+        sel, inc = c.get("selector_ms"), c.get("incumbent_ms")
         recs.append({
             "label": lab,
-            "selector_ms": c.get("selector_ms"),
+            "selector_ms": sel,
+            "incumbent_ms": inc,
+            "selector_vs_incumbent": (
+                sel / inc - 1
+                if isinstance(sel, (int, float))
+                and isinstance(inc, (int, float)) and inc else None),
+            "guard_vs_incumbent": c.get("guard_vs_incumbent"),
+            "guard_pass_2pct": c.get("guard_pass_2pct"),
             "selector_source": c.get("selector_source"),
-            "selector_regret": c.get("selector_regret"),
+            "bounded_oracle_gap": c.get("selector_regret"),
             "vendor_ms": c.get("vendor_ms"),
             "vendor_status": c.get("vendor_status"),
-            "measured": c.get("selector_ms") is not None,
+            "measured": sel is not None,
         })
     abstain = [r["label"] for r in recs
                if r["selector_source"] in (None, "abstain")]
@@ -301,13 +416,17 @@ def scale_report(rel, summary, cfg):
         "report": "scale",
         "release": str(rel),
         "coverage": {
-            "domain": "scale (N65536..N524288 C2C-forward)",
+            "domain": domain,
             "labels": len(recs),
-            "semantic": "c2c-forward only",
+            "semantic": "/".join(sems) + " only",
         },
         "input_type": "uniform random complex, seeded (shape proxy)",
         "timing_scope": "steady tier",
         "baseline": "incumbent per cell",
+        "definitions": {
+            "selector_vs_incumbent": "selector_ms/incumbent_ms - 1; "
+                                     "negative = selector faster",
+        },
         "correctness": "per-cell err <= 1e-4 gate before timing",
         "unsupported": {
             "vendor_unsupported": [r["label"] for r in recs
@@ -318,7 +437,8 @@ def scale_report(rel, summary, cfg):
                           "C2C-forward shapes; NOT a completed scale "
                           "search optimization (most new points abstain)",
         "limitations": [
-            "single semantic (c2c-forward); no r2c/c2r scale coverage",
+            f"single semantic ({'/'.join(sems)}); no r2c/c2r scale "
+            "coverage",
             "no selector search wave was run over this domain "
             "(closure/tune domains are frozen separately)",
         ],
@@ -459,6 +579,10 @@ def main(argv=None):
                                              "/tune-p"))
     ap.add_argument("--tune-a", default=str(ROOT / "results/p800/issue9"
                                              "/tune-a"))
+    ap.add_argument("--v5-pair", default=str(ROOT / "results/p800/issue9_v61"
+                                               "/v5_pair"),
+                    help="paired v5-deployed run dir (closure_official "
+                    "paired deltas)")
     args = ap.parse_args(argv)
 
     rel = Path(args.release_dir)
@@ -467,9 +591,12 @@ def main(argv=None):
     summary = json.loads((rel / "summary.json").read_text())
     rows = _load_rows(rel)
     cfg = _load_cfg()
+    pair_path = Path(args.v5_pair)
+    pair_rows = (_load_rows(pair_path)
+                 if (pair_path / "summary.json").is_file() else [])
 
     reports = {
-        "steady_report": steady_report(rel, rows, summary, cfg),
+        "steady_report": steady_report(rel, rows, summary, cfg, pair_rows),
         "e2e_report": e2e_report(rel, rows, summary),
         "scale_report": scale_report(rel, summary, cfg),
         "shape_proxy_report": shape_proxy_report(rel, summary, cfg),
@@ -478,15 +605,20 @@ def main(argv=None):
     }
     csv_fields = {
         "steady_report": ["label", "incumbent_ms", "selector_ms",
-                          "previous_ms", "oracle_ms", "vendor_ms",
-                          "selector_source", "selector_regret",
+                          "previous_ms", "oracle_ms", "oracle_candidates",
+                          "vendor_ms",
+                          "selector_source", "bounded_oracle_gap",
                           "guard_vs_incumbent", "selector_vs_previous",
                           "vendor_status", "selector_previous_fallback",
                           "selector_max_err"],
         "e2e_report": ["label", "e2e", "one_shot", "e2e_candidates",
                        "e2e_max_err"],
-        "scale_report": ["label", "selector_ms", "selector_source",
-                         "selector_regret", "vendor_ms", "vendor_status",
+        "scale_report": ["label", "selector_ms", "incumbent_ms",
+                         "selector_vs_incumbent", "guard_vs_incumbent",
+                         "guard_pass_2pct",
+                         "selector_source",
+                         "bounded_oracle_gap", "vendor_ms",
+                         "vendor_status",
                          "measured"],
         "shape_proxy_report": ["label", "batch", "selector_ms",
                                "selector_source", "vendor_ms",
