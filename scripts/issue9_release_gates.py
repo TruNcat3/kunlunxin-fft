@@ -1,16 +1,22 @@
 #!/usr/bin/env python3
 """Issue #9 release gates over the semantic-matrix snapshot + pairing.
 
-Canonical re-review gate set (release-correction round 2): the 19 v6
-gates plus the P1-2 v5-production pairing, the P1-1 timed-path
+Canonical re-review gate set (release-correction round 3): the v6
+baseline gates plus the P1-2 v5-production pairing, the P1-1 timed-path
 independent-correctness checks, real SHA binding for the identity
 gate (no unconditional passes), report label-set equality gates, and
 the closure exit guard gate (v5 paired delta + guard; the
 bounded-oracle gap is informational only).
 
+Provenance (review round 3): the tested previous-selector table file's
+SHA is recomputed and must equal BOTH the pair manifest and the
+identity binding (three-way); the pair must be measured on a clean
+worktree (manifest dirty=false); and --ledger runs the per-file SHA
+recompute over issue9_artifact_ledger.py's inventory.
+
 Usage:
     scripts/issue9_release_gates.py RELEASE_DIR \
-        --v5-pair DIR --identity JSON --reports DIR
+        --v5-pair DIR --identity JSON --reports DIR --ledger FILE
 
 * RELEASE_DIR   -- immutable snapshot (validate phase output)
 * --v5-pair     -- paired run of the changed cells with
@@ -18,6 +24,8 @@ Usage:
 * --identity    -- issue9_v5_path_identity.json report
 * --reports     -- issue9_release_reports.py output dir (label-set
                    equality gates vs the frozen config domains)
+* --ledger      -- artifacts_sha256.txt written by
+                   issue9_artifact_ledger.py --write
 
 Exit 0 only when every hard gate passes.
 """
@@ -63,6 +71,10 @@ def main(argv=None):
     ap.add_argument("--reports", default=None,
                     help="issue9_release_reports output dir (label-set "
                     "equality gates vs frozen config domains)")
+    ap.add_argument("--ledger", default=None,
+                    help="artifacts_sha256.txt from "
+                    "issue9_artifact_ledger.py --write (per-file SHA "
+                    "recompute is a hard gate)")
     args = ap.parse_args(argv)
 
     rel = Path(args.release_dir)
@@ -321,13 +333,39 @@ def main(argv=None):
     else:
         pair = json.loads(
             (Path(args.v5_pair) / "summary.json").read_text())
+        pm = pair["manifest"]
         pcases = {c["label"]: c for c in pair["cases"]}
-        prev_sha = pair["manifest"].get("previous_selector_sha256")
+        prev_sha = pm.get("previous_selector_sha256")
+        ident_bound = (json.loads(Path(args.identity).read_text()
+                                  )["v5_table_bound_sha256"]
+                       if args.identity and Path(args.identity).is_file()
+                       else None)
         gate("v5 pair: previous table sha == v5 bound blob",
-             bool(prev_sha) and bool(args.identity)
-             and prev_sha == json.loads(
-                 Path(args.identity).read_text()
-             )["v5_table_bound_sha256"])
+             bool(prev_sha) and bool(ident_bound)
+             and prev_sha == ident_bound)
+        # provenance P1: recompute the ACTUAL tested table file's hash
+        # and require it to match both manifest and identity binding;
+        # the measured pair must come from a clean worktree.
+        pt_file = Path(args.v5_pair) / "previous_selector_table.json"
+        file_sha = (hashlib.sha256(pt_file.read_bytes()).hexdigest()
+                    if pt_file.is_file() else None)
+        top_pair = json.loads(
+            (Path(args.v5_pair) / "manifest.json").read_text())
+        print(f"  pair previous_selector_table.json sha: "
+              f"{(file_sha or 'MISSING')[:16]} "
+              f"(manifest {str(prev_sha)[:16]}, "
+              f"identity {str(ident_bound)[:16]})")
+        print(f"  pair manifest dirty={top_pair.get('dirty')} "
+              f"commit={str(top_pair.get('commit'))[:12]}")
+        gate("v5 pair: sha256(previous_selector_table.json file) == "
+             "manifest == identity bound",
+             bool(file_sha) and file_sha == prev_sha == ident_bound)
+        gate("v5 pair: manifest dirty=false (clean re-measure)",
+             top_pair.get("dirty") is False
+             and pm.get("dirty") is False)
+        gate("v5 pair: top manifest binds summary result/cases sha",
+             top_pair.get("result_sha256") == pm.get("result_sha256")
+             and top_pair.get("cases_sha256") == pm.get("cases_sha256"))
         worse = []
         for lab in sorted({c["label"] for c in
                            json.loads(Path(args.identity).read_text()
@@ -413,6 +451,19 @@ def main(argv=None):
              agg.get("all_guard_pass_2pct") is True
              and isinstance(co.get("oracle_regret"), str)
              and co["oracle_regret"].startswith("N/A"))
+
+    print("\n=== artifact ledger (per-file SHA recompute) ===")
+    if not args.ledger or not Path(args.ledger).is_file():
+        gate("artifact ledger provided (--ledger)", False)
+        print("  MISSING --ledger (issue9_artifact_ledger.py --write)")
+    else:
+        import issue9_artifact_ledger as led
+        n_files, errors = led.verify(ROOT, Path(args.ledger))
+        print(f"  listed files: {n_files}; problems: {len(errors)}")
+        for e in errors[:12]:
+            print(f"  FAIL: {e}")
+        gate(f"artifact ledger: every listed SHA matches ({n_files} "
+             f"files)", n_files > 0 and not errors)
 
     print("\n=== HARD GATES ===")
     ok = True

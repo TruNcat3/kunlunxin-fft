@@ -5345,9 +5345,9 @@
       "all_cells_faster_than_v5_deployed": true,
       "all_guard_pass_2pct": true,
       "cells": 10,
-      "max_cell_median": -0.3982352021140009,
-      "median_of_cell_medians": -0.6045947007752693,
-      "min_cell_median": -0.7502043703496478
+      "max_cell_median": -0.37043289460698114,
+      "median_of_cell_medians": -0.6065669194156016,
+      "min_cell_median": -0.7517996949153551
     },
     "basis": "v5-deployed paired run (same-session interleaved trials) + guard_vs_incumbent vs incumbent; bounded-oracle gap is informational only",
     "cells": [
@@ -5358,8 +5358,8 @@
         "incumbent_ms": 1.1643648613244295,
         "label": "N512B16:c2c-forward",
         "paired_vs_v5_deployed": {
-          "mad_rel": 0.007104907834691976,
-          "median_rel_delta": -0.3982352021140009,
+          "mad_rel": 0.013053763272341201,
+          "median_rel_delta": -0.37043289460698114,
           "n": 90,
           "win_fraction": 1.0
         },
@@ -5372,8 +5372,8 @@
         "incumbent_ms": 1.7051838804036379,
         "label": "N512B16:c2r",
         "paired_vs_v5_deployed": {
-          "mad_rel": 0.006404916944478589,
-          "median_rel_delta": -0.6313826428400493,
+          "mad_rel": 0.008470525717079624,
+          "median_rel_delta": -0.6317369966514502,
           "n": 90,
           "win_fraction": 1.0
         },
@@ -5386,8 +5386,8 @@
         "incumbent_ms": 0.745174940675497,
         "label": "N512B4:c2c-forward",
         "paired_vs_v5_deployed": {
-          "mad_rel": 0.01348138253822978,
-          "median_rel_delta": -0.4491329990555734,
+          "mad_rel": 0.010741851030709182,
+          "median_rel_delta": -0.4535323631702729,
           "n": 90,
           "win_fraction": 1.0
         },
@@ -5400,8 +5400,8 @@
         "incumbent_ms": 1.266593812033534,
         "label": "N512B4:c2r",
         "paired_vs_v5_deployed": {
-          "mad_rel": 0.006876854554946854,
-          "median_rel_delta": -0.5266710048394819,
+          "mad_rel": 0.006552799680221766,
+          "median_rel_delta": -0.5251512769491486,
           "n": 90,
           "win_fraction": 1.0
         },
@@ -5414,8 +5414,8 @@
         "incumbent_ms": 3.904558951035142,
         "label": "N512B64:c2r",
         "paired_vs_v5_deployed": {
-          "mad_rel": 0.004114129517241383,
-          "median_rel_delta": -0.7502043703496478,
+          "mad_rel": 0.004583055440937511,
+          "median_rel_delta": -0.7517996949153551,
           "n": 90,
           "win_fraction": 1.0
         },
@@ -5428,8 +5428,8 @@
         "incumbent_ms": 3.263810882344842,
         "label": "N512B64:r2c",
         "paired_vs_v5_deployed": {
-          "mad_rel": 0.004028486927625863,
-          "median_rel_delta": -0.7159015732874611,
+          "mad_rel": 0.004467798189236982,
+          "median_rel_delta": -0.7160824330393343,
           "n": 90,
           "win_fraction": 1.0
         },
@@ -5442,8 +5442,8 @@
         "incumbent_ms": 0.49631018191576004,
         "label": "N64B16:c2c-forward",
         "paired_vs_v5_deployed": {
-          "mad_rel": 0.009293456903078756,
-          "median_rel_delta": -0.6702552329728187,
+          "mad_rel": 0.009629547337726252,
+          "median_rel_delta": -0.6678363474529285,
           "n": 90,
           "win_fraction": 1.0
         },
@@ -5456,8 +5456,8 @@
         "incumbent_ms": 1.0267691686749458,
         "label": "N64B16:c2r",
         "paired_vs_v5_deployed": {
-          "mad_rel": 0.006977914530671647,
-          "median_rel_delta": -0.5778067587104894,
+          "mad_rel": 0.00732648955521531,
+          "median_rel_delta": -0.5813968421797528,
           "n": 90,
           "win_fraction": 1.0
         },
@@ -5470,8 +5470,8 @@
         "incumbent_ms": 0.4884200170636177,
         "label": "N64B4:c2c-forward",
         "paired_vs_v5_deployed": {
-          "mad_rel": 0.008356191873156338,
-          "median_rel_delta": -0.657024327902164,
+          "mad_rel": 0.010037249019023864,
+          "median_rel_delta": -0.6529668862971771,
           "n": 90,
           "win_fraction": 1.0
         },
@@ -5484,8 +5484,8 @@
         "incumbent_ms": 1.015559071674943,
         "label": "N64B4:c2r",
         "paired_vs_v5_deployed": {
-          "mad_rel": 0.00841985421322411,
-          "median_rel_delta": -0.5685304668767875,
+          "mad_rel": 0.009969903859420037,
+          "median_rel_delta": -0.5708465620596244,
           "n": 90,
           "win_fraction": 1.0
         },

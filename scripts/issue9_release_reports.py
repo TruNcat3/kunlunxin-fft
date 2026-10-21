@@ -455,11 +455,17 @@ def shape_proxy_report(rel, summary, cfg):
         if c is None:
             continue
         probe_fail = lab in NONPOW2
+        sel, inc = c.get("selector_ms"), c.get("incumbent_ms")
         recs.append({
             "label": lab,
             "batch": int(lab.split("B")[1].split(":")[0])
             if "B" in lab else None,
-            "selector_ms": c.get("selector_ms"),
+            "selector_ms": sel,
+            "incumbent_ms": inc,
+            "selector_vs_incumbent": (
+                sel / inc - 1
+                if isinstance(sel, (int, float))
+                and isinstance(inc, (int, float)) and inc else None),
             "selector_source": c.get("selector_source"),
             "vendor_ms": c.get("vendor_ms"),
             "vendor_status": c.get("vendor_status"),
@@ -482,6 +488,10 @@ def shape_proxy_report(rel, summary, cfg):
                       "batches)",
         "timing_scope": "steady tier",
         "baseline": "incumbent per cell",
+        "definitions": {
+            "selector_vs_incumbent": "selector_ms/incumbent_ms - 1; "
+                                     "negative = selector faster",
+        },
         "correctness": "per-cell err <= 1e-4 gate before timing",
         "unsupported": {
             "capability_probe_failures": sorted(NONPOW2),
@@ -621,6 +631,7 @@ def main(argv=None):
                          "vendor_status",
                          "measured"],
         "shape_proxy_report": ["label", "batch", "selector_ms",
+                               "incumbent_ms", "selector_vs_incumbent",
                                "selector_source", "vendor_ms",
                                "vendor_status", "capability_probe_failure"],
     }

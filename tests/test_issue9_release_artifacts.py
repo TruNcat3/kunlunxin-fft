@@ -22,15 +22,18 @@ REL_V6 = ROOT / "results/p800/releases/20261020-issue9-semantic-matrix-v6"
 V5_PAIR = ROOT / "results/p800/issue9_v61/v5_pair"
 IDENTITY = ROOT / "results/p800/issue9_v61/v5_path_identity.json"
 REPORTS = ROOT / "results/p800/issue9_v61/reports"
+LEDGER = (ROOT / "results/p800/issue9_v61/release_evidence"
+          "/artifacts_sha256.txt")
 
 
-def _gates_argv(identity=None, reports=REPORTS):
+def _gates_argv(identity=None, reports=REPORTS, ledger=LEDGER):
     return [
         str(REL_V61),
         "--v5-pair", str(V5_PAIR),
         "--identity", str(identity or IDENTITY),
         "--stable-ref", str(REL_V6),
         "--reports", str(reports),
+        "--ledger", str(ledger),
     ]
 
 
@@ -40,7 +43,7 @@ def test_release_gates_all_pass_v61(capsys):
     assert rc == 0, out[-4000:]
     assert "ALL HARD GATES PASSED" in out
     assert "HARD GATE FAILURES" not in out
-    assert out.count("[PASS]") >= 34
+    assert out.count("[PASS]") >= 40
     assert "[FAIL]" not in out
     # two-round stability definition: single-round crossings land in
     # the disclosed noise band, only intentional cells stay >2%
@@ -53,6 +56,18 @@ def test_release_gates_all_pass_v61(capsys):
         in out
     assert "closure_official" in out
     assert "bounded_oracle_gap (informational" in out
+    # round-3 additions: pair provenance + artifact ledger
+    assert "sha256(previous_selector_table.json file)" in out
+    assert "manifest dirty=false (clean re-measure)" in out
+    assert "pair manifest dirty=False" in out
+    assert "artifact ledger: every listed SHA matches" in out
+
+
+def test_release_gates_rejects_missing_ledger(tmp_path, capsys):
+    rc = gates.main(_gates_argv(ledger=tmp_path / "nope.txt"))
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "[FAIL] artifact ledger provided (--ledger)" in out
 
 
 def test_release_gates_rejects_tampered_identity(tmp_path, capsys):
@@ -108,6 +123,15 @@ def _write_synthetic_release(root: Path):
          "selector_vs_previous": None,
          "vendor_status": "unsupported",
          "selector_previous_fallback": None},
+        # apps domain, completed pow2 shape proxy
+        {"label": "N1024B64:c2c-forward",
+         "incumbent_ms": 4.0, "selector_ms": 3.0,
+         "previous_deployed_ms": 3.6, "oracle_ms": 2.9,
+         "vendor_ms": 0.5, "selector_source": "table",
+         "selector_regret": 0.0345, "guard_vs_incumbent": 0.25,
+         "guard_pass_2pct": True,
+         "selector_vs_previous": -0.1667, "vendor_status": "ok",
+         "selector_previous_fallback": False},
     ]
     metrics = {
         "previous_regressions_gt_2pct": ["N512B1:r2c"],
@@ -200,7 +224,7 @@ def test_release_reports_five_summaries(tmp_path, capsys):
         "bounded_oracle_gap",
         "current_vs_vendor"}
     # the five comparisons never mix: each block carries its own stats
-    assert steady["comparisons"]["current_vs_incumbent_M0"]["cells"] == 2
+    assert steady["comparisons"]["current_vs_incumbent_M0"]["cells"] == 3
     assert steady["comparisons"]["current_vs_vendor"][
         "geomean_speedup"] == 0.122
     assert "informational only" in steady["comparisons"][
@@ -261,6 +285,14 @@ def test_release_reports_five_summaries(tmp_path, capsys):
     probe, = (c for c in proxy["cells"]
               if c["label"] == "N2048B14:c2c-forward")
     assert probe["capability_probe_failure"] is True
+    # baseline claim must be backed by per-cell incumbent numbers
+    assert proxy["baseline"] == "incumbent per cell"
+    assert probe["incumbent_ms"] == 2.2
+    assert probe["selector_vs_incumbent"] is None  # selector absent
+    done, = (c for c in proxy["cells"]
+             if c["label"] == "N1024B64:c2c-forward")
+    assert done["incumbent_ms"] == 4.0
+    assert abs(done["selector_vs_incumbent"] - (3.0 / 4.0 - 1)) < 1e-12
     assert "shape" in proxy["input_type"].lower()
     assert "padded-proxy" in proxy["input_type"]
     assert "no padded-proxy" in proxy["unsupported"]["note"] or \
@@ -290,3 +322,33 @@ def test_attribution_v2_vocabulary_on_profile_run(tmp_path):
         assert "hypothesis" in anchor and "confidence" in anchor
         assert anchor["hypothesis"] in rep_obj["hypotheses_used"]
         assert "attribution_class" not in anchor
+
+
+def test_artifact_ledger_roundtrip_and_tamper_detect(tmp_path, capsys):
+    import issue9_artifact_ledger as led
+    out = tmp_path / "artifacts_sha256.txt"
+    assert led.main(["--write", str(out)]) == 0
+    n, errors = led.verify(ROOT, out)
+    assert n == len(led.INVENTORY) >= 20
+    assert errors == []
+    assert led.main(["--verify", str(out)]) == 0
+    # v5 pair provenance files must be covered (review provenance P1)
+    listed = out.read_text()
+    for required in (
+        "v5_pair/manifest.json",
+        "v5_pair/previous_selector_table.json",
+        "v5_pair/raw_session0.jsonl",
+        "v5_pair/raw_session1.jsonl",
+        "v5_pair/raw_session2.jsonl",
+        "v5_pair/schedule.json",
+    ):
+        assert required in listed
+    # single-byte hash tamper in the ledger -> hard fail
+    lines = out.read_text().splitlines()
+    lines[0] = "0" * 64 + "  " + lines[0].split("  ", 1)[1]
+    out.write_text("\n".join(lines) + "\n")
+    _, errors = led.verify(ROOT, out)
+    assert any("SHA MISMATCH" in e for e in errors)
+    capsys.readouterr()
+    assert led.main(["--verify", str(out)]) == 1
+    assert led.main(["--verify", str(tmp_path / "missing.txt")]) == 1

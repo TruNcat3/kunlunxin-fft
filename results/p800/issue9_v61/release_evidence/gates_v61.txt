@@ -1,3 +1,4 @@
+# command: scripts/issue9_release_gates.py RELEASE_DIR --v5-pair v5_pair --identity v5_path_identity.json --stable-ref ...-v6 --reports reports --ledger artifacts_sha256.txt
 === manifest bindings ===
   source_hash: 25921743491f3b645804b95bb2fe2fbb5b26441a
   commit: 25921743491f3b645804b95bb2fe2fbb5b26441a
@@ -69,16 +70,18 @@
   v5 sha=2fb882ef60da bound=7aac2319c158 current=7c2282ed0c29
 
 === P1-2 v5-deployed paired confirmation (changed cells) ===
-    N512B16:c2c-forward          current-vs-v5deployed -39.7147%
-    N512B16:c2r                  current-vs-v5deployed -63.1866%
-    N512B4:c2c-forward           current-vs-v5deployed -45.5260%
-    N512B4:c2r                   current-vs-v5deployed -52.7743%
-    N512B64:c2r                  current-vs-v5deployed -75.1220%
-    N512B64:r2c                  current-vs-v5deployed -71.5777%
-    N64B16:c2c-forward           current-vs-v5deployed -67.0111%
-    N64B16:c2r                   current-vs-v5deployed -57.9330%
-    N64B4:c2c-forward            current-vs-v5deployed -65.6326%
-    N64B4:c2r                    current-vs-v5deployed -57.0895%
+  pair previous_selector_table.json sha: 7aac2319c1585f1a (manifest 7aac2319c1585f1a, identity 7aac2319c1585f1a)
+  pair manifest dirty=False commit=777376a9fc9b
+    N512B16:c2c-forward          current-vs-v5deployed -37.2066%
+    N512B16:c2r                  current-vs-v5deployed -63.3934%
+    N512B4:c2c-forward           current-vs-v5deployed -46.2392%
+    N512B4:c2r                   current-vs-v5deployed -52.8953%
+    N512B64:c2r                  current-vs-v5deployed -75.2386%
+    N512B64:r2c                  current-vs-v5deployed -71.4072%
+    N64B16:c2c-forward           current-vs-v5deployed -66.8545%
+    N64B16:c2r                   current-vs-v5deployed -58.0848%
+    N64B4:c2c-forward            current-vs-v5deployed -65.3821%
+    N64B4:c2r                    current-vs-v5deployed -57.1577%
 
 === closure official exit (guard_vs_incumbent) ===
   N512B16:c2c-forward      guard=0.36613923588691577 pass2pct=True
@@ -96,6 +99,9 @@
   scale_report.json: 12 cells vs config scale 12 labels; missing=[] extra=[]
   shape_proxy_report.json: 12 cells vs config apps 12 labels; missing=[] extra=[]
   closure_official: cells=10 missing=[] all_faster=True all_guard=True oracle_regret=N/A (deployed promotion entry is outside the bounded oracle:* candidate set)
+
+=== artifact ledger (per-file SHA recompute) ===
+  listed files: 27; problems: 0
 
 === HARD GATES ===
   [PASS] top==summary result_sha256
@@ -127,6 +133,9 @@
   [PASS] identity: report current_table_sha256 == live config/selector_table.json
   [PASS] identity: frozen base commit == config
   [PASS] v5 pair: previous table sha == v5 bound blob
+  [PASS] v5 pair: sha256(previous_selector_table.json file) == manifest == identity bound
+  [PASS] v5 pair: manifest dirty=false (clean re-measure)
+  [PASS] v5 pair: top manifest binds summary result/cases sha
   [PASS] v5 pair: no cell >2% slower than v5-deployed
   [PASS] v5 pair: strict OK
   [PASS] closure 10 cells all guard >=2% vs incumbent
@@ -135,4 +144,6 @@
   [PASS] closure_official covers all 10 closure labels
   [PASS] closure_official: every cell faster than v5-deployed (paired median < 0)
   [PASS] closure_official: every cell guard >=2% and oracle regret marked N/A
+  [PASS] artifact ledger: every listed SHA matches (27 files)
 ALL HARD GATES PASSED
+# rc: 0

@@ -4,108 +4,132 @@
     {
       "batch": 128,
       "capability_probe_failure": false,
+      "incumbent_ms": 11.854578042402864,
       "label": "N1024B128:c2c-forward",
       "selector_ms": 11.825038120150566,
       "selector_source": "abstain",
+      "selector_vs_incumbent": -0.0024918577571159117,
       "vendor_ms": 0.2838440705090761,
       "vendor_status": "ok"
     },
     {
       "batch": 256,
       "capability_probe_failure": false,
+      "incumbent_ms": 23.08839582838118,
       "label": "N1024B256:c2c-forward",
       "selector_ms": 8.564918069168925,
       "selector_source": "table",
+      "selector_vs_incumbent": -0.6290379750575574,
       "vendor_ms": 0.5159380380064249,
       "vendor_status": "ok"
     },
     {
       "batch": 32,
       "capability_probe_failure": false,
+      "incumbent_ms": 3.3347210846841335,
       "label": "N1024B32:c2c-forward",
       "selector_ms": 3.3404401037842035,
       "selector_source": "abstain",
+      "selector_vs_incumbent": 0.001714991735391802,
       "vendor_ms": 0.2589849755167961,
       "vendor_status": "ok"
     },
     {
       "batch": 64,
       "capability_probe_failure": false,
+      "incumbent_ms": 6.386716151610017,
       "label": "N1024B64:c2c-forward",
       "selector_ms": 2.3244989570230246,
       "selector_source": "table",
+      "selector_vs_incumbent": -0.6360416054442868,
       "vendor_ms": 0.26469514705240726,
       "vendor_status": "ok"
     },
     {
       "batch": 140,
       "capability_probe_failure": true,
+      "incumbent_ms": null,
       "label": "N2048B140:c2c-forward",
       "selector_ms": null,
       "selector_source": null,
+      "selector_vs_incumbent": null,
       "vendor_ms": 0.725605059415102,
       "vendor_status": "ok"
     },
     {
       "batch": 14,
       "capability_probe_failure": true,
+      "incumbent_ms": null,
       "label": "N2048B14:c2c-forward",
       "selector_ms": null,
       "selector_source": null,
+      "selector_vs_incumbent": null,
       "vendor_ms": 0.6572268903255463,
       "vendor_status": "ok"
     },
     {
       "batch": 256,
       "capability_probe_failure": false,
+      "incumbent_ms": 47.88663680665195,
       "label": "N2048B256:c2c-forward",
       "selector_ms": 20.19191300496459,
       "selector_source": "table",
+      "selector_vs_incumbent": -0.5783392956475131,
       "vendor_ms": 1.468498958274722,
       "vendor_status": "ok"
     },
     {
       "batch": 64,
       "capability_probe_failure": false,
+      "incumbent_ms": 12.747292872518301,
       "label": "N2048B64:c2c-forward",
       "selector_ms": 5.083331139758229,
       "selector_source": "table",
+      "selector_vs_incumbent": -0.601222691704424,
       "vendor_ms": 0.6786561571061611,
       "vendor_status": "ok"
     },
     {
       "batch": 128,
       "capability_probe_failure": false,
+      "incumbent_ms": 52.992861019447446,
       "label": "N4096B128:c2c-forward",
       "selector_ms": 53.039090940728784,
       "selector_source": "abstain",
+      "selector_vs_incumbent": 0.0008723801733288017,
       "vendor_ms": null,
       "vendor_status": "unsupported"
     },
     {
       "batch": 140,
       "capability_probe_failure": true,
+      "incumbent_ms": null,
       "label": "N4096B140:c2c-forward",
       "selector_ms": null,
       "selector_source": null,
+      "selector_vs_incumbent": null,
       "vendor_ms": null,
       "vendor_status": "unsupported"
     },
     {
       "batch": 14,
       "capability_probe_failure": true,
+      "incumbent_ms": null,
       "label": "N4096B14:c2c-forward",
       "selector_ms": null,
       "selector_source": null,
+      "selector_vs_incumbent": null,
       "vendor_ms": null,
       "vendor_status": "unsupported"
     },
     {
       "batch": 32,
       "capability_probe_failure": false,
+      "incumbent_ms": 13.898253906518221,
       "label": "N4096B32:c2c-forward",
       "selector_ms": 13.908135937526822,
       "selector_source": "abstain",
+      "selector_vs_incumbent": 0.0007110268005656728,
       "vendor_ms": null,
       "vendor_status": "unsupported"
     }
@@ -114,6 +138,9 @@
   "coverage": {
     "domain": "apps (OFDM/radar proxy shapes)",
     "labels": 12
+  },
+  "definitions": {
+    "selector_vs_incumbent": "selector_ms/incumbent_ms - 1; negative = selector faster"
   },
   "input_type": "uniform random input per semantic -- a SHAPE proxy only; no OFDM DC/guard-band/modulation structure and no radar echo structure are synthesized (config's app_proxy_disclosure padded-proxy for B=14/140 was NOT executed: every legal lowering rejects non-power-of-2 batches)",
   "limitations": [
