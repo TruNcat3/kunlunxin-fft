@@ -43,6 +43,7 @@ nav:
       - 选择器: design/selector.md
   - 实验与结果:
       - 实验设计与结果汇总: benchmarks/results.md
+      - "Issue #9 v6-1 最新验收": benchmarks/issue9-v61.md
       - 测量协议: benchmarks/methodology.md
       - C2C 性能: benchmarks/c2c.md
       - 端到端与应用: benchmarks/end-to-end.md

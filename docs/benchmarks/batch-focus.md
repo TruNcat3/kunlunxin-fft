@@ -1,5 +1,10 @@
 # Batch / model validation report (P800)
 
+> 本页保留 Issue #3 的 focus/holdout 与外部核心历史证据。当前迁移验收以
+> [Issue #9 v6-1](issue9-v61.md) 为准：140 个可比较 cell 的 current/M0 几何平均延迟比为
+> `0.6086x`，vendor-supported 子集为 `4/0/102`、几何平均约 `0.122x`。两轮数据协议不同，
+> 不应直接合并平均。
+
 > **协议边界：** 本页是 Issue #3 的历史 batch/model 与多进程 canary 报告。Issue #6 的最新
 > 语义矩阵（144 cells，120 vendor-supported，win/tie/loss=`7/0/113`）单独保存在
 > [semantic-matrix-v2](https://github.com/TruNcat3/kunlunxin-fft/tree/master/results/p800/releases/20261017-wp2-semantic-matrix-v2)；两套

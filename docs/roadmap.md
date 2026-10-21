@@ -3,16 +3,24 @@
 Kunlunxin-FFT 当前定位是 cuButterfly 方法的 P800 迁移实例和可复现研究库。近期目标是保持已声明
 范围内的正确性、选择闭包和可解释收益，而不是无限扩张搜索或预先承诺全面超过专业库。
 
+## v6-1 状态冻结
+
+Issue #9 已完成并关闭。最新快照 `20261020-issue9-semantic-matrix-v6-1` 的 release gate 为
+`41/41 PASS`，host/hardware 验证分别为 `469/370`；140 个可比较 cell 的 current/M0 几何平均
+延迟比为 `0.6086x`，10-cell paired closure 的中位改善约 `60.7%`。相对厂商的 106 个
+vendor-supported cell 仍为 `4/0/102`、几何平均约 `0.122x`，所以迁移证明已完成，厂商级物理
+性能尚未完成。Issue #9 的矩阵不再扩大；下一轮先执行[能力门禁 Issue #10](https://github.com/TruNcat3/kunlunxin-fft/issues/10)。
+
 ## 优先级
 
 | 阶段 | 交付内容 | 退出条件 |
 |---|---|---|
 | P0 工程闭环 | 安装期硬件 probe、profile 版本化、bench manifest 协议字段自动生成。**已落地**：`hw_probe` + env 指纹绑定 + 运行时 fail-closed；**剩余**：manifest 协议字段自动生成 | 新环境可生成独立 profile；旧表不会静默复用 |
-| P1 Batch 性能 | **有界阶段已完成**：M2/M5/local-fused 纳入 focus 比较，M2 winner 接入 selector；**剩余**：扩展 N/B 网格与更强 residence | 已声明 B/N 网格相对 incumbent 有净收益，负点完整报告 |
+| P1 Batch 性能 | **有界阶段已完成**：M2/M5/local-fused 纳入 focus 比较，M2 winner 接入 selector；**下一步**：在 capability gate 通过后实现 batched residence | 已声明 B/N 网格相对 incumbent 有净收益，负点完整报告 |
 | P1 选择模型 | 参数化成本模型 + 小规模校准 + 留出验证。**已落地**：声明常数模型 + bounded search + focus/holdout 隔离验证（`model_validation.json`） | 排序误差、选择损失和搜索成本均可复核 |
 | P2 算子语义 | **首轮已实现**：C2C inverse、四种 normalization、R2C/C2R compatibility path；Issue #6 semantic matrix v2 已归档 | 继续补专用 real-FFT 核心、扩大语义性能矩阵，并让每种语义都有独立 selector/同语义基线 |
 | P2 尺寸/布局 | 非二次幂、stride、2D/多维 | 明确算法与 padding 语义，端到端计时包含重排 |
-| P3 平台扩展 | 其他 Kunlunxin 设备与软件栈 | 每台硬件独立 probe、lowering、校准和发布矩阵 |
+| P3 平台扩展 | 其他 Kunlunxin 设备与软件栈、FlagOS/vendor Triton 能力核验 | 每台硬件独立 probe、lowering、校准和发布矩阵；能力不足时 fail closed |
 
 ## Persistent 混合数据流
 

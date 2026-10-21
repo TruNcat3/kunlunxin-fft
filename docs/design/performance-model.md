@@ -1,5 +1,15 @@
 # 性能模型与选择证据
 
+## 与最新迁移结果的关系
+
+Issue #9 v6-1 的 140-cell current/M0 几何平均延迟比为 `0.6086x`，说明模型筛选和已实现的
+lowering 能够产生稳定的迁移收益；这不是模型对 vendor 的性能承诺。相同快照中 106 个
+vendor-supported cell 的 current/vendor 几何平均约 `0.122x`，因此下一轮必须把 processing unit、
+局部存储、GM 边界和 dispatch 能力作为显式成本项，并先通过 Issue #10 的 capability gate。
+
+v6-1 没有实现 batched M2/hybrid/h_dif、persistent pipeline 或第三方局部 FFT core。模型不能为
+这些未实现能力添加假设的 overlap 项；只有有 trace/计时证据的流水重叠才能进入成本方程。
+
 本页回答“为什么某个候选在某个 P800 shape 上更快”，而不是把冻结 selector 重新描述成模型。
 部署选择仍是 profile-bound 的实测精确表；结构化成本模型、probe 校准与留出验证**已实现**
 （`src/xpu/cost_model.py`、`scripts/hw_probe.py`、`scripts/validate_cost_model.py`），模型只做

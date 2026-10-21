@@ -2,6 +2,16 @@
 
 本页描述当前发布接口，不定义项目最终目标。
 
+## 当前发布证据
+
+Issue #9 v6-1 是迁移验收的最新快照：`41/41` release gate 通过，`469` 个 host 测试和 `370`
+个 hardware 测试通过；140 个 current/M0 可比较 cell 的几何平均延迟比为 `0.6086x`。这证明
+方法、lowering、环境绑定和选择闭环已经在 P800 上可重放。
+
+这不代表已经追平厂商 FFT。106 个 vendor-supported 且语义匹配的 cell 中，结果为 `4/0/102`
+（win/tie/loss），几何平均 current/vendor 约 `0.122x`。支持范围表描述的是“能否正确执行”，
+不是“是否达到厂商性能”；详细边界见[Issue #9 v6-1](../benchmarks/issue9-v61.md)。
+
 | 能力 | 当前支持 | 限制 |
 |---|---|---|
 | C2C | FP32/complex64，1D forward/inverse；`norm=none/forward/backward/ortho` | inverse 复用 forward lowering，epilogue 负责共轭与缩放；不等同于独立 inverse kernel |

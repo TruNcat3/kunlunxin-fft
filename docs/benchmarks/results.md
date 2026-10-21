@@ -2,6 +2,27 @@
 
 本页先给当前正式发布证据，再给宽范围研究数据。两者协议不同，不混合计算平均值。
 
+## 最新：Issue #9 v6-1 迁移验收
+
+当前应优先阅读[Issue #9 v6-1 独立结果页](issue9-v61.md)。不可变 release 目录为
+[`20261020-issue9-semantic-matrix-v6-1`](https://github.com/TruNcat3/kunlunxin-fft/tree/master/results/p800/releases/20261020-issue9-semantic-matrix-v6-1)。
+
+| 指标 | v6-1 结果 | 口径 |
+|---|---:|---|
+| release gate | `41/41 PASS` | artifact、manifest、路径身份和报告门禁 |
+| 验证 | `469 host` / `370 hardware` | 独立 correctness 与设备路径测试 |
+| 可比较 cell | `140` | current 与 M0 同语义比较 |
+| current/M0 几何平均延迟比 | `0.6086x` | 约 39% 几何平均降时 |
+| paired closure | `37.0%--75.2%`，中位 `60.7%` | 10 cells，全部通过 2% guard |
+| vendor-supported | `106` | 成功调用且语义匹配 |
+| current/vendor | `4/0/102` | win/tie/loss；几何平均约 `0.122x` |
+
+**不要把这张表与下方历史快照混合平均。** 下方的正式 release matrix、Issue #6 语义矩阵和
+Phase 3 扫描使用不同提交、候选集合或计时协议，保留它们是为了追溯 M0、旧 selector 和研究趋势。
+v6-1 也没有新增真正的 batched M2/hybrid/h_dif、resident/persistent pipeline 或第三方局部
+FFT core，因此 vendor 差距仍属于下一轮物理 lowering/processing-unit 工作，不应归因于“搜索已经
+覆盖完整架构空间”。
+
 ## 正式 P800 release matrix
 
 <figure class="doc-figure">
