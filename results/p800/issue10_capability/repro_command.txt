@@ -36,7 +36,9 @@ python3 scripts/issue10_wp3_holdout.py
 python3 scripts/issue10_wp3_ablation.py
 
 # package: logs/ + environment.json + repro_command.txt + manifest.json
-# + SHA256SUMS  (RUN LAST)
+# + SHA256SUMS  (RUN LAST, AFTER the producer scripts are committed:
+# manifest.json records evidence_source_commit = HEAD and per-producer
+# git blob shas; the packaging commit is its child — see manifest note)
 python3 scripts/issue10_pack_artifacts.py
 
 # verify

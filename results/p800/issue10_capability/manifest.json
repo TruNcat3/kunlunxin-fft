@@ -1,12 +1,54 @@
 {
-  "schema": "issue10-manifest-v1",
+  "schema": "issue10-manifest-v2",
   "issue": "kunlunxin-fft#10",
-  "created_utc": "2026-10-22T05:32:54Z",
+  "created_utc": "2026-10-22T09:08:52Z",
   "package_dir": "results/p800/issue10_capability",
-  "git_head_at_pack": "45b42d3916b0e4179afb090ddb5f90fc25e2be64",
-  "note": "git_head_at_pack is the parent of the packaging commit (the pack is committed together with the scripts); SHA256SUMS additionally covers manifest.json.",
+  "evidence_source_commit": "579406f10c369cc95084f6933fca0f02252beb61",
+  "git_head_at_pack": "579406f10c369cc95084f6933fca0f02252beb61",
+  "packaging_commit": null,
+  "packaging_commit_note": "self-reference: the packaging commit is the commit that adds this manifest.json (git log --diff-filter=A -- results/p800/issue10_capability/manifest.json); evidence_source_commit is the commit to check out for the exact producer scripts (run pack after committing producers; see producer_dirty_at_pack), and each producer is additionally pinned by git blob sha in producer_blobs",
+  "producer_dirty_at_pack": null,
+  "producer_blobs": {
+    "scripts/issue10_pack_artifacts.py": {
+      "git_blob": "017d584829629e70f97abc3b4f1d15f517c42f16",
+      "sha256": "0d21b8200ad7789c210993f1f5dc16708920068d02e33d6aa408d3f9a0997894"
+    },
+    "scripts/issue10_stale_read_matrix.py": {
+      "git_blob": "fdb068e87dee5dea98e933eb1372f96ebfb6d576",
+      "sha256": "c3c70246a34e78d9ed51711c44b7e93e49d9f34f81fd942906a9d470ac48d9d4"
+    },
+    "scripts/issue10_wp0_env.py": {
+      "git_blob": "5939ccd7dedd5648e170a69be6d85d53dbd14077",
+      "sha256": "f09141544de8109907604cd9cd393b2a93d558dc31c2abe8ae89cdb16820e17c"
+    },
+    "scripts/issue10_wp1_capability.py": {
+      "git_blob": "222afb4a58d888c6ee3cb9cad02f8993c629ff4f",
+      "sha256": "0ac29858eab5d71bdf1ecb25a4d1137ce80c0f6c89bb94ddeeefb325c86bca93"
+    },
+    "scripts/issue10_wp2_minikernels.py": {
+      "git_blob": "86a25dd429b666503a86b03000263e603808fc1d",
+      "sha256": "5f29aad504b1f19fcbfd079c085784b4d8c0db2794114f09525457e4c0706695"
+    },
+    "scripts/issue10_wp3_ablation.py": {
+      "git_blob": "da15dbacac1ce2fa62ea71219dec47aaa65e8a9f",
+      "sha256": "fdd9fb83a904040fdef0165d49f9e87cf22379532654cccf1384de4d56f144e3"
+    },
+    "scripts/issue10_wp3_holdout.py": {
+      "git_blob": "51e1fc8a81e168ea49646e616db871e9538779f0",
+      "sha256": "cee8e3014f53e0c6a559c925ff76348e5a83b603277d7e8e64ff449e864e2e6d"
+    },
+    "scripts/issue10_wp3_perf.py": {
+      "git_blob": "085b7cd508cbfeb43e0f37afd450395a9f84e3d7",
+      "sha256": "0fc78937056800cb8670fe184c495a2c79e3e99fa9669370a5b6467686c130c1"
+    },
+    "scripts/issue10_wp3_profile.py": {
+      "git_blob": "ba7242e4473c757950c3238095ca288987cdba11",
+      "sha256": "173cd593b2d784d6230b95ced12f86db051e7d435f20c3434c818801fe025434"
+    }
+  },
+  "note": "artifacts are committed after this pack run; SHA256SUMS additionally covers manifest.json.",
   "n_files": 77,
-  "total_bytes": 1525873,
+  "total_bytes": 1838187,
   "n_logs": 23,
   "files": [
     {
@@ -167,14 +209,14 @@
     },
     {
       "path": "repro_command.txt",
-      "bytes": 1734,
-      "sha256": "a6b2dbe4a42a3a7bd04929246b603c9a1afbdbb724a4822aca1bcb3f74be9d53",
+      "bytes": 1921,
+      "sha256": "85f831810737a636c1b896a4780416c1a9b1c9697a633ebf406a385dc5c9e4fc",
       "producer": "scripts/issue10_pack_artifacts.py"
     },
     {
       "path": "selector_diff.json",
-      "bytes": 4940,
-      "sha256": "5e1a1432ef87e0fb355bb7cfb0fd852125d0ebf303ce47b533959a342a7ff756",
+      "bytes": 5540,
+      "sha256": "2d846aa29cd78947403de5b7bb795ffa9c037855c4345a409d6bedb97a962140",
       "producer": "scripts/issue10_wp3_holdout.py"
     },
     {
@@ -389,8 +431,8 @@
     },
     {
       "path": "wp3_holdout.json",
-      "bytes": 1009759,
-      "sha256": "275b11f6598fa7979c0670335b9af307203eb4d8dea9b17dec598e824edba239",
+      "bytes": 1321286,
+      "sha256": "36995398e1e84c5f2798bf61a20c696acf540fa40d8e95c09597337028b4c42c",
       "producer": "scripts/issue10_wp3_holdout.py"
     },
     {
