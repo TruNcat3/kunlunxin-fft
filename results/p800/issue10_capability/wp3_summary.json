@@ -1,7 +1,18 @@
 {
   "schema": "issue10-wp3-perf-v1",
   "protocol": {
-    "timing": "warmup=5, rounds=5, trials=32, sync per round, per-trial wall p50/MAD (pooled)",
+    "timing": "warmup=5, rounds=5, trials=32, sync per round, per-trial wall p50/MAD (pooled); steady-state API wall clock (plan-reuse \u53e3\u5f84)",
+    "plan_compile": "excluded from timing (covered by warmup); one-shot/cold \u53e3\u5f84 measured separately in wp3_holdout.json",
+    "device_time": "not in the timing loop; per-op device time via cupti in wp3_profile.json / wp3_trace/",
+    "fail_closed": "shape/stride/dtype/finite + vendor last-dim canary validated BEFORE timing; violation = row status FAIL-closed, no timing",
+    "hybrid_costs_included": [
+      "stage transposes (materialized)",
+      "k_twiddle triton kernel",
+      "digit-reversal permute/clone",
+      "torch.cuda.synchronize",
+      "hybrid_fused_p: inter-stage transpose-back/reshape copy is ABSENT by design (see timed_components)"
+    ],
+    "vendor_plan_reuse": true,
     "tol_rel": 0.0001,
     "dtype": "fp32 (complex64)",
     "directions": "c2c_forward on all cells; c2c_inverse on B=16",
@@ -14,40 +25,54 @@
       "direction": "c2c_forward",
       "paths": {
         "vendor": {
-          "p50_ms": 0.03164462395943701,
-          "mad_ms": 0.0005443798727355897,
+          "p50_ms": 0.03306400321889669,
+          "mad_ms": 0.0018968057702295482,
           "rel_err": 3.8157155698546055e-07,
           "correct": true,
+          "status": "OK",
           "launches": "vendor-internal",
           "gm_bytes_analytic": null,
           "speedup_vs_vendor": 1.0
         },
         "triton_multipass": {
-          "p50_ms": 0.2568969939602539,
-          "mad_ms": 0.0014437100617215037,
+          "p50_ms": 0.30196484294719994,
+          "mad_ms": 0.0006518384907394648,
           "rel_err": 1.5308167828248585e-07,
           "correct": true,
+          "status": "OK",
           "launches": 8,
           "gm_bytes_analytic": 47104,
-          "speedup_vs_vendor": 0.12318020336327075
+          "speedup_vs_vendor": 0.10949620126697363
         },
         "triton_resident_loop": {
-          "p50_ms": 0.1624027790967375,
-          "mad_ms": 0.0021524683688767254,
+          "p50_ms": 0.1908146878122352,
+          "mad_ms": 0.011695345165207982,
           "rel_err": 1.5308167828248585e-07,
           "correct": true,
+          "status": "OK",
           "launches": 8,
           "gm_bytes_analytic": 47104,
-          "speedup_vs_vendor": 0.19485272441420134
+          "speedup_vs_vendor": 0.17327808251025315
         },
         "hybrid_vendor_p": {
-          "p50_ms": 0.19418550073169172,
-          "mad_ms": 0.0012478121789172292,
+          "p50_ms": 0.2233649356639944,
+          "mad_ms": 0.014176286640577018,
           "rel_err": 1.8433592587661121e-07,
           "correct": true,
+          "status": "OK",
           "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 triton twiddle + transpose/permute copies",
           "gm_bytes_analytic": 16384,
-          "speedup_vs_vendor": 0.16296079697093732
+          "speedup_vs_vendor": 0.14802682937054423
+        },
+        "hybrid_fused_p": {
+          "p50_ms": 0.32179068512050435,
+          "mad_ms": 0.005728972610086203,
+          "rel_err": 1.8433592587661121e-07,
+          "correct": true,
+          "status": "OK",
+          "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 fused Triton twiddle (no inter-stage transpose-back/reshape copy) + digit-reversal permute copy",
+          "gm_bytes_analytic": 16384,
+          "speedup_vs_vendor": 0.10275003207912889
         }
       }
     },
@@ -57,40 +82,54 @@
       "direction": "c2c_forward",
       "paths": {
         "vendor": {
-          "p50_ms": 0.030942152079660445,
-          "mad_ms": 0.00025315239327028394,
+          "p50_ms": 0.03509550151648,
+          "mad_ms": 0.0025649715098552406,
           "rel_err": 4.766395398696602e-07,
           "correct": true,
+          "status": "OK",
           "launches": "vendor-internal",
           "gm_bytes_analytic": null,
           "speedup_vs_vendor": 1.0
         },
         "triton_multipass": {
-          "p50_ms": 0.4156057839281857,
-          "mad_ms": 0.014852463209535927,
+          "p50_ms": 0.4203666903777048,
+          "mad_ms": 0.01512531889602542,
           "rel_err": 1.7606780038808273e-07,
           "correct": true,
+          "status": "OK",
           "launches": 8,
           "gm_bytes_analytic": 753664,
-          "speedup_vs_vendor": 0.0744507253657641
+          "speedup_vs_vendor": 0.08348782698492653
         },
         "triton_resident_loop": {
-          "p50_ms": 0.8028086886042729,
-          "mad_ms": 0.011622876627370715,
+          "p50_ms": 0.7933037777547725,
+          "mad_ms": 0.0030121300369501114,
           "rel_err": 1.7606780038808273e-07,
           "correct": true,
+          "status": "OK",
           "launches": 8,
           "gm_bytes_analytic": 753664,
-          "speedup_vs_vendor": 0.03854237319411064
+          "speedup_vs_vendor": 0.04423967526766119
         },
         "hybrid_vendor_p": {
-          "p50_ms": 0.2850923119694926,
-          "mad_ms": 0.007516406185459346,
+          "p50_ms": 0.2805843760143034,
+          "mad_ms": 0.0031899689929559827,
           "rel_err": 3.252373813892172e-07,
           "correct": true,
+          "status": "OK",
           "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 triton twiddle + transpose/permute copies",
           "gm_bytes_analytic": 262144,
-          "speedup_vs_vendor": 0.108533800388737
+          "speedup_vs_vendor": 0.1250800276729982
+        },
+        "hybrid_fused_p": {
+          "p50_ms": 0.2548574047978036,
+          "mad_ms": 0.005548339686356485,
+          "rel_err": 3.252373813892172e-07,
+          "correct": true,
+          "status": "OK",
+          "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 fused Triton twiddle (no inter-stage transpose-back/reshape copy) + digit-reversal permute copy",
+          "gm_bytes_analytic": 262144,
+          "speedup_vs_vendor": 0.13770642271243302
         }
       }
     },
@@ -100,40 +139,54 @@
       "direction": "c2c_inverse",
       "paths": {
         "vendor": {
-          "p50_ms": 0.03160400228807703,
-          "mad_ms": 0.0006340633262880147,
+          "p50_ms": 0.03092340921284631,
+          "mad_ms": 9.281939128413796e-05,
           "rel_err": 4.766395398696602e-07,
           "correct": true,
+          "status": "OK",
           "launches": "vendor-internal",
           "gm_bytes_analytic": null,
           "speedup_vs_vendor": 1.0
         },
         "triton_multipass": {
-          "p50_ms": 0.4858339380007237,
-          "mad_ms": 0.007492963050026447,
+          "p50_ms": 0.4337698410381563,
+          "mad_ms": 0.01460753264836967,
           "rel_err": 1.7606780038808273e-07,
           "correct": true,
+          "status": "OK",
           "launches": 8,
           "gm_bytes_analytic": 753664,
-          "speedup_vs_vendor": 0.06505103866998675
+          "speedup_vs_vendor": 0.07128990143444792
         },
         "triton_resident_loop": {
-          "p50_ms": 0.8873353144736029,
-          "mad_ms": 0.013848126400262117,
+          "p50_ms": 0.8710730617167428,
+          "mad_ms": 0.006370151822920889,
           "rel_err": 1.7606780038808273e-07,
           "correct": true,
+          "status": "OK",
           "launches": 8,
           "gm_bytes_analytic": 753664,
-          "speedup_vs_vendor": 0.03561675250897185
+          "speedup_vs_vendor": 0.03550036222208654
         },
         "hybrid_vendor_p": {
-          "p50_ms": 0.2801818118314259,
-          "mad_ms": 0.0021937157725915313,
+          "p50_ms": 0.2896494625019841,
+          "mad_ms": 0.000999963958747685,
           "rel_err": 3.252373813892172e-07,
           "correct": true,
+          "status": "OK",
           "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 triton twiddle + transpose/permute copies",
           "gm_bytes_analytic": 262144,
-          "speedup_vs_vendor": 0.11279819372105382
+          "speedup_vs_vendor": 0.10676149351609615
+        },
+        "hybrid_fused_p": {
+          "p50_ms": 0.2613700635265559,
+          "mad_ms": 0.0036577475839294493,
+          "rel_err": 3.252373813892172e-07,
+          "correct": true,
+          "status": "OK",
+          "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 fused Triton twiddle (no inter-stage transpose-back/reshape copy) + digit-reversal permute copy",
+          "gm_bytes_analytic": 262144,
+          "speedup_vs_vendor": 0.11831274322548577
         }
       }
     },
@@ -143,40 +196,54 @@
       "direction": "c2c_forward",
       "paths": {
         "vendor": {
-          "p50_ms": 0.03168555849697441,
-          "mad_ms": 0.0004927715053781867,
+          "p50_ms": 0.03203743835911155,
+          "mad_ms": 0.0005359106580726802,
           "rel_err": 5.641440881777061e-07,
           "correct": true,
+          "status": "OK",
           "launches": "vendor-internal",
           "gm_bytes_analytic": null,
           "speedup_vs_vendor": 1.0
         },
         "triton_multipass": {
-          "p50_ms": 0.7298637210624292,
-          "mad_ms": 0.002223059709649533,
+          "p50_ms": 0.7108452482498251,
+          "mad_ms": 0.0019102517399005592,
           "rel_err": 2.0852184903565662e-07,
           "correct": true,
+          "status": "OK",
           "launches": 8,
           "gm_bytes_analytic": 3014656,
-          "speedup_vs_vendor": 0.043412979139244225
+          "speedup_vs_vendor": 0.045069497809813105
         },
         "triton_resident_loop": {
-          "p50_ms": 3.0274906239355914,
-          "mad_ms": 0.003913657565135509,
+          "p50_ms": 3.0281026265583932,
+          "mad_ms": 0.026706002245191485,
           "rel_err": 2.0852184903565662e-07,
           "correct": true,
+          "status": "OK",
           "launches": 8,
           "gm_bytes_analytic": 3014656,
-          "speedup_vs_vendor": 0.010465947688315122
+          "speedup_vs_vendor": 0.010580037175134938
         },
         "hybrid_vendor_p": {
-          "p50_ms": 0.4643387801479548,
-          "mad_ms": 0.0007678099791519344,
+          "p50_ms": 0.4599564999807626,
+          "mad_ms": 0.002205248165410012,
           "rel_err": 3.252373813892172e-07,
           "correct": true,
+          "status": "OK",
           "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 triton twiddle + transpose/permute copies",
           "gm_bytes_analytic": 1048576,
-          "speedup_vs_vendor": 0.0682380189888044
+          "speedup_vs_vendor": 0.06965319190065038
+        },
+        "hybrid_fused_p": {
+          "p50_ms": 0.4219494730932638,
+          "mad_ms": 0.0008668721420690417,
+          "rel_err": 3.252373813892172e-07,
+          "correct": true,
+          "status": "OK",
+          "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 fused Triton twiddle (no inter-stage transpose-back/reshape copy) + digit-reversal permute copy",
+          "gm_bytes_analytic": 1048576,
+          "speedup_vs_vendor": 0.07592719129200166
         }
       }
     },
@@ -186,40 +253,54 @@
       "direction": "c2c_forward",
       "paths": {
         "vendor": {
-          "p50_ms": 0.05948996840743348,
-          "mad_ms": 6.59347278997302e-05,
+          "p50_ms": 0.05963093281025067,
+          "mad_ms": 0.00020310108084231615,
           "rel_err": 5.641440881777061e-07,
           "correct": true,
+          "status": "OK",
           "launches": "vendor-internal",
           "gm_bytes_analytic": null,
           "speedup_vs_vendor": 1.0
         },
         "triton_multipass": {
-          "p50_ms": 2.0709889649879187,
-          "mad_ms": 0.0021202577045187354,
+          "p50_ms": 2.0664298717747442,
+          "mad_ms": 0.021240812202449888,
           "rel_err": 2.72914443506968e-07,
           "correct": true,
+          "status": "OK",
           "launches": 8,
           "gm_bytes_analytic": 12058624,
-          "speedup_vs_vendor": 0.028725391304912393
+          "speedup_vs_vendor": 0.02885698354671814
         },
         "triton_resident_loop": {
-          "p50_ms": 9.022442187415436,
-          "mad_ms": 0.0096973089966923,
+          "p50_ms": 9.003849190776236,
+          "mad_ms": 0.009797913662623614,
           "rel_err": 2.72914443506968e-07,
           "correct": true,
+          "status": "OK",
           "launches": 8,
           "gm_bytes_analytic": 12058624,
-          "speedup_vs_vendor": 0.006593554956817622
+          "speedup_vs_vendor": 0.006622826698534451
         },
         "hybrid_vendor_p": {
-          "p50_ms": 1.1863329709740356,
-          "mad_ms": 0.008335126040037721,
+          "p50_ms": 1.1758019390981644,
+          "mad_ms": 0.004116816853638738,
           "rel_err": 3.4205560864615605e-07,
           "correct": true,
+          "status": "OK",
           "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 triton twiddle + transpose/permute copies",
           "gm_bytes_analytic": 4194304,
-          "speedup_vs_vendor": 0.050146097143864594
+          "speedup_vs_vendor": 0.05071511691500302
+        },
+        "hybrid_fused_p": {
+          "p50_ms": 0.9301871250499971,
+          "mad_ms": 0.004214314685668796,
+          "rel_err": 3.4205560864615605e-07,
+          "correct": true,
+          "status": "OK",
+          "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 fused Triton twiddle (no inter-stage transpose-back/reshape copy) + digit-reversal permute copy",
+          "gm_bytes_analytic": 4194304,
+          "speedup_vs_vendor": 0.06410638376342345
         }
       }
     },
@@ -229,40 +310,54 @@
       "direction": "c2c_forward",
       "paths": {
         "vendor": {
-          "p50_ms": 0.2293119323439896,
-          "mad_ms": 0.00014589750207960606,
+          "p50_ms": 0.22905453079147264,
+          "mad_ms": 3.159948391839862e-05,
           "rel_err": 4.160174238148441e-07,
           "correct": true,
+          "status": "OK",
           "launches": "vendor-internal",
           "gm_bytes_analytic": null,
           "speedup_vs_vendor": 1.0
         },
         "triton_multipass": {
-          "p50_ms": 0.4875670274486765,
-          "mad_ms": 0.01061725924955681,
+          "p50_ms": 0.48326596879633144,
+          "mad_ms": 0.0102460035122931,
           "rel_err": 1.353071536227736e-07,
           "correct": true,
+          "status": "OK",
           "launches": 10,
           "gm_bytes_analytic": 237568,
-          "speedup_vs_vendor": 0.47031878579633446
+          "speedup_vs_vendor": 0.4739719855755162
         },
         "triton_resident_loop": {
-          "p50_ms": 0.23032850003801286,
-          "mad_ms": 0.0032324387575499713,
+          "p50_ms": 0.23452471941709518,
+          "mad_ms": 0.00286712747765705,
           "rel_err": 1.353071536227736e-07,
           "correct": true,
+          "status": "OK",
           "launches": 10,
           "gm_bytes_analytic": 237568,
-          "speedup_vs_vendor": 0.9955864441705847
+          "speedup_vs_vendor": 0.9766754283334459
         },
         "hybrid_vendor_p": {
-          "p50_ms": 0.17411781300324947,
-          "mad_ms": 0.001787120709195733,
+          "p50_ms": 0.17796590691432357,
+          "mad_ms": 0.002944005245808512,
           "rel_err": 4.0736378030811794e-07,
           "correct": true,
+          "status": "OK",
           "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 triton twiddle + transpose/permute copies",
           "gm_bytes_analytic": 65536,
-          "speedup_vs_vendor": 1.3169929508574179
+          "speedup_vs_vendor": 1.2870697245497935
+        },
+        "hybrid_fused_p": {
+          "p50_ms": 0.2613694377942011,
+          "mad_ms": 0.0006949703674763441,
+          "rel_err": 4.0736378030811794e-07,
+          "correct": true,
+          "status": "OK",
+          "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 fused Triton twiddle (no inter-stage transpose-back/reshape copy) + digit-reversal permute copy",
+          "gm_bytes_analytic": 65536,
+          "speedup_vs_vendor": 0.876363100156443
         }
       }
     },
@@ -272,40 +367,54 @@
       "direction": "c2c_forward",
       "paths": {
         "vendor": {
-          "p50_ms": 0.23022537789074704,
-          "mad_ms": 0.00020062725525349379,
+          "p50_ms": 0.23207071353681386,
+          "mad_ms": 0.001721193257253617,
           "rel_err": 5.469233739521425e-07,
           "correct": true,
+          "status": "OK",
           "launches": "vendor-internal",
           "gm_bytes_analytic": null,
           "speedup_vs_vendor": 1.0
         },
         "triton_multipass": {
-          "p50_ms": 0.6045282789273188,
-          "mad_ms": 0.004245215677656233,
+          "p50_ms": 0.6177015602588654,
+          "mad_ms": 0.007925751560833305,
           "rel_err": 3.0779301289511567e-07,
           "correct": true,
+          "status": "OK",
           "launches": 10,
           "gm_bytes_analytic": 3801088,
-          "speedup_vs_vendor": 0.3808347531719465
+          "speedup_vs_vendor": 0.3757003842430931
         },
         "triton_resident_loop": {
-          "p50_ms": 2.38415537023684,
-          "mad_ms": 0.002859007508959621,
+          "p50_ms": 2.384026563959196,
+          "mad_ms": 0.005167748895473778,
           "rel_err": 3.0779301289511567e-07,
           "correct": true,
+          "status": "OK",
           "launches": 10,
           "gm_bytes_analytic": 3801088,
-          "speedup_vs_vendor": 0.0965647544471385
+          "speedup_vs_vendor": 0.09734401329463788
         },
         "hybrid_vendor_p": {
-          "p50_ms": 0.3412417208892293,
-          "mad_ms": 0.0008115312084555626,
+          "p50_ms": 0.348367597325705,
+          "mad_ms": 0.0019949584384448826,
           "rel_err": 5.42397777721144e-07,
           "correct": true,
+          "status": "OK",
           "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 triton twiddle + transpose/permute copies",
           "gm_bytes_analytic": 1048576,
-          "speedup_vs_vendor": 0.6746694902686903
+          "speedup_vs_vendor": 0.6661661857139951
+        },
+        "hybrid_fused_p": {
+          "p50_ms": 0.30306450207717717,
+          "mad_ms": 0.00251775054493919,
+          "rel_err": 5.42397777721144e-07,
+          "correct": true,
+          "status": "OK",
+          "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 fused Triton twiddle (no inter-stage transpose-back/reshape copy) + digit-reversal permute copy",
+          "gm_bytes_analytic": 1048576,
+          "speedup_vs_vendor": 0.7657469348809306
         }
       }
     },
@@ -315,40 +424,54 @@
       "direction": "c2c_inverse",
       "paths": {
         "vendor": {
-          "p50_ms": 0.23002912348601967,
-          "mad_ms": 4.0003214962780476e-05,
+          "p50_ms": 0.2300016931258142,
+          "mad_ms": 5.2488758228719234e-05,
           "rel_err": 5.469233739521425e-07,
           "correct": true,
+          "status": "OK",
           "launches": "vendor-internal",
           "gm_bytes_analytic": null,
           "speedup_vs_vendor": 1.0
         },
         "triton_multipass": {
-          "p50_ms": 0.7071479412843473,
-          "mad_ms": 0.010288218618370593,
+          "p50_ms": 0.7165782517404296,
+          "mad_ms": 0.039360129449050874,
           "rel_err": 3.0779301289511567e-07,
           "correct": true,
+          "status": "OK",
           "launches": 10,
           "gm_bytes_analytic": 3801088,
-          "speedup_vs_vendor": 0.3252913712344726
+          "speedup_vs_vendor": 0.3209721932910812
         },
         "triton_resident_loop": {
-          "p50_ms": 2.461701187712606,
-          "mad_ms": 0.004445188096724451,
+          "p50_ms": 2.4658382826601155,
+          "mad_ms": 0.001818691089283675,
           "rel_err": 3.0779301289511567e-07,
           "correct": true,
+          "status": "OK",
           "launches": 10,
           "gm_bytes_analytic": 3801088,
-          "speedup_vs_vendor": 0.0934431541221138
+          "speedup_vs_vendor": 0.09327525440058107
         },
         "hybrid_vendor_p": {
-          "p50_ms": 0.35505018604453653,
-          "mad_ms": 0.005709560355171561,
+          "p50_ms": 0.3553386850398965,
+          "mad_ms": 0.0010046278475783765,
           "rel_err": 5.42397777721144e-07,
           "correct": true,
+          "status": "OK",
           "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 triton twiddle + transpose/permute copies",
           "gm_bytes_analytic": 1048576,
-          "speedup_vs_vendor": 0.6478777720092941
+          "speedup_vs_vendor": 0.6472745659538595
+        },
+        "hybrid_fused_p": {
+          "p50_ms": 0.31860009039519355,
+          "mad_ms": 0.0024736873456276953,
+          "rel_err": 5.42397777721144e-07,
+          "correct": true,
+          "status": "OK",
+          "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 fused Triton twiddle (no inter-stage transpose-back/reshape copy) + digit-reversal permute copy",
+          "gm_bytes_analytic": 1048576,
+          "speedup_vs_vendor": 0.7219134584692637
         }
       }
     },
@@ -358,40 +481,54 @@
       "direction": "c2c_forward",
       "paths": {
         "vendor": {
-          "p50_ms": 0.23184597375802696,
-          "mad_ms": 0.0013340686564333737,
+          "p50_ms": 0.2303179062437266,
+          "mad_ms": 6.402842700481415e-05,
           "rel_err": 6.873731868620284e-07,
           "correct": true,
+          "status": "OK",
           "launches": "vendor-internal",
           "gm_bytes_analytic": null,
           "speedup_vs_vendor": 1.0
         },
         "triton_multipass": {
-          "p50_ms": 1.2633172518690117,
-          "mad_ms": 0.0020402512745931745,
+          "p50_ms": 1.3112309097778052,
+          "mad_ms": 0.02385262632742524,
           "rel_err": 3.0779301289511567e-07,
           "correct": true,
+          "status": "OK",
           "launches": 10,
           "gm_bytes_analytic": 15204352,
-          "speedup_vs_vendor": 0.183521576559667
+          "speedup_vs_vendor": 0.1756501501957082
         },
         "triton_resident_loop": {
-          "p50_ms": 9.313735004980117,
-          "mad_ms": 0.010312622180208564,
+          "p50_ms": 9.295463933085557,
+          "mad_ms": 0.004521272785495967,
           "rel_err": 3.0779301289511567e-07,
           "correct": true,
+          "status": "OK",
           "launches": 10,
           "gm_bytes_analytic": 15204352,
-          "speedup_vs_vendor": 0.024892910699526812
+          "speedup_vs_vendor": 0.024777451443165826
         },
         "hybrid_vendor_p": {
-          "p50_ms": 0.9505842826911248,
-          "mad_ms": 0.0011534066288731992,
+          "p50_ms": 0.9478640276938677,
+          "mad_ms": 0.003889908839482814,
           "rel_err": 6.181268672045129e-07,
           "correct": true,
+          "status": "OK",
           "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 triton twiddle + transpose/permute copies",
           "gm_bytes_analytic": 4194304,
-          "speedup_vs_vendor": 0.24389838752821155
+          "speedup_vs_vendor": 0.24298622957987445
+        },
+        "hybrid_fused_p": {
+          "p50_ms": 0.48090668860822916,
+          "mad_ms": 0.0007603448466397822,
+          "rel_err": 6.181268672045129e-07,
+          "correct": true,
+          "status": "OK",
+          "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 fused Triton twiddle (no inter-stage transpose-back/reshape copy) + digit-reversal permute copy",
+          "gm_bytes_analytic": 4194304,
+          "speedup_vs_vendor": 0.47892431463217844
         }
       }
     },
@@ -401,40 +538,54 @@
       "direction": "c2c_forward",
       "paths": {
         "vendor": {
-          "p50_ms": 0.4576501887640916,
-          "mad_ms": 5.1215465646237135e-05,
+          "p50_ms": 0.45924874575575814,
+          "mad_ms": 0.0012924647307954729,
           "rel_err": 7.766323914838997e-07,
           "correct": true,
+          "status": "OK",
           "launches": "vendor-internal",
           "gm_bytes_analytic": null,
           "speedup_vs_vendor": 1.0
         },
         "triton_multipass": {
-          "p50_ms": 3.6272227225708775,
-          "mad_ms": 0.005965841410215944,
+          "p50_ms": 3.7576721297227778,
+          "mad_ms": 0.004517722118180245,
           "rel_err": 3.0779301289511567e-07,
           "correct": true,
+          "status": "OK",
           "launches": 10,
           "gm_bytes_analytic": 60817408,
-          "speedup_vs_vendor": 0.1261709643348621
+          "speedup_vs_vendor": 0.12221628974043544
         },
         "triton_resident_loop": {
-          "p50_ms": 36.98152321885573,
-          "mad_ms": 0.0013824683264829218,
+          "p50_ms": 36.990743938076776,
+          "mad_ms": 0.006316440703812987,
           "rel_err": 3.0779301289511567e-07,
           "correct": true,
+          "status": "OK",
           "launches": 10,
           "gm_bytes_analytic": 60817408,
-          "speedup_vs_vendor": 0.012375103806723407
+          "speedup_vs_vendor": 0.012415234106255052
         },
         "hybrid_vendor_p": {
-          "p50_ms": 2.6392290310468525,
-          "mad_ms": 0.004532434104476124,
+          "p50_ms": 2.6374514418421313,
+          "mad_ms": 0.008949806215241551,
           "rel_err": 6.410866280608332e-07,
           "correct": true,
+          "status": "OK",
           "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 triton twiddle + transpose/permute copies",
           "gm_bytes_analytic": 16777216,
-          "speedup_vs_vendor": 0.17340298374278046
+          "speedup_vs_vendor": 0.17412595298247283
+        },
+        "hybrid_fused_p": {
+          "p50_ms": 1.4447375942836516,
+          "mad_ms": 0.004848312528338283,
+          "rel_err": 6.410866280608332e-07,
+          "correct": true,
+          "status": "OK",
+          "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 fused Triton twiddle (no inter-stage transpose-back/reshape copy) + digit-reversal permute copy",
+          "gm_bytes_analytic": 16777216,
+          "speedup_vs_vendor": 0.3178769262825674
         }
       }
     },
@@ -444,40 +595,54 @@
       "direction": "c2c_forward",
       "paths": {
         "vendor": {
-          "p50_ms": 0.6292563411989249,
-          "mad_ms": 0.0006921836757101119,
+          "p50_ms": 0.6317257139016874,
+          "mad_ms": 0.0018312130123376846,
           "rel_err": 3.98604173111741e-07,
           "correct": true,
+          "status": "OK",
           "launches": "vendor-internal",
           "gm_bytes_analytic": null,
           "speedup_vs_vendor": 1.0
         },
         "triton_multipass": {
-          "p50_ms": 0.71887974627316,
-          "mad_ms": 0.011637872376013547,
+          "p50_ms": 0.6924700646777637,
+          "mad_ms": 0.019826788047794253,
           "rel_err": 1.5347187817798438e-07,
           "correct": true,
+          "status": "OK",
           "launches": 11,
           "gm_bytes_analytic": 524288,
-          "speedup_vs_vendor": 0.8753290720195365
+          "speedup_vs_vendor": 0.9122787339488194
         },
         "triton_resident_loop": {
-          "p50_ms": 0.41145222348859534,
-          "mad_ms": 0.0011827796697616577,
+          "p50_ms": 0.39748690323904157,
+          "mad_ms": 0.001405598595738411,
           "rel_err": 1.5347187817798438e-07,
           "correct": true,
+          "status": "OK",
           "launches": 11,
           "gm_bytes_analytic": 524288,
-          "speedup_vs_vendor": 1.5293545769752457
+          "speedup_vs_vendor": 1.5892994429599578
         },
         "hybrid_vendor_p": {
-          "p50_ms": 0.20848215353908017,
-          "mad_ms": 0.002492437488399446,
+          "p50_ms": 0.2020369647652842,
+          "mad_ms": 0.007018941687420011,
           "rel_err": 4.3878663747390837e-07,
           "correct": true,
+          "status": "OK",
           "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 triton twiddle + transpose/permute copies",
           "gm_bytes_analytic": 131072,
-          "speedup_vs_vendor": 3.018274372731718
+          "speedup_vs_vendor": 3.1267828371684
+        },
+        "hybrid_fused_p": {
+          "p50_ms": 0.17725719226291403,
+          "mad_ms": 0.002387445420026779,
+          "rel_err": 4.3878663747390837e-07,
+          "correct": true,
+          "status": "OK",
+          "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 fused Triton twiddle (no inter-stage transpose-back/reshape copy) + digit-reversal permute copy",
+          "gm_bytes_analytic": 131072,
+          "speedup_vs_vendor": 3.563893266258499
         }
       }
     },
@@ -487,40 +652,54 @@
       "direction": "c2c_forward",
       "paths": {
         "vendor": {
-          "p50_ms": 0.645197564153932,
-          "mad_ms": 0.000815314706414938,
+          "p50_ms": 0.6474116235040128,
+          "mad_ms": 0.0017877828213386238,
           "rel_err": 4.1605709062195243e-07,
           "correct": true,
+          "status": "OK",
           "launches": "vendor-internal",
           "gm_bytes_analytic": null,
           "speedup_vs_vendor": 1.0
         },
         "triton_multipass": {
-          "p50_ms": 1.061866532836575,
-          "mad_ms": 0.00029309740057215095,
+          "p50_ms": 0.9782268170965835,
+          "mad_ms": 0.004567722498904914,
           "rel_err": 2.560330832720924e-07,
           "correct": true,
+          "status": "OK",
           "launches": 11,
           "gm_bytes_analytic": 8388608,
-          "speedup_vs_vendor": 0.607607024237226
+          "speedup_vs_vendor": 0.6618215859442051
         },
         "triton_resident_loop": {
-          "p50_ms": 5.001700526918285,
-          "mad_ms": 0.0017711936379782856,
+          "p50_ms": 5.005303559300955,
+          "mad_ms": 0.024892935471143574,
           "rel_err": 2.560330832720924e-07,
           "correct": true,
+          "status": "OK",
           "launches": 11,
           "gm_bytes_analytic": 8388608,
-          "speedup_vs_vendor": 0.12899564071890962
+          "speedup_vs_vendor": 0.1293451267907577
         },
         "hybrid_vendor_p": {
-          "p50_ms": 0.5367401827243157,
-          "mad_ms": 0.005487374437507242,
+          "p50_ms": 0.5599262804025784,
+          "mad_ms": 0.007529844879172742,
           "rel_err": 6.441821937930594e-07,
           "correct": true,
+          "status": "OK",
           "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 triton twiddle + transpose/permute copies",
           "gm_bytes_analytic": 2097152,
-          "speedup_vs_vendor": 1.202066819143524
+          "speedup_vs_vendor": 1.1562443953131363
+        },
+        "hybrid_fused_p": {
+          "p50_ms": 0.34589706046972424,
+          "mad_ms": 0.001574029738549143,
+          "rel_err": 6.441821937930594e-07,
+          "correct": true,
+          "status": "OK",
+          "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 fused Triton twiddle (no inter-stage transpose-back/reshape copy) + digit-reversal permute copy",
+          "gm_bytes_analytic": 2097152,
+          "speedup_vs_vendor": 1.871688711736478
         }
       }
     },
@@ -530,40 +709,54 @@
       "direction": "c2c_inverse",
       "paths": {
         "vendor": {
-          "p50_ms": 0.6443104066420346,
-          "mad_ms": 0.0009224677341990173,
+          "p50_ms": 0.6446070037782192,
+          "mad_ms": 0.00018624268705025315,
           "rel_err": 4.1605709062195243e-07,
           "correct": true,
+          "status": "OK",
           "launches": "vendor-internal",
           "gm_bytes_analytic": null,
           "speedup_vs_vendor": 1.0
         },
         "triton_multipass": {
-          "p50_ms": 1.1132035579066724,
-          "mad_ms": 0.008499155228491873,
+          "p50_ms": 1.144264249887783,
+          "mad_ms": 0.028099093469791114,
           "rel_err": 2.560330832720924e-07,
           "correct": true,
+          "status": "OK",
           "launches": 11,
           "gm_bytes_analytic": 8388608,
-          "speedup_vs_vendor": 0.5787893885765425
+          "speedup_vs_vendor": 0.5633375366235861
         },
         "triton_resident_loop": {
-          "p50_ms": 5.073061220173258,
-          "mad_ms": 0.002321503416169435,
+          "p50_ms": 5.073038999398705,
+          "mad_ms": 0.006874215614516288,
           "rel_err": 2.560330832720924e-07,
           "correct": true,
+          "status": "OK",
           "launches": 11,
           "gm_bytes_analytic": 8388608,
-          "speedup_vs_vendor": 0.12700623522537144
+          "speedup_vs_vendor": 0.1270652569110198
         },
         "hybrid_vendor_p": {
-          "p50_ms": 0.5164268732187338,
-          "mad_ms": 0.005674875865224749,
+          "p50_ms": 0.5274775976431556,
+          "mad_ms": 0.008663562766741961,
           "rel_err": 6.441821937930594e-07,
           "correct": true,
+          "status": "OK",
           "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 triton twiddle + transpose/permute copies",
           "gm_bytes_analytic": 2097152,
-          "speedup_vs_vendor": 1.2476314461062825
+          "speedup_vs_vendor": 1.2220556980209478
+        },
+        "hybrid_fused_p": {
+          "p50_ms": 0.34170372236985713,
+          "mad_ms": 0.007437658496201038,
+          "rel_err": 6.441821937930594e-07,
+          "correct": true,
+          "status": "OK",
+          "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 fused Triton twiddle (no inter-stage transpose-back/reshape copy) + digit-reversal permute copy",
+          "gm_bytes_analytic": 2097152,
+          "speedup_vs_vendor": 1.8864500489125553
         }
       }
     },
@@ -573,40 +766,54 @@
       "direction": "c2c_forward",
       "paths": {
         "vendor": {
-          "p50_ms": 0.6363352440530434,
-          "mad_ms": 0.0005146503099240363,
+          "p50_ms": 0.6440267243306153,
+          "mad_ms": 0.0036761921364814043,
           "rel_err": 4.807927595908839e-07,
           "correct": true,
+          "status": "OK",
           "launches": "vendor-internal",
           "gm_bytes_analytic": null,
           "speedup_vs_vendor": 1.0
         },
         "triton_multipass": {
-          "p50_ms": 2.1866942479391582,
-          "mad_ms": 0.005831439921166748,
+          "p50_ms": 2.364172847592272,
+          "mad_ms": 0.012198499462101609,
           "rel_err": 3.211140388245278e-07,
           "correct": true,
+          "status": "OK",
           "launches": 11,
           "gm_bytes_analytic": 33554432,
-          "speedup_vs_vendor": 0.2910033008285247
+          "speedup_vs_vendor": 0.27241101469653833
         },
         "triton_resident_loop": {
-          "p50_ms": 19.648201901873108,
-          "mad_ms": 0.005087058525532484,
+          "p50_ms": 19.66387928405311,
+          "mad_ms": 0.00513583654537797,
           "rel_err": 3.211140388245278e-07,
           "correct": true,
+          "status": "OK",
           "launches": 11,
           "gm_bytes_analytic": 33554432,
-          "speedup_vs_vendor": 0.03238643654167561
+          "speedup_vs_vendor": 0.03275176352678812
         },
         "hybrid_vendor_p": {
-          "p50_ms": 1.4414782199310139,
-          "mad_ms": 0.0053499097703024745,
+          "p50_ms": 1.4562667201971635,
+          "mad_ms": 0.016074656741693616,
           "rel_err": 7.300051215011358e-07,
           "correct": true,
+          "status": "OK",
           "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 triton twiddle + transpose/permute copies",
           "gm_bytes_analytic": 8388608,
-          "speedup_vs_vendor": 0.441446312025094
+          "speedup_vs_vendor": 0.44224503341216276
+        },
+        "hybrid_fused_p": {
+          "p50_ms": 0.8039426902541891,
+          "mad_ms": 0.00419899879489094,
+          "rel_err": 7.300051215011358e-07,
+          "correct": true,
+          "status": "OK",
+          "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 fused Triton twiddle (no inter-stage transpose-back/reshape copy) + digit-reversal permute copy",
+          "gm_bytes_analytic": 8388608,
+          "speedup_vs_vendor": 0.8010853660812416
         }
       }
     },
@@ -616,44 +823,58 @@
       "direction": "c2c_forward",
       "paths": {
         "vendor": {
-          "p50_ms": 1.3920329729444347,
-          "mad_ms": 0.0008484348654747009,
+          "p50_ms": 1.3927221298217773,
+          "mad_ms": 0.0008165661711245775,
           "rel_err": 5.557731146021434e-07,
           "correct": true,
+          "status": "OK",
           "launches": "vendor-internal",
           "gm_bytes_analytic": null,
           "speedup_vs_vendor": 1.0
         },
         "triton_multipass": {
-          "p50_ms": 7.588803811813705,
-          "mad_ms": 0.006101101462263614,
+          "p50_ms": 7.483290879463311,
+          "mad_ms": 0.022592350433114916,
           "rel_err": 3.211140388245278e-07,
           "correct": true,
+          "status": "OK",
           "launches": 11,
           "gm_bytes_analytic": 134217728,
-          "speedup_vs_vendor": 0.18343246280493083
+          "speedup_vs_vendor": 0.18611091727623194
         },
         "triton_resident_loop": {
-          "p50_ms": 78.43011141085299,
-          "mad_ms": 0.007898896001279354,
+          "p50_ms": 78.38569197338074,
+          "mad_ms": 0.01710403012111783,
           "rel_err": 3.211140388245278e-07,
           "correct": true,
+          "status": "OK",
           "launches": 11,
           "gm_bytes_analytic": 134217728,
-          "speedup_vs_vendor": 0.017748705795562703
+          "speedup_vs_vendor": 0.01776755546528487
         },
         "hybrid_vendor_p": {
-          "p50_ms": 4.819771253096405,
-          "mad_ms": 0.004852743586525321,
+          "p50_ms": 4.8507912215427496,
+          "mad_ms": 0.009609189874026924,
           "rel_err": 7.798443860984944e-07,
           "correct": true,
+          "status": "OK",
           "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 triton twiddle + transpose/permute copies",
           "gm_bytes_analytic": 33554432,
-          "speedup_vs_vendor": 0.28881722800644105
+          "speedup_vs_vendor": 0.2871123629556736
+        },
+        "hybrid_fused_p": {
+          "p50_ms": 2.7538520880625583,
+          "mad_ms": 0.017920261598192155,
+          "rel_err": 7.798443860984944e-07,
+          "correct": true,
+          "status": "OK",
+          "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 fused Triton twiddle (no inter-stage transpose-back/reshape copy) + digit-reversal permute copy",
+          "gm_bytes_analytic": 33554432,
+          "speedup_vs_vendor": 0.5057359964462039
         }
       }
     }
   },
   "all_correct": true,
-  "rows": 60
+  "rows": 75
 }

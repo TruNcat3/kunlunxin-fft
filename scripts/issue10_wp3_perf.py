@@ -201,6 +201,35 @@ def k_twiddle(X, O, N: tl.constexpr, R: tl.constexpr, T: tl.constexpr,
     tl.store(O + base + k * 2 + 1, re * wi + im * wr, mask=mask)
 
 
+@triton.jit
+def k_twiddle_fused(X, O, N: tl.constexpr, R: tl.constexpr,
+                    T: tl.constexpr, BLOCK: tl.constexpr,
+                    CONJ: tl.constexpr):
+    """Twiddle fused with the r-FFT -> stage2 layout handoff.
+
+    X: r-FFT output kept in [b, t, r] (k-major, contiguous over j);
+    element (b,k,j) at ((b*T + k)*R + j) — no transpose-back / reshape
+    GM copy between the stages. O: [b, r, t] for the t-FFT.
+    """
+    pid = tl.program_id(0)
+    j = pid % R
+    b = pid // R
+    k = tl.arange(0, BLOCK)
+    mask = k < T
+    xoff = (b * T * R + k * R + j) * 2
+    re = tl.load(X + xoff, mask=mask, other=0.0)
+    im = tl.load(X + xoff + 1, mask=mask, other=0.0)
+    jf = j.to(tl.float32) + (k * 0.0)
+    ang = (6.283185307179586 / N) * jf * k.to(tl.float32)
+    if CONJ == 1:
+        ang = -ang
+    wr = tl.cos(ang)
+    wi = -tl.sin(ang)
+    obase = ((b * R + j) * T) * 2
+    tl.store(O + obase + k * 2, re * wr - im * wi, mask=mask)
+    tl.store(O + obase + k * 2 + 1, re * wi + im * wr, mask=mask)
+
+
 # ============================ helpers =========================================
 
 def _np_ref(x: np.ndarray, inverse: bool) -> np.ndarray:
@@ -379,11 +408,46 @@ def _gm_hybrid(b: int, n: int) -> int:
     return int(b * n * 8 * 8)
 
 
+def run_hybrid_fused(x: torch.Tensor, inverse: bool):
+    """hybrid_vendor_p with the twiddle fused into the stage1->stage2
+    handoff (zero-copy [b,k,j] read; ablation wp3_ablation.json winner:
+    -36..-45% vs the transpose+reshape baseline on B>=16 cells)."""
+    b, n = x.shape
+    t, r = _factors(n)
+    xc = torch.complex(x, torch.zeros_like(x))
+    view = xc.view(b, r, t)          # [j, k], n = j*t + k
+    tw = torch.empty((b, r, t), dtype=torch.complex64, device="cuda")
+    tw_flat = torch.view_as_real(tw).reshape(-1)
+    conj = 1 if inverse else 0
+
+    def call():
+        vt = view.transpose(1, 2)                    # [k, j]
+        stage1 = (torch.fft.ifft(vt, dim=-1) if inverse
+                  else torch.fft.fft(vt, dim=-1))    # [k, j] contiguous
+        x_flat = torch.view_as_real(stage1).reshape(-1)  # view, no copy
+        with xpu_context(0):
+            k_twiddle_fused[(b * r,)](x_flat, tw_flat, n, r, t, t, conj)
+            torch.cuda.synchronize()
+        stage2 = torch.fft.ifft(tw, dim=2) if inverse else \
+            torch.fft.fft(tw, dim=2)
+        out = stage2.permute(0, 2, 1).contiguous().reshape(b, n)
+        return out.real, out.imag
+
+    meta = {"launches": "2 vendor FFT (last-dim only; r-FFT via transpose "
+                        "pair) + 1 fused Triton twiddle (no inter-stage "
+                        "transpose-back/reshape copy) + "
+                        "digit-reversal permute copy",
+            "gm_bytes_analytic": _gm_hybrid(b, n),
+            "factors": json.dumps({"t": t, "r": r})}
+    return call, meta
+
+
 PATHS = {
     "vendor": run_vendor,
     "triton_multipass": run_triton_multipass,
     "triton_resident_loop": run_triton_resident_loop,
     "hybrid_vendor_p": run_hybrid,
+    "hybrid_fused_p": run_hybrid_fused,
 }
 
 PATH_META = {
@@ -415,6 +479,32 @@ PATH_META = {
         "lowering": "host_vendor_interop PASS (WP1); Triton twiddle is "
                     "elementwise GM; permutes materialize (costed)",
     },
+    "hybrid_fused_p": {
+        "A": "4-step split N=t*r: col-FFT(r) | twiddle fused into the "
+             "r-FFT->t-FFT handoff (zero-copy [b,k,j]) | row-FFT(t) | "
+             "digit-reversal transpose (host orchestration)",
+        "P": "vendor FFT (both stages) + one fused Triton twiddle kernel",
+        "lowering": "host_vendor_interop PASS (WP1); no inter-stage "
+                    "transpose-back/reshape GM copy (ablation winner)",
+    },
+}
+
+
+# everything inside the timed call() region (per-row manifest, review
+# item 3: hybrid transpose/twiddle/copy/sync must be visibly costed)
+PATH_TIMED = {
+    "vendor": "vendor fft/ifft dispatch (plan-reuse; warmup hides plan)",
+    "triton_multipass": "log2(N) stage-kernel launches + GM handoff + "
+                        "final torch.cuda.synchronize",
+    "triton_resident_loop": "log2(N) stage-kernel launches (grid=1 "
+                            "in-kernel K-packet loop) + sync",
+    "hybrid_vendor_p": "stage transposes (materialized) + 2 vendor FFT "
+                       "+ k_twiddle + digit-reversal permute/clone + "
+                       "sync (all inside call())",
+    "hybrid_fused_p": "stage1 input transpose (materialized) + 2 vendor "
+                      "FFT + fused k_twiddle (zero-copy [b,k,j] handoff; "
+                      "no transpose-back/reshape copy) + digit-reversal "
+                      "permute/clone + sync (all inside call())",
 }
 
 
@@ -512,15 +602,97 @@ def step_blockmax() -> dict:
     return out
 
 
+_VENDOR_CANARY = None
+
+
+def _vendor_canary() -> dict:
+    """fail-closed vendor FFT semantics lock (run once per process).
+
+    Contract under test: torch.fft.fft/ifft on this stack transform ONLY
+    the last axis (wp3_blockmax vendor_fft_dim: dim=0 silently computes
+    axis=-1). All paths must operate rank-1/rank-2 with transform axis
+    last; any deviation fails the process instead of timing garbage.
+    """
+    global _VENDOR_CANARY
+    if _VENDOR_CANARY is None:
+        v = torch.randn(64, device="cuda")
+        xc = torch.complex(v, torch.zeros_like(v))
+        y = torch.fft.fft(xc)
+        ref = np.fft.fft(v.cpu().numpy().astype(np.complex128))
+        rel = float(np.abs(y.cpu().numpy() - ref).max()
+                    / max(float(np.abs(ref).max()), 1e-30))
+        # NOTE: device-side complex elementwise (sub/abs) is
+        # XDNN_UNIMPLEMENTED -> roundtrip compared on host
+        yi = torch.fft.ifft(y).cpu()
+        rel_ifft = float((yi - xc.cpu()).abs().max())
+        ok = rel <= TOL_REL and rel_ifft <= TOL_REL
+        _VENDOR_CANARY = {
+            "axis_contract": "last_dim_only (dim!=-1 is silently "
+                             "miscomputed -> never used)",
+            "dtype_contract": "complex64 (fp16/bf16 XDNN_UNIMPLEMENTED)",
+            "fft_vs_numpy_rel": rel,
+            "ifft_fft_roundtrip_abs": rel_ifft,
+            "pass": bool(ok),
+        }
+        if not ok:
+            raise RuntimeError(
+                f"vendor FFT semantic canary FAILED: {_VENDOR_CANARY}")
+    return _VENDOR_CANARY
+
+
+def _contract_fields(x: torch.Tensor, n: int, b: int,
+                     inverse: bool) -> dict:
+    """input/output/axis/stride/normalization manifest + fail-closed
+    shape/stride/dtype validation (raises on violation: no timing)."""
+    if tuple(x.shape) != (b, n):
+        raise ValueError(f"input shape {tuple(x.shape)} != {(b, n)}")
+    if x.dtype != torch.float32:
+        raise ValueError(f"input dtype {x.dtype} != float32")
+    if x.stride() != (n, 1):
+        raise ValueError(f"input stride {x.stride()} != contiguous {(n, 1)}")
+    if not bool(torch.isfinite(x).all()):
+        raise ValueError("input contains non-finite values")
+    return {
+        "in_shape": [b, n],
+        "out_shape": [b, n],
+        "axis": -1,
+        "in_stride": list(x.stride()),
+        "layout": ("interleaved complex64 for vendor paths; "
+                   "SOA (re/im planes) for Triton paths"),
+        "normalization": ("ifft 1/N (conj-trick or vendor ifft)"
+                          if inverse else "none (unnormalized forward)"),
+        "semantic_lock": "vendor_last_dim_canary=PASS",
+    }
+
+
 def _one_cell(path: str, n: int, b: int, inverse: bool) -> dict:
     x = _data(b, n)
-    call, meta = PATHS[path](x, inverse)
-    y_re, y_im = call()
-    err = _check_batched(y_re, y_im, x, inverse)
-    stats = _time_path(call)
-    return {"n": n, "batch": b,
+    base = {"n": n, "batch": b,
             "direction": "c2c_inverse" if inverse else "c2c_forward",
-            "path": path, "rel_err": err, "correct": err <= TOL_REL,
+            "path": path}
+    try:
+        _vendor_canary()
+        cf = _contract_fields(x, n, b, inverse)
+        call, meta = PATHS[path](x, inverse)
+        y_re, y_im = call()
+        if y_re.shape != x.shape or y_im.shape != x.shape:
+            raise ValueError(
+                "output shape mismatch: "
+                f"{(tuple(y_re.shape), tuple(y_im.shape))} "
+                f"!= {tuple(x.shape)}")
+        err = _check_batched(y_re, y_im, x, inverse)
+        if not np.isfinite(err):
+            raise ValueError(f"non-finite rel_err {err}")
+    except Exception as e:  # noqa: BLE001  fail-closed: no timing on
+        # semantic/contract violation (issue #10 review item 3)
+        return {**base, "rel_err": float("inf"), "correct": False,
+                "status": f"FAIL-closed: {type(e).__name__}: {str(e)[:160]}",
+                "p50_ms": None, "mad_ms": None, "min_ms": None,
+                "max_ms": None, "trials": 0}
+    stats = _time_path(call)
+    return {**base, **cf, "rel_err": err, "correct": err <= TOL_REL,
+            "status": "OK",
+            "timed_components": PATH_TIMED[path],
             "p50_ms": stats["p50_ms"], "mad_ms": stats["mad_ms"],
             "min_ms": stats["min_ms"], "max_ms": stats["max_ms"],
             "trials": stats["trials"], **meta,
@@ -536,9 +708,12 @@ def step_perf() -> dict:
             for path in PATHS:
                 rows.append(_one_cell(path, n, b, True))
         print(f"cell N={n} B={b} done ({len(rows)} rows)", flush=True)
-    cols = ["n", "batch", "direction", "path", "rel_err", "correct",
-            "p50_ms", "mad_ms", "min_ms", "max_ms", "trials", "launches",
-            "gm_bytes_analytic", "factors", "desc_A", "desc_P", "desc_lowering"]
+    cols = ["n", "batch", "direction", "path", "status", "rel_err",
+            "correct", "p50_ms", "mad_ms", "min_ms", "max_ms", "trials",
+            "launches", "gm_bytes_analytic", "factors",
+            "in_shape", "out_shape", "axis", "in_stride", "layout",
+            "normalization", "semantic_lock", "timed_components",
+            "desc_A", "desc_P", "desc_lowering"]
     with open(OUT_DIR / "wp3_raw.csv", "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
         w.writeheader()
@@ -553,18 +728,39 @@ def step_perf() -> dict:
         summary_cells[key]["paths"][r["path"]] = {
             "p50_ms": r["p50_ms"], "mad_ms": r["mad_ms"],
             "rel_err": r["rel_err"], "correct": r["correct"],
+            "status": r.get("status"),
             "launches": r.get("launches"),
             "gm_bytes_analytic": r.get("gm_bytes_analytic"),
         }
     for c in summary_cells.values():
         vend = c["paths"].get("vendor", {}).get("p50_ms")
         for pv in c["paths"].values():
-            pv["speedup_vs_vendor"] = (vend / pv["p50_ms"]) if vend else None
+            pv["speedup_vs_vendor"] = (
+                (vend / pv["p50_ms"])
+                if vend and pv.get("p50_ms") else None)
     doc = {
         "schema": "issue10-wp3-perf-v1",
         "protocol": {
             "timing": f"warmup={WARMUP}, rounds={ROUNDS}, trials={TRIALS}, "
-                      "sync per round, per-trial wall p50/MAD (pooled)",
+                      "sync per round, per-trial wall p50/MAD (pooled); "
+                      "steady-state API wall clock (plan-reuse 口径)",
+            "plan_compile": "excluded from timing (covered by warmup); "
+                            "one-shot/cold 口径 measured separately in "
+                            "wp3_holdout.json",
+            "device_time": "not in the timing loop; per-op device time via "
+                           "cupti in wp3_profile.json / wp3_trace/",
+            "fail_closed": "shape/stride/dtype/finite + vendor last-dim "
+                           "canary validated BEFORE timing; violation = "
+                           "row status FAIL-closed, no timing",
+            "hybrid_costs_included": ["stage transposes (materialized)",
+                                      "k_twiddle triton kernel",
+                                      "digit-reversal permute/clone",
+                                      "torch.cuda.synchronize",
+                                      "hybrid_fused_p: inter-stage "
+                                      "transpose-back/reshape copy is "
+                                      "ABSENT by design (see "
+                                      "timed_components)"],
+            "vendor_plan_reuse": True,
             "tol_rel": TOL_REL,
             "dtype": "fp32 (complex64)",
             "directions": "c2c_forward on all cells; c2c_inverse on B=16",

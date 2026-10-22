@@ -67,7 +67,7 @@
         "n": 32,
         "grid": 1,
         "trials": 8,
-        "stale_lanes": 20,
+        "stale_lanes": 30,
         "total_lanes": 256,
         "clean": false
       },
@@ -75,7 +75,7 @@
         "n": 64,
         "grid": 1,
         "trials": 8,
-        "stale_lanes": 78,
+        "stale_lanes": 116,
         "total_lanes": 512,
         "clean": false
       },

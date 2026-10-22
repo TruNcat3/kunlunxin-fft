@@ -1,0 +1,469 @@
+{
+  "schema": "issue10-manifest-v1",
+  "issue": "kunlunxin-fft#10",
+  "created_utc": "2026-10-22T02:23:36Z",
+  "package_dir": "results/p800/issue10_capability",
+  "git_head_at_pack": "191bbf0c87b2eb0f7398bc841ce055ced09c07b7",
+  "note": "git_head_at_pack is the parent of the packaging commit (the pack is committed together with the scripts); SHA256SUMS additionally covers manifest.json.",
+  "n_files": 76,
+  "total_bytes": 1190490,
+  "n_logs": 23,
+  "files": [
+    {
+      "path": "capability_matrix.json",
+      "bytes": 45563,
+      "sha256": "a186a80cbf53bc9000689099fe9f0cb6fb8653004c56f7dc2981607ca91d1786",
+      "producer": "scripts/issue10_wp1_capability.py"
+    },
+    {
+      "path": "environment.json",
+      "bytes": 5112,
+      "sha256": "609208ee960f179937666fd39bb5026099249483a20e15f7bb400ec1faedfe6b",
+      "producer": "scripts/issue10_wp0_env.py"
+    },
+    {
+      "path": "logs/wp1_async_copy.log",
+      "bytes": 3479,
+      "sha256": "6dae6a1006a00ef319abab3e395415215d81f4319dcee229fd73100b3e5d57e5",
+      "producer": "consolidated by scripts/issue10_pack_artifacts.py"
+    },
+    {
+      "path": "logs/wp1_device_local_processing_unit.log",
+      "bytes": 4996,
+      "sha256": "97b2961da2147b3833d1a67fc91f8388b12f03a393819ec1aa65d0929d84f511",
+      "producer": "consolidated by scripts/issue10_pack_artifacts.py"
+    },
+    {
+      "path": "logs/wp1_dtype.log",
+      "bytes": 4619,
+      "sha256": "0fb15949ae62a99439dc6c8d1e96700e65326a6b6d649a7671b0c5399b63ea5c",
+      "producer": "consolidated by scripts/issue10_pack_artifacts.py"
+    },
+    {
+      "path": "logs/wp1_external_core.log",
+      "bytes": 4269,
+      "sha256": "30737fd1900468ca866920f0b0607a2be18cd879303d2580a7e8dc67ca425631",
+      "producer": "consolidated by scripts/issue10_pack_artifacts.py"
+    },
+    {
+      "path": "logs/wp1_external_host_delegate.log",
+      "bytes": 2948,
+      "sha256": "c0c160fa3a603d9759ef72e2714d0c142e723977969449e60f2beb3e1b22a4c3",
+      "producer": "consolidated by scripts/issue10_pack_artifacts.py"
+    },
+    {
+      "path": "logs/wp1_layout.log",
+      "bytes": 3815,
+      "sha256": "de7893ad7004123be4bc0d9c066b49fe014767e49e1eb76eecd027a28f85e807",
+      "producer": "consolidated by scripts/issue10_pack_artifacts.py"
+    },
+    {
+      "path": "logs/wp1_load_store.log",
+      "bytes": 4644,
+      "sha256": "22c080644d22d7a895ac67a6773b109a2512368ef2a0d8df2dc21dff663c0dcf",
+      "producer": "consolidated by scripts/issue10_pack_artifacts.py"
+    },
+    {
+      "path": "logs/wp1_local_storage.log",
+      "bytes": 4103,
+      "sha256": "f9ba7863065b464c06e76b6a0b992ed4cdf25a8f64221b3718d167f2cff07853",
+      "producer": "consolidated by scripts/issue10_pack_artifacts.py"
+    },
+    {
+      "path": "logs/wp1_persistent.log",
+      "bytes": 4296,
+      "sha256": "511f282b4e90432edff3b242d92d07aa0b3e05a9e92fa64f1a7d1c2b21ca49d0",
+      "producer": "consolidated by scripts/issue10_pack_artifacts.py"
+    },
+    {
+      "path": "logs/wp1_resource_query.log",
+      "bytes": 3075,
+      "sha256": "c80e1a8936d6cbd1dc0eb3aca762510cc495d36aba0835d3a55c5ec45532e8eb",
+      "producer": "consolidated by scripts/issue10_pack_artifacts.py"
+    },
+    {
+      "path": "logs/wp1_sync.log",
+      "bytes": 3057,
+      "sha256": "42668e7f3ccdee6e9ea7570f76717c29976bbc75ec09432bfcd9dfa49fc782e7",
+      "producer": "consolidated by scripts/issue10_pack_artifacts.py"
+    },
+    {
+      "path": "logs/wp1_tl_dot.log",
+      "bytes": 4089,
+      "sha256": "5be1b41b42f40d3f572fb5ffd3ec840d27bf6592910ec4b315bfe6c3e9b9571c",
+      "producer": "consolidated by scripts/issue10_pack_artifacts.py"
+    },
+    {
+      "path": "logs/wp2_concurrency.log",
+      "bytes": 201,
+      "sha256": "deaa73dc8f83571e277ec25066823b7d550f17d9f7c8cbef7c8acd3d680a9c76",
+      "producer": "consolidated by scripts/issue10_pack_artifacts.py"
+    },
+    {
+      "path": "logs/wp2_fusion.log",
+      "bytes": 196,
+      "sha256": "21e805e6354aad07316b66f335a193e261b55fad2bc220908f009e4d211ec50b",
+      "producer": "consolidated by scripts/issue10_pack_artifacts.py"
+    },
+    {
+      "path": "logs/wp2_opsubset.log",
+      "bytes": 198,
+      "sha256": "9efc96262ad04aa419c546eabb616b1d071c3dd296ed231dc8453ed1441e24af",
+      "producer": "consolidated by scripts/issue10_pack_artifacts.py"
+    },
+    {
+      "path": "logs/wp2_p_axis.log",
+      "bytes": 196,
+      "sha256": "78a3c2d77427e233cd98579ff363a19b437209951f86a949a09bb0fea3b0e949",
+      "producer": "consolidated by scripts/issue10_pack_artifacts.py"
+    },
+    {
+      "path": "logs/wp2_producer_consumer.log",
+      "bytes": 207,
+      "sha256": "a8785674f13947fea6d8b5cd3c0464ad01ad335e48038c9cbbd10433d7b06c76",
+      "producer": "consolidated by scripts/issue10_pack_artifacts.py"
+    },
+    {
+      "path": "logs/wp2_radix2.log",
+      "bytes": 196,
+      "sha256": "c4b5d7eaed2d634ff40ee17b8d27ce5f85f36094a06e37a349b2a6df05c657b5",
+      "producer": "consolidated by scripts/issue10_pack_artifacts.py"
+    },
+    {
+      "path": "logs/wp2_radix4.log",
+      "bytes": 196,
+      "sha256": "e46e13fad78919b2995986ee7330859bdde19a921fa8ffd109917d87cc5bee7f",
+      "producer": "consolidated by scripts/issue10_pack_artifacts.py"
+    },
+    {
+      "path": "logs/wp2_resident.log",
+      "bytes": 198,
+      "sha256": "c270d89b0e37714411503ac7c3e40aec8c17da2f986ee1abc3f5ba4a65aace00",
+      "producer": "consolidated by scripts/issue10_pack_artifacts.py"
+    },
+    {
+      "path": "logs/wp3_blockmax.log",
+      "bytes": 991,
+      "sha256": "df4e4036d933f56a0f4c90013d1cf81d45af2ce66d1e6273c158f135ff1a72fc",
+      "producer": "consolidated by scripts/issue10_pack_artifacts.py"
+    },
+    {
+      "path": "logs/wp3_gonogo.log",
+      "bytes": 196,
+      "sha256": "60d9f0766e74896745b084365476de66422496b8c922400754777b0b1e5762d0",
+      "producer": "consolidated by scripts/issue10_pack_artifacts.py"
+    },
+    {
+      "path": "logs/wp3_perf.log",
+      "bytes": 573,
+      "sha256": "6d3e2d123e2784d3dae7c8c485c515391b8bef540831a226bda4a2d645085488",
+      "producer": "consolidated by scripts/issue10_pack_artifacts.py"
+    },
+    {
+      "path": "ops_supported.json",
+      "bytes": 5235,
+      "sha256": "9e483755febfa1d805e2d92110f9ae446e11da961575703c3820c3dd3647347d",
+      "producer": "scripts/issue10_wp2_minikernels.py"
+    },
+    {
+      "path": "repro_command.txt",
+      "bytes": 1486,
+      "sha256": "49ef3af4883f7a25851e0471bdb7d3c2e0abbfe7d54b692a4515bbf41bbc4c9c",
+      "producer": "scripts/issue10_pack_artifacts.py"
+    },
+    {
+      "path": "stale_read_matrix.json",
+      "bytes": 106657,
+      "sha256": "b8e96908074623246ec342aac283016216ffd9b1b121e8e369af57307df0f2f4",
+      "producer": "scripts/issue10_stale_read_matrix.py"
+    },
+    {
+      "path": "wp0_environment.json",
+      "bytes": 5112,
+      "sha256": "609208ee960f179937666fd39bb5026099249483a20e15f7bb400ec1faedfe6b",
+      "producer": "scripts/issue10_wp0_env.py"
+    },
+    {
+      "path": "wp1_probes/logs/async_copy.log",
+      "bytes": 3479,
+      "sha256": "6dae6a1006a00ef319abab3e395415215d81f4319dcee229fd73100b3e5d57e5",
+      "producer": "scripts/issue10_wp1_capability.py"
+    },
+    {
+      "path": "wp1_probes/logs/device_local_processing_unit.log",
+      "bytes": 4996,
+      "sha256": "97b2961da2147b3833d1a67fc91f8388b12f03a393819ec1aa65d0929d84f511",
+      "producer": "scripts/issue10_wp1_capability.py"
+    },
+    {
+      "path": "wp1_probes/logs/dtype.log",
+      "bytes": 4619,
+      "sha256": "0fb15949ae62a99439dc6c8d1e96700e65326a6b6d649a7671b0c5399b63ea5c",
+      "producer": "scripts/issue10_wp1_capability.py"
+    },
+    {
+      "path": "wp1_probes/logs/external_core.log",
+      "bytes": 4269,
+      "sha256": "30737fd1900468ca866920f0b0607a2be18cd879303d2580a7e8dc67ca425631",
+      "producer": "scripts/issue10_wp1_capability.py"
+    },
+    {
+      "path": "wp1_probes/logs/external_host_delegate.log",
+      "bytes": 2948,
+      "sha256": "c0c160fa3a603d9759ef72e2714d0c142e723977969449e60f2beb3e1b22a4c3",
+      "producer": "scripts/issue10_wp1_capability.py"
+    },
+    {
+      "path": "wp1_probes/logs/layout.log",
+      "bytes": 3815,
+      "sha256": "de7893ad7004123be4bc0d9c066b49fe014767e49e1eb76eecd027a28f85e807",
+      "producer": "scripts/issue10_wp1_capability.py"
+    },
+    {
+      "path": "wp1_probes/logs/load_store.log",
+      "bytes": 4644,
+      "sha256": "22c080644d22d7a895ac67a6773b109a2512368ef2a0d8df2dc21dff663c0dcf",
+      "producer": "scripts/issue10_wp1_capability.py"
+    },
+    {
+      "path": "wp1_probes/logs/local_storage.log",
+      "bytes": 4103,
+      "sha256": "f9ba7863065b464c06e76b6a0b992ed4cdf25a8f64221b3718d167f2cff07853",
+      "producer": "scripts/issue10_wp1_capability.py"
+    },
+    {
+      "path": "wp1_probes/logs/persistent.log",
+      "bytes": 4296,
+      "sha256": "511f282b4e90432edff3b242d92d07aa0b3e05a9e92fa64f1a7d1c2b21ca49d0",
+      "producer": "scripts/issue10_wp1_capability.py"
+    },
+    {
+      "path": "wp1_probes/logs/resource_query.log",
+      "bytes": 3075,
+      "sha256": "c80e1a8936d6cbd1dc0eb3aca762510cc495d36aba0835d3a55c5ec45532e8eb",
+      "producer": "scripts/issue10_wp1_capability.py"
+    },
+    {
+      "path": "wp1_probes/logs/sync.log",
+      "bytes": 3057,
+      "sha256": "42668e7f3ccdee6e9ea7570f76717c29976bbc75ec09432bfcd9dfa49fc782e7",
+      "producer": "scripts/issue10_wp1_capability.py"
+    },
+    {
+      "path": "wp1_probes/logs/tl_dot.log",
+      "bytes": 4089,
+      "sha256": "5be1b41b42f40d3f572fb5ffd3ec840d27bf6592910ec4b315bfe6c3e9b9571c",
+      "producer": "scripts/issue10_wp1_capability.py"
+    },
+    {
+      "path": "wp2_codegen/k_rad2_scalar_n16.py",
+      "bytes": 10068,
+      "sha256": "33bc34020f07cb527b5a3294b123ca9f3ae6bece0f6057264dd900874f368390",
+      "producer": "scripts/issue10_wp2_minikernels.py"
+    },
+    {
+      "path": "wp2_codegen/k_rad2_scalar_n8.py",
+      "bytes": 3985,
+      "sha256": "7e05bf17dc9079e47f46972a5d4b78713d7fdde3f96686f969d0693aea33c19d",
+      "producer": "scripts/issue10_wp2_minikernels.py"
+    },
+    {
+      "path": "wp2_concurrency.json",
+      "bytes": 2472,
+      "sha256": "1cb589225a37d1396b621f5b1b54d6e6c26443b71c050ada2d2f085dbab8a78a",
+      "producer": "scripts/issue10_wp2_minikernels.py"
+    },
+    {
+      "path": "wp2_fusion.json",
+      "bytes": 2963,
+      "sha256": "d543a8fe8af86843125e830aa6798f6b1fe289eb5e99ea6a404f01f49b9ca74f",
+      "producer": "scripts/issue10_wp2_minikernels.py"
+    },
+    {
+      "path": "wp2_logs/concurrency.log",
+      "bytes": 201,
+      "sha256": "deaa73dc8f83571e277ec25066823b7d550f17d9f7c8cbef7c8acd3d680a9c76",
+      "producer": "scripts/issue10_wp2_minikernels.py"
+    },
+    {
+      "path": "wp2_logs/fusion.log",
+      "bytes": 196,
+      "sha256": "21e805e6354aad07316b66f335a193e261b55fad2bc220908f009e4d211ec50b",
+      "producer": "scripts/issue10_wp2_minikernels.py"
+    },
+    {
+      "path": "wp2_logs/opsubset.log",
+      "bytes": 198,
+      "sha256": "9efc96262ad04aa419c546eabb616b1d071c3dd296ed231dc8453ed1441e24af",
+      "producer": "scripts/issue10_wp2_minikernels.py"
+    },
+    {
+      "path": "wp2_logs/p_axis.log",
+      "bytes": 196,
+      "sha256": "78a3c2d77427e233cd98579ff363a19b437209951f86a949a09bb0fea3b0e949",
+      "producer": "scripts/issue10_wp2_minikernels.py"
+    },
+    {
+      "path": "wp2_logs/producer_consumer.log",
+      "bytes": 207,
+      "sha256": "a8785674f13947fea6d8b5cd3c0464ad01ad335e48038c9cbbd10433d7b06c76",
+      "producer": "scripts/issue10_wp2_minikernels.py"
+    },
+    {
+      "path": "wp2_logs/radix2.log",
+      "bytes": 196,
+      "sha256": "c4b5d7eaed2d634ff40ee17b8d27ce5f85f36094a06e37a349b2a6df05c657b5",
+      "producer": "scripts/issue10_wp2_minikernels.py"
+    },
+    {
+      "path": "wp2_logs/radix4.log",
+      "bytes": 196,
+      "sha256": "e46e13fad78919b2995986ee7330859bdde19a921fa8ffd109917d87cc5bee7f",
+      "producer": "scripts/issue10_wp2_minikernels.py"
+    },
+    {
+      "path": "wp2_logs/resident.log",
+      "bytes": 198,
+      "sha256": "c270d89b0e37714411503ac7c3e40aec8c17da2f986ee1abc3f5ba4a65aace00",
+      "producer": "scripts/issue10_wp2_minikernels.py"
+    },
+    {
+      "path": "wp2_p_axis.json",
+      "bytes": 2338,
+      "sha256": "a9def8c554b4eeb5a384202c5b9626ead8552b882ade5d201189c4830d44a628",
+      "producer": "scripts/issue10_wp2_minikernels.py"
+    },
+    {
+      "path": "wp2_producer_consumer.json",
+      "bytes": 1257,
+      "sha256": "3ceb41bf453a88b5f4511eb2c6d1665e840f8e9a11aa096505708e5661602bd5",
+      "producer": "scripts/issue10_wp2_minikernels.py"
+    },
+    {
+      "path": "wp2_radix2.json",
+      "bytes": 3097,
+      "sha256": "5bb276c105c50e528554b5dae5a73bc322ff62890275264a7d4cef18a6e3b378",
+      "producer": "scripts/issue10_wp2_minikernels.py"
+    },
+    {
+      "path": "wp2_radix4.json",
+      "bytes": 3235,
+      "sha256": "8f36d4e0e4569d70e309e6ab45f150ffd93fda7113764d69eb84ace8f57fae95",
+      "producer": "scripts/issue10_wp2_minikernels.py"
+    },
+    {
+      "path": "wp2_resident.json",
+      "bytes": 2608,
+      "sha256": "ee4a2e38bfeffab55731b1366b7f450c23314fa08dd4ab75ae883dba36ede90a",
+      "producer": "scripts/issue10_wp2_minikernels.py"
+    },
+    {
+      "path": "wp2_summary.json",
+      "bytes": 1483,
+      "sha256": "cbe2d4866741623a4c6bb10e9cb5b810f3233f68b059ec3ccc86a993d653726f",
+      "producer": "scripts/issue10_wp2_minikernels.py"
+    },
+    {
+      "path": "wp3_ablation.json",
+      "bytes": 43512,
+      "sha256": "fe12357d75b5147b0c3a1d9ab18ba621c28d9898ada88e3f16d69f66f3b06320",
+      "producer": "scripts/issue10_wp3_ablation.py"
+    },
+    {
+      "path": "wp3_blockmax.json",
+      "bytes": 2370,
+      "sha256": "58876e913a180373c8f4c977ec77fa0fab455b8c38dfd03b1e6199cd2d9091d6",
+      "producer": "scripts/issue10_wp3_perf.py"
+    },
+    {
+      "path": "wp3_gonogo.json",
+      "bytes": 4323,
+      "sha256": "92e58458665e97926463a025efbbe1507d681414ae28050e5591cb7eae3f94ff",
+      "producer": "scripts/issue10_wp3_perf.py"
+    },
+    {
+      "path": "wp3_holdout.json",
+      "bytes": 680320,
+      "sha256": "e086c9dd4811c9cf1e566a79cc93f4c9869dfebd87eef0f7c8201dbd7b007383",
+      "producer": "scripts/issue10_wp3_holdout.py"
+    },
+    {
+      "path": "wp3_logs/blockmax.log",
+      "bytes": 991,
+      "sha256": "df4e4036d933f56a0f4c90013d1cf81d45af2ce66d1e6273c158f135ff1a72fc",
+      "producer": "scripts/issue10_wp3_perf.py --step all"
+    },
+    {
+      "path": "wp3_logs/gonogo.log",
+      "bytes": 196,
+      "sha256": "60d9f0766e74896745b084365476de66422496b8c922400754777b0b1e5762d0",
+      "producer": "scripts/issue10_wp3_perf.py --step all"
+    },
+    {
+      "path": "wp3_logs/perf.log",
+      "bytes": 573,
+      "sha256": "6d3e2d123e2784d3dae7c8c485c515391b8bef540831a226bda4a2d645085488",
+      "producer": "scripts/issue10_wp3_perf.py --step all"
+    },
+    {
+      "path": "wp3_profile.json",
+      "bytes": 12121,
+      "sha256": "19ae0a18e86cdc9edc9487102c873c4007669ea3c2c8609d8dd4c91f3325e2d7",
+      "producer": "scripts/issue10_wp3_profile.py"
+    },
+    {
+      "path": "wp3_raw.csv",
+      "bytes": 56308,
+      "sha256": "ef6439937906acda94eff813e877be9a7dd111b53c62d95e92ca03725a7e32d7",
+      "producer": "scripts/issue10_wp3_perf.py"
+    },
+    {
+      "path": "wp3_run_summary.json",
+      "bytes": 692,
+      "sha256": "464472addf33bfeca959e70afa3cf64776d427730e50c4a291c8214693972e83",
+      "producer": "scripts/issue10_wp3_perf.py"
+    },
+    {
+      "path": "wp3_summary.json",
+      "bytes": 31977,
+      "sha256": "9dc723d34d8294f7adda46e6db4e898410133ff88e344a7a189d9e82b2c53a62",
+      "producer": "scripts/issue10_wp3_perf.py"
+    },
+    {
+      "path": "wp3_trace/hybrid_vendor_p_1024x64_fwd.json.gz",
+      "bytes": 15234,
+      "sha256": "623be320e2a45417933112d2e99a8a9435c8a82a743787f404509e7ab9956b43",
+      "producer": "scripts/issue10_wp3_profile.py"
+    },
+    {
+      "path": "wp3_trace/hybrid_vendor_p_2048x16_fwd.json.gz",
+      "bytes": 15224,
+      "sha256": "c7e417901827c476a8b8d4f3ec341b95d8c8d56d070b6b8f8a5392e43f092ee3",
+      "producer": "scripts/issue10_wp3_profile.py"
+    },
+    {
+      "path": "wp3_trace/triton_multipass_1024x64_fwd.json.gz",
+      "bytes": 5732,
+      "sha256": "91cc7f1ce42b27dcb8d2bb6e754ade401e28070a584a89c2f2b98174efc721df",
+      "producer": "scripts/issue10_wp3_profile.py"
+    },
+    {
+      "path": "wp3_trace/triton_multipass_2048x16_fwd.json.gz",
+      "bytes": 6133,
+      "sha256": "7290972f516fea1e99dfe60d083d4c650ec37049809d850f1b3ce703dc708a6c",
+      "producer": "scripts/issue10_wp3_profile.py"
+    },
+    {
+      "path": "wp3_trace/triton_resident_loop_1024x64_fwd.json.gz",
+      "bytes": 6006,
+      "sha256": "3fdc8f5dcd85c468e7a5606d69c23605f22d9f9d2ae524cc0b5852046b948f96",
+      "producer": "scripts/issue10_wp3_profile.py"
+    },
+    {
+      "path": "wp3_trace/triton_resident_loop_2048x16_fwd.json.gz",
+      "bytes": 6391,
+      "sha256": "b4e3befa8377b50fd7f53f2869f9ca5ae065d7c50e6f6b87c912fdad7a441bd5",
+      "producer": "scripts/issue10_wp3_profile.py"
+    }
+  ]
+}
