@@ -1,12 +1,12 @@
 {
   "schema": "issue10-manifest-v1",
   "issue": "kunlunxin-fft#10",
-  "created_utc": "2026-10-22T02:23:36Z",
+  "created_utc": "2026-10-22T05:32:54Z",
   "package_dir": "results/p800/issue10_capability",
-  "git_head_at_pack": "191bbf0c87b2eb0f7398bc841ce055ced09c07b7",
+  "git_head_at_pack": "45b42d3916b0e4179afb090ddb5f90fc25e2be64",
   "note": "git_head_at_pack is the parent of the packaging commit (the pack is committed together with the scripts); SHA256SUMS additionally covers manifest.json.",
-  "n_files": 76,
-  "total_bytes": 1190490,
+  "n_files": 77,
+  "total_bytes": 1525873,
   "n_logs": 23,
   "files": [
     {
@@ -167,9 +167,15 @@
     },
     {
       "path": "repro_command.txt",
-      "bytes": 1486,
-      "sha256": "49ef3af4883f7a25851e0471bdb7d3c2e0abbfe7d54b692a4515bbf41bbc4c9c",
+      "bytes": 1734,
+      "sha256": "a6b2dbe4a42a3a7bd04929246b603c9a1afbdbb724a4822aca1bcb3f74be9d53",
       "producer": "scripts/issue10_pack_artifacts.py"
+    },
+    {
+      "path": "selector_diff.json",
+      "bytes": 4940,
+      "sha256": "5e1a1432ef87e0fb355bb7cfb0fd852125d0ebf303ce47b533959a342a7ff756",
+      "producer": "scripts/issue10_wp3_holdout.py"
     },
     {
       "path": "stale_read_matrix.json",
@@ -365,26 +371,26 @@
     },
     {
       "path": "wp3_ablation.json",
-      "bytes": 43512,
-      "sha256": "fe12357d75b5147b0c3a1d9ab18ba621c28d9898ada88e3f16d69f66f3b06320",
+      "bytes": 43676,
+      "sha256": "427c7f8e478970599cac765875ef39724d0f9991ddf7e913d77f2c50e9e73930",
       "producer": "scripts/issue10_wp3_ablation.py"
     },
     {
       "path": "wp3_blockmax.json",
-      "bytes": 2370,
-      "sha256": "58876e913a180373c8f4c977ec77fa0fab455b8c38dfd03b1e6199cd2d9091d6",
+      "bytes": 2369,
+      "sha256": "a01e566f0cf6301f7a4be415dcff933c819c4a6a2ebec66adfb45ba03d81a98e",
       "producer": "scripts/issue10_wp3_perf.py"
     },
     {
       "path": "wp3_gonogo.json",
-      "bytes": 4323,
-      "sha256": "92e58458665e97926463a025efbbe1507d681414ae28050e5591cb7eae3f94ff",
+      "bytes": 4406,
+      "sha256": "4c6cdf54c83246f8de5eb390a5a0a0746a3b9ad43f87ecb55309fbce34111f87",
       "producer": "scripts/issue10_wp3_perf.py"
     },
     {
       "path": "wp3_holdout.json",
-      "bytes": 680320,
-      "sha256": "e086c9dd4811c9cf1e566a79cc93f4c9869dfebd87eef0f7c8201dbd7b007383",
+      "bytes": 1009759,
+      "sha256": "275b11f6598fa7979c0670335b9af307203eb4d8dea9b17dec598e824edba239",
       "producer": "scripts/issue10_wp3_holdout.py"
     },
     {
@@ -413,20 +419,20 @@
     },
     {
       "path": "wp3_raw.csv",
-      "bytes": 56308,
-      "sha256": "ef6439937906acda94eff813e877be9a7dd111b53c62d95e92ca03725a7e32d7",
+      "bytes": 56382,
+      "sha256": "da9be9f98c03f6c3fafe036257fb6f33b18416b25bfdc5f0ff4345905cdc1863",
       "producer": "scripts/issue10_wp3_perf.py"
     },
     {
       "path": "wp3_run_summary.json",
-      "bytes": 692,
-      "sha256": "464472addf33bfeca959e70afa3cf64776d427730e50c4a291c8214693972e83",
+      "bytes": 691,
+      "sha256": "9c8f391bddb9e6fcf2671c5bdb116abc82641362f5326716b4471bcb13b4f0a9",
       "producer": "scripts/issue10_wp3_perf.py"
     },
     {
       "path": "wp3_summary.json",
-      "bytes": 31977,
-      "sha256": "9dc723d34d8294f7adda46e6db4e898410133ff88e344a7a189d9e82b2c53a62",
+      "bytes": 32414,
+      "sha256": "8b79ebc3f475713ffe4f6195ebd653f973a978503327a3f298db9b0b98a13fb4",
       "producer": "scripts/issue10_wp3_perf.py"
     },
     {

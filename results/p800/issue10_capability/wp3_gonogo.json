@@ -41,7 +41,7 @@
   "verdict": {
     "full_hybrid_resident_pipeline": "NO-GO",
     "restricted_a_axis_migration": "GO",
-    "vendor_p_hybrid": "GO",
+    "vendor_p_hybrid": "GO (exploratory canary; selector promotion gated by holdout cells in wp3_holdout.json)",
     "reason": "criteria 2/3/4 fail (no controllable local storage, no async overlap, concurrent-sync/stale-read bug); converge per issue plan to restricted Triton A-axis (legal multipass/resident-loop batched paths) + host-level vendor-P hybrid; do not claim full hardware-efficiency validation"
   },
   "wp3_all_correct": true,
@@ -67,7 +67,7 @@
         "n": 32,
         "grid": 1,
         "trials": 8,
-        "stale_lanes": 30,
+        "stale_lanes": 20,
         "total_lanes": 256,
         "clean": false
       },
@@ -75,7 +75,7 @@
         "n": 64,
         "grid": 1,
         "trials": 8,
-        "stale_lanes": 116,
+        "stale_lanes": 70,
         "total_lanes": 512,
         "clean": false
       },

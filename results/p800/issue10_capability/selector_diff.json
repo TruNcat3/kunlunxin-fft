@@ -1,0 +1,181 @@
+{
+  "schema": "issue10-selector-diff-v1",
+  "created_utc": "2026-10-22T05:32:46Z",
+  "purpose": "PR #12 is evidence-only: this diff proves the runtime selector is untouched and records where the holdout outcome would land in the later integration PR",
+  "wiring": "none",
+  "changes_default_path": false,
+  "table_path": "config/selector_table.json",
+  "table_sha256": "7c2282ed0c295f2e5179c358f75a7d73051f21cbaaf7caf04c281dcb8efe88fd",
+  "table_entries": 109,
+  "previous_fallbacks": 6,
+  "selector_source_sha256": "695ae9221b6410464f322081e958013ba0b02caee097f24257a541176e68fa8c",
+  "new_entries": [],
+  "removed_entries": [],
+  "modified_entries": [],
+  "holdout_cell_state": [
+    {
+      "label": "N1024B1:c2c_forward",
+      "n": 1024,
+      "batch": 1,
+      "direction": "dit",
+      "transform_direction": "forward",
+      "state": "in-table-retained",
+      "in_previous_fallbacks": false
+    },
+    {
+      "label": "N1024B1:c2c_inverse",
+      "n": 1024,
+      "batch": 1,
+      "direction": "dit",
+      "transform_direction": "inverse",
+      "state": "in-table-retained",
+      "in_previous_fallbacks": false
+    },
+    {
+      "label": "N1024B16:c2c_forward",
+      "n": 1024,
+      "batch": 16,
+      "direction": "dit",
+      "transform_direction": "forward",
+      "state": "in-table-retained",
+      "in_previous_fallbacks": true
+    },
+    {
+      "label": "N1024B16:c2c_inverse",
+      "n": 1024,
+      "batch": 16,
+      "direction": "dit",
+      "transform_direction": "inverse",
+      "state": "in-table-retained",
+      "in_previous_fallbacks": true
+    },
+    {
+      "label": "N1024B64:c2c_forward",
+      "n": 1024,
+      "batch": 64,
+      "direction": "dit",
+      "transform_direction": "forward",
+      "state": "in-table-retained",
+      "in_previous_fallbacks": true
+    },
+    {
+      "label": "N1024B64:c2c_inverse",
+      "n": 1024,
+      "batch": 64,
+      "direction": "dit",
+      "transform_direction": "inverse",
+      "state": "in-table-retained",
+      "in_previous_fallbacks": true
+    },
+    {
+      "label": "N1024B256:c2c_forward",
+      "n": 1024,
+      "batch": 256,
+      "direction": "dit",
+      "transform_direction": "forward",
+      "state": "in-table-retained",
+      "in_previous_fallbacks": false
+    },
+    {
+      "label": "N1024B256:c2c_inverse",
+      "n": 1024,
+      "batch": 256,
+      "direction": "dit",
+      "transform_direction": "inverse",
+      "state": "in-table-retained",
+      "in_previous_fallbacks": false
+    },
+    {
+      "label": "N2048B1:c2c_forward",
+      "n": 2048,
+      "batch": 1,
+      "direction": "dit",
+      "transform_direction": "forward",
+      "state": "in-table-retained",
+      "in_previous_fallbacks": false
+    },
+    {
+      "label": "N2048B1:c2c_inverse",
+      "n": 2048,
+      "batch": 1,
+      "direction": "dit",
+      "transform_direction": "inverse",
+      "state": "in-table-retained",
+      "in_previous_fallbacks": false
+    },
+    {
+      "label": "N2048B16:c2c_forward",
+      "n": 2048,
+      "batch": 16,
+      "direction": "dit",
+      "transform_direction": "forward",
+      "state": "in-table-retained",
+      "in_previous_fallbacks": false
+    },
+    {
+      "label": "N2048B16:c2c_inverse",
+      "n": 2048,
+      "batch": 16,
+      "direction": "dit",
+      "transform_direction": "inverse",
+      "state": "in-table-retained",
+      "in_previous_fallbacks": false
+    },
+    {
+      "label": "N2048B64:c2c_forward",
+      "n": 2048,
+      "batch": 64,
+      "direction": "dit",
+      "transform_direction": "forward",
+      "state": "in-table-retained",
+      "in_previous_fallbacks": true
+    },
+    {
+      "label": "N2048B64:c2c_inverse",
+      "n": 2048,
+      "batch": 64,
+      "direction": "dit",
+      "transform_direction": "inverse",
+      "state": "in-table-retained",
+      "in_previous_fallbacks": true
+    },
+    {
+      "label": "N2048B256:c2c_forward",
+      "n": 2048,
+      "batch": 256,
+      "direction": "dit",
+      "transform_direction": "forward",
+      "state": "in-table-retained",
+      "in_previous_fallbacks": false
+    },
+    {
+      "label": "N2048B256:c2c_inverse",
+      "n": 2048,
+      "batch": 256,
+      "direction": "dit",
+      "transform_direction": "inverse",
+      "state": "in-table-retained",
+      "in_previous_fallbacks": false
+    }
+  ],
+  "state_counts": {
+    "in-table-retained": 16
+  },
+  "eligible_cells_pending_separate_pr": {
+    "hybrid_fused_p": [
+      "N2048B1:c2c_forward",
+      "N2048B1:c2c_inverse",
+      "N2048B16:c2c_forward",
+      "N2048B16:c2c_inverse"
+    ],
+    "hybrid_vendor_p": [
+      "N1024B1:c2c_forward",
+      "N1024B1:c2c_inverse",
+      "N2048B1:c2c_forward",
+      "N2048B1:c2c_inverse",
+      "N2048B16:c2c_forward",
+      "N2048B16:c2c_inverse"
+    ]
+  },
+  "note": "eligible_for_selector = evidence threshold met only; the integration PR will add entries here and present this diff with new / retained-fallback / abstain cells"
+}

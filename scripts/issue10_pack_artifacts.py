@@ -47,6 +47,7 @@ PRODUCERS = [
     ("wp3_logs", "scripts/issue10_wp3_perf.py --step all"),
     ("stale_read_matrix", "scripts/issue10_stale_read_matrix.py"),
     ("wp3_holdout", "scripts/issue10_wp3_holdout.py"),
+    ("selector_diff", "scripts/issue10_wp3_holdout.py"),
     ("wp3_ablation", "scripts/issue10_wp3_ablation.py"),
     ("logs/", "consolidated by scripts/issue10_pack_artifacts.py"),
     ("repro_command.txt", "scripts/issue10_pack_artifacts.py"),
@@ -79,8 +80,12 @@ XPU_ENABLE_PROFILER_TRACING=1 XPU_CUPTI_ENABLE_DEVICE=0 python3 scripts/issue10_
 # 2 independent sessions, fresh TRITON_CACHE_DIR each)
 python3 scripts/issue10_stale_read_matrix.py
 
-# performance holdout (writes wp3_holdout.json; 16 cells x 3 paths x
-# 2 independent sessions, cold + warm 口径, bootstrap CI)
+# performance holdout (writes wp3_holdout.json + selector_diff.json;
+# 16 cells x 4 paths [vendor, hybrid_vendor_p, hybrid_fused_p,
+# incumbent_entry same-protocol] x 2 independent sessions; one
+# subprocess per cell/path/session with fresh TRITON_CACHE_DIR,
+# itemized context/setup/probe/first_call/steady segments, complex64
+# non-zero-imag input, independent bootstrap CI)
 python3 scripts/issue10_wp3_holdout.py
 
 # twiddle ablation (writes wp3_ablation.json; 5 implementations x

@@ -6,7 +6,15 @@ Steps (each isolated in its own subprocess; `--step NAME`):
   gonogo   -> wp3_gonogo.json   : six-criteria Go/No-Go from WP1+WP2+WP3
   all      -> blockmax, perf, gonogo sequentially
 
-Paths (same semantics: C2C, complex64, fp32):
+Input semantics boundary (PR #12 review item 6): this script's matrix
+(`--step perf`) is an INTERNAL BATCHED REAL-INPUT microbenchmark —
+float32 input with zero imaginary part, shape (B, N); it is NOT
+selector-grade evidence and derives no selector entry. Selector-grade
+evidence (complex64 non-zero imag, production plan/execute contract,
+same-protocol incumbent) is issue10_wp3_holdout.py -> wp3_holdout.json.
+
+Paths (same semantics: C2C; complex64 internal view; real fp32 input
+in the internal matrix):
   vendor              torch.fft.fft/ifft (Kunlunxin vendor device FFT)
   triton_multipass    grid=B programs; one DIT stage per launch; log2(N)
                       launches; partner loads only from the previous-launch
@@ -18,8 +26,10 @@ Paths (same semantics: C2C, complex64, fp32):
                       col-FFT(r) | Triton twiddle | row-FFT(t) | digit-
                       reversal transpose
 
-Inverse on all paths = conj-trick on real input: ifft(x) = conj(fft(x))/N
-(valid for real x; hybrid uses conj twiddles + vendor ifft directly).
+Inverse on all paths accepts complex64 inputs as well: the hybrid
+stages build the IDFT directly (ifft stages + conjugated twiddles),
+which is exact for complex input, and wp3_holdout.py verifies every
+path against numpy on complex64 non-zero-imag inputs (rel_err gate).
 
 Stale-read correction (wp3_blockmax.json stale_sweep): in-kernel
 store->permuted-load from the same GM buffer is unreliable even at grid=1
@@ -303,7 +313,7 @@ def _factors(n: int):
 
 def run_vendor(x: torch.Tensor, inverse: bool):
     b, n = x.shape
-    xc = torch.complex(x, torch.zeros_like(x))
+    xc = x if x.is_complex() else torch.complex(x, torch.zeros_like(x))
 
     def call():
         y = torch.fft.ifft(xc) if inverse else torch.fft.fft(xc)
@@ -373,7 +383,7 @@ def run_triton_resident_loop(x: torch.Tensor, inverse: bool):
 def run_hybrid(x: torch.Tensor, inverse: bool):
     b, n = x.shape
     t, r = _factors(n)
-    xc = torch.complex(x, torch.zeros_like(x))
+    xc = x if x.is_complex() else torch.complex(x, torch.zeros_like(x))
     view = xc.view(b, r, t)          # [j, k], n = j*t + k
     tw = torch.empty((b, r, t), dtype=torch.complex64, device="cuda")
     tw_flat = torch.view_as_real(tw).reshape(-1)
@@ -414,7 +424,7 @@ def run_hybrid_fused(x: torch.Tensor, inverse: bool):
     -36..-45% vs the transpose+reshape baseline on B>=16 cells)."""
     b, n = x.shape
     t, r = _factors(n)
-    xc = torch.complex(x, torch.zeros_like(x))
+    xc = x if x.is_complex() else torch.complex(x, torch.zeros_like(x))
     view = xc.view(b, r, t)          # [j, k], n = j*t + k
     tw = torch.empty((b, r, t), dtype=torch.complex64, device="cuda")
     tw_flat = torch.view_as_real(tw).reshape(-1)
@@ -538,7 +548,7 @@ def step_blockmax() -> dict:
                      (torch.bfloat16, "bf16")):
         try:
             x = torch.randn(4, 256, device="cuda", dtype=dt)
-            xc = torch.complex(x, torch.zeros_like(x))
+            xc = x if x.is_complex() else torch.complex(x, torch.zeros_like(x))
             torch.fft.fft(xc)
             torch.cuda.synchronize()
             out["vendor_fft_dtypes"][name] = "PASS"
@@ -762,7 +772,15 @@ def step_perf() -> dict:
                                       "timed_components)"],
             "vendor_plan_reuse": True,
             "tol_rel": TOL_REL,
-            "dtype": "fp32 (complex64)",
+            "input_semantics": "internal batched real-input "
+                               "microbenchmark (float32 + zero imag, "
+                               "(B,N)); NOT selector-grade evidence — "
+                               "selector-grade runs (complex64 non-zero "
+                               "imag, production plan/execute contract) "
+                               "are in wp3_holdout.json",
+            "selector_use": "none — exploration/timing matrix only; "
+                            "no selector entry derives from this file",
+            "dtype": "float32 input planes (complex64 internal view)",
             "directions": "c2c_forward on all cells; c2c_inverse on B=16",
             "gm_bytes": "analytic estimate, not measured bandwidth",
         },
@@ -853,7 +871,8 @@ def step_gonogo() -> dict:
     verdict = {
         "full_hybrid_resident_pipeline": "GO" if full_go else "NO-GO",
         "restricted_a_axis_migration": "GO",
-        "vendor_p_hybrid": "GO",
+        "vendor_p_hybrid": "GO (exploratory canary; selector promotion "
+                           "gated by holdout cells in wp3_holdout.json)",
         "reason": "criteria 2/3/4 fail (no controllable local storage, no "
                   "async overlap, concurrent-sync/stale-read bug); converge "
                   "per issue plan to restricted Triton A-axis (legal "

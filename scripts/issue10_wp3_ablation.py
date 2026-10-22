@@ -27,6 +27,11 @@ warmup (plan-reuse; table build is plan-time, excluded from call
 timing and reported separately).
 
 Output: results/p800/issue10_capability/wp3_ablation.json
+
+Input semantics: INTERNAL BATCHED REAL-INPUT microbenchmark (float32 +
+zero imag) — exploration only, NOT selector-grade evidence and no
+selector entry derives from it; selector-grade complex64 evidence is
+issue10_wp3_holdout.py -> wp3_holdout.json.
 """
 import argparse
 import importlib.util
@@ -404,6 +409,10 @@ def main() -> int:
                          "call timing; table_build_ms reported",
             "baseline": "base_sin_cos == wp3 hybrid_vendor_p "
                         "(run_hybrid, runtime sin/cos)",
+            "input_semantics": "internal batched real-input "
+                               "microbenchmark (float32 + zero imag); "
+                               "NOT selector-grade evidence",
+            "selector_use": "none — ablation exploration only",
             "correctness": "rel_err <= 1e-4 vs numpy, every path x "
                            "cell x session",
         },

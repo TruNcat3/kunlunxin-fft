@@ -30,6 +30,11 @@ def test_plan_validation():
 
 
 def test_bitrev_index_matches_numpy():
+
+    try:
+        import torch  # noqa: F401
+    except ImportError:
+        pytest.skip("needs importable vendor torch (host-only CI lacks it)")
     torch = pytest.importorskip("torch")  # host CI has no device stack
     import numpy as np
 
