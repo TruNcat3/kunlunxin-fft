@@ -1,6 +1,6 @@
 {
   "schema": "issue10-selector-diff-v1",
-  "created_utc": "2026-10-22T05:32:46Z",
+  "created_utc": "2026-10-22T08:59:27Z",
   "purpose": "PR #12 is evidence-only: this diff proves the runtime selector is untouched and records where the holdout outcome would land in the later integration PR",
   "wiring": "none",
   "changes_default_path": false,
@@ -173,9 +173,10 @@
       "N1024B1:c2c_inverse",
       "N2048B1:c2c_forward",
       "N2048B1:c2c_inverse",
-      "N2048B16:c2c_forward",
       "N2048B16:c2c_inverse"
     ]
   },
+  "evidence_basis": "eligibility was measured against the profile-bound deployed incumbent (table profile_hash + env_hash=auto) in the same protocol, not against M0 or issue9 history; see wp3_holdout.json eligibility (meets_incumbent_profile_bound_gate) and per-row selection_source/entry_tier",
+  "batched_boundary": "B>1 eligibility is entry-level contract evidence (plan_fft(batch=b)+execute_fft_plan -> fft_*_batch / _validate_batch_input, run_fft rank-2); the public validate_input helper remains the 1-D single-length contract \u2014 a full public-batched helper sync is a separate contract PR before selector integration",
   "note": "eligible_for_selector = evidence threshold met only; the integration PR will add entries here and present this diff with new / retained-fallback / abstain cells"
 }

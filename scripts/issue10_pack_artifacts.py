@@ -93,7 +93,9 @@ python3 scripts/issue10_wp3_holdout.py
 python3 scripts/issue10_wp3_ablation.py
 
 # package: logs/ + environment.json + repro_command.txt + manifest.json
-# + SHA256SUMS  (RUN LAST)
+# + SHA256SUMS  (RUN LAST, AFTER the producer scripts are committed:
+# manifest.json records evidence_source_commit = HEAD and per-producer
+# git blob shas; the packaging commit is its child — see manifest note)
 python3 scripts/issue10_pack_artifacts.py
 
 # verify
@@ -146,6 +148,37 @@ def main() -> int:
             capture_output=True, text=True, check=True).stdout.strip()
     except Exception:  # noqa: BLE001
         head = None
+    # Producer blob SHAs: replayable identity of the exact producer
+    # contents at pack time (commit-independent; `git cat-file blob
+    # <sha>` recovers each file even before/without the packaging
+    # commit). evidence_source_commit is only truthful if pack runs
+    # AFTER the producer scripts are committed — the pack script
+    # enforces that by warning when HEAD's tree differs from worktree
+    # for any producer.
+    producer_files = sorted({s.split()[0] for _, s in PRODUCERS
+                             if s.startswith("scripts/")})
+    producer_blobs = {}
+    for rel in producer_files:
+        p = ROOT / rel
+        if not p.exists():
+            continue
+        try:
+            blob = subprocess.run(
+                ["git", "hash-object", str(p)], cwd=str(ROOT),
+                capture_output=True, text=True, check=True).stdout.strip()
+        except Exception:  # noqa: BLE001
+            blob = None
+        producer_blobs[rel] = {
+            "git_blob": blob,
+            "sha256": _sha256(p),
+        }
+    try:
+        dirty = subprocess.run(
+            ["git", "status", "--porcelain", "--"] + producer_files,
+            cwd=str(ROOT), capture_output=True, text=True,
+            check=True).stdout.strip()
+    except Exception:  # noqa: BLE001
+        dirty = ""
     skip = {"manifest.json", "SHA256SUMS"}
     files = []
     for f in sorted(PKG.rglob("*")):
@@ -159,15 +192,25 @@ def main() -> int:
             "producer": _producer(rel),
         })
     manifest = {
-        "schema": "issue10-manifest-v1",
+        "schema": "issue10-manifest-v2",
         "issue": "kunlunxin-fft#10",
         "created_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "package_dir": str(PKG.relative_to(ROOT)),
+        "evidence_source_commit": head,
         "git_head_at_pack": head,
-        "note": "git_head_at_pack is the parent of the packaging "
-                "commit (the pack is committed together with the "
-                "scripts); SHA256SUMS additionally covers "
-                "manifest.json.",
+        "packaging_commit": None,
+        "packaging_commit_note": (
+            "self-reference: the packaging commit is the commit that "
+            "adds this manifest.json (git log --diff-filter=A -- "
+            "results/p800/issue10_capability/manifest.json); "
+            "evidence_source_commit is the commit to check out for the "
+            "exact producer scripts (run pack after committing "
+            "producers; see producer_dirty_at_pack), and each producer "
+            "is additionally pinned by git blob sha in producer_blobs"),
+        "producer_dirty_at_pack": (dirty or None),
+        "producer_blobs": producer_blobs,
+        "note": ("artifacts are committed after this pack run; "
+                 "SHA256SUMS additionally covers manifest.json."),
         "n_files": len(files),
         "total_bytes": sum(x["bytes"] for x in files),
         "n_logs": n_logs,

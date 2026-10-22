@@ -1,12 +1,12 @@
-"""issue #10 review item 5 (v2): performance holdout (>=2 independent
-sessions) before any selector promotion — rewritten for PR #12 review.
+"""issue #10 review item 5 (v3): performance holdout (>=2 independent
+sessions) before any selector promotion — PR #12 review round 3.
 
 Cells (holdout set fixed by the review):
   N in {1024, 2048} x B in {1, 16, 64, 256} x {c2c_forward, c2c_inverse}
   = 16 cells; paths = vendor + hybrid_vendor_p + hybrid_fused_p +
-  incumbent_entry (same-protocol remeasurement, see below).
+  incumbent_entry (profile-bound deployed incumbent) + m0_reference.
 
-Review fixes (PR #12 comments):
+Review fixes (PR #12 comments, rounds 1-3):
   evidence-only: nothing here wires the selector; the block is named
     eligible_for_selector and selector_diff.json proves
     config/selector_table.json / src/xpu/selector.py are untouched.
@@ -14,28 +14,40 @@ Review fixes (PR #12 comments):
   cold isolation: every (cell, path, session) runs in its OWN
     subprocess with its OWN fresh TRITON_CACHE_DIR; spawn order is
     randomized per session (seed recorded); segments are itemized:
-    context / setup (incl. incumbent plan_fft_ms) / warm probes
-    (vendor_plan, stage_plan, triton_jit, m0_kernel) / first_call /
-    steady. one_shot_ms = setup + probe total + first_call is a
+    context / setup (incl. entry plan_fft_ms) / warm probes
+    (vendor_plan, stage_plan, triton_jit, entry/m0_kernel) / first_call
+    / steady. one_shot_ms = setup + probe total + first_call is a
     RECONSTRUCTION of a true unsegmented one-shot (reported
     descriptively; the gate uses steady state only).
-  incumbent: remeasured in this run as a 4th path with the production
-    contract — plan_fft(direction="dit", profile_hash=None -> M0
-    abstain, table=config/selector_table.json) + execute_fft_plan on
-    the same input/segments/sessions. issue9 v61 e2e values are kept
-    only as descriptive_issue9_reference (different protocol, never a
-    gate input).
+  incumbent (round-3 fix): the hard gate runs the PROFILE-BOUND
+    deployed selector — plan_fft(profile_hash=table["profile_hash"],
+    env_hash="auto", table=config/selector_table.json) +
+    execute_fft_plan — recording selection_source / entry_tier
+    (previous-fallback) / executed / flow / plan_reason per row. If
+    that plan abstains/falls back in a cell the row fails closed as
+    "profile-bound incumbent no-go" (cell ineligible), never silently
+    replaced by M0. m0_reference (profile_hash=None -> M0 abstain) is
+    a separate descriptive baseline; issue9 v61 e2e values stay
+    descriptive_issue9_reference only.
   stats: independent bootstrap (both warm trial arrays resampled
     independently) — NOT paired.
   input: complex64 non-zero imag, contiguous, axis=-1, norm=backward
-    (fwd unscaled, inv 1/N), seeded per (session, n, b); b==1
-    incumbent measured as the 1-D (N,) production contract.
+    (fwd unscaled, inv 1/N), seeded per (session, n, b); b==1 entry
+    paths measured as the 1-D (N,) production contract.
+  batched boundary: B>1 rows are entry-level contract evidence
+    (plan_fft(batch=b) + execute_fft_plan -> fft_*_batch with
+    _validate_batch_input; batch runner tests in tests/test_fft.py,
+    run_fft rank-2 test added with this round). The public
+    validate_input helper stays the 1-D single-length contract
+    (docstring synced); a full public-batched helper sync is a
+    separate contract PR before selector integration.
 
 Gate (code-level, steady plan-reuse only): a cell is
-eligible_for_selector for a candidate iff in EVERY session: no
-fail_closed, all paths correct (rel_err <= 1e-4), contract present,
-and bootstrap CI lower bound of speedup > GATE vs BOTH vendor and the
-same-protocol incumbent. One-shot ratios are reported separately.
+eligible_for_selector for a candidate iff in EVERY session: all paths
+present, no fail_closed (incl. profile-bound incumbent no-go), all
+paths correct (rel_err <= 1e-4), contract present, and bootstrap CI
+lower bound of speedup > GATE vs BOTH vendor and the profile-bound
+incumbent. One-shot ratios are reported separately.
 
 Output: results/p800/issue10_capability/wp3_holdout.json
         results/p800/issue10_capability/selector_diff.json
@@ -71,8 +83,13 @@ NS = (1024, 2048)
 BS = (1, 16, 64, 256)
 DIRS = (("c2c_forward", False), ("c2c_inverse", True))
 SESSIONS = (1, 2)
-PATHS = ("vendor", "hybrid_vendor_p", "hybrid_fused_p", "incumbent_entry")
+PATHS = ("vendor", "hybrid_vendor_p", "hybrid_fused_p",
+         "incumbent_entry", "m0_reference")
+# profile-bound deployed incumbent (table profile_hash + env auto);
+# abstain/fallback here = cell no-go, never silently replaced by M0
 INCUMBENT_LABEL = "incumbent_entry"
+# M0 abstain baseline (profile_hash=None): descriptive only, never a gate
+M0_LABEL = "m0_reference"
 # promotion candidates (primary = ablation winner, baseline for contrast)
 CANDIDATES = ("hybrid_fused_p", "hybrid_vendor_p")
 BOOTSTRAP = 2000
@@ -184,18 +201,75 @@ def worker(a) -> int:
             call, meta = wp3.run_vendor(x, inverse)
         elif p in ("hybrid_vendor_p", "hybrid_fused_p"):
             call, meta = wp3.PATHS[p](x, inverse)
-        elif p == INCUMBENT_LABEL:
+        elif p in (INCUMBENT_LABEL, M0_LABEL):
             from src.xpu.entry import execute_fft_plan, plan_fft
             from src.xpu.selector import load_table
             tp0 = time.perf_counter()
             table = load_table(str(SELECTOR_TABLE))
-            plan = plan_fft(direction="dit", n=n, batch=b,
-                            profile_hash=None, table=table,
-                            transform_type="c2c",
-                            transform_direction=("inverse" if inverse
-                                                 else "forward"),
-                            norm="backward")
+            if p == INCUMBENT_LABEL:
+                # profile-bound deployed incumbent: the table's own
+                # profile binding + on-device env verification (auto).
+                # An abstain/fallback plan here means the profile-bound
+                # incumbent cannot legally resolve in this cell ->
+                # fail closed as no-go, NEVER silently replaced by M0.
+                prof = table.get("profile_hash")
+                plan = plan_fft(direction="dit", n=n, batch=b,
+                                profile_hash=prof, table=table,
+                                env_hash="auto",
+                                transform_type="c2c",
+                                transform_direction=("inverse"
+                                                     if inverse
+                                                     else "forward"),
+                                norm="backward")
+            else:
+                # m0_reference: profile_hash=None abstains to M0 by the
+                # selector contract — descriptive baseline only, it is
+                # NOT the deployed incumbent and never a hard gate.
+                prof = None
+                plan = plan_fft(direction="dit", n=n, batch=b,
+                                profile_hash=None, table=table,
+                                transform_type="c2c",
+                                transform_direction=("inverse"
+                                                     if inverse
+                                                     else "forward"),
+                                norm="backward")
             segs["plan_fft_ms"] = (time.perf_counter() - tp0) * 1e3
+
+            params = dict(plan.params or {})
+            binding = {
+                "role": ("profile-bound deployed incumbent (table "
+                         "profile_hash + env_hash=auto)"
+                         if p == INCUMBENT_LABEL else
+                         "m0_reference (profile_hash=None abstains to "
+                         "M0; NOT the deployed incumbent)"),
+                "profile_hash": prof,
+                "env_hash_mode": "auto" if p == INCUMBENT_LABEL else "n/a",
+                "table_env_hash": table.get("env_hash"),
+                "selection_source": plan.selection_source,
+                "fallback": bool(plan.fallback),
+                "entry_tier": (
+                    "previous-fallback"
+                    if params.get("previous_fallback")
+                    else "m0-abstain" if plan.fallback
+                    else "table/semantic-or-legacy"),
+                "executed": plan.executed,
+                "flow_id": plan.flow_id,
+                "flow_realization": plan.flow_realization,
+                "processing_unit": plan.processing_unit,
+                "block": plan.block,
+                "plan_reason": str(plan.reason)[:300],
+                "composition": params.get("flow_kind") == "composition",
+                "params": {k: str(v)[:100]
+                           for k, v in sorted(params.items())},
+            }
+            if p == INCUMBENT_LABEL and (plan.fallback
+                                         or plan.selection_source
+                                         == "abstain"):
+                stage = "profile_bound_incumbent"
+                raise RuntimeError(
+                    "profile-bound incumbent no-go: selection_source="
+                    f"{plan.selection_source} fallback={plan.fallback} "
+                    f"reason={plan.reason}")
 
             def call():
                 y = execute_fft_plan(plan, xinc)
@@ -205,10 +279,7 @@ def worker(a) -> int:
 
             meta = {"launches": "production entry execute_fft_plan",
                     "gm_bytes_analytic": None,
-                    "executed": plan.executed,
-                    "selection_source": plan.selection_source,
-                    "fallback": plan.fallback,
-                    "plan_reason": str(plan.reason)[:200]}
+                    **binding}
         else:
             raise ValueError(f"unknown path {p}")
         segs["setup_ms"] = (time.perf_counter() - t0) * 1e3
@@ -254,12 +325,13 @@ def worker(a) -> int:
                 del fb, xc, x_flat, tw, tw_flat
                 segs["triton_jit_probe_ms"] = (
                     time.perf_counter() - t1) * 1e3
-            else:  # incumbent_entry: M0 kernel warm on scratch clone
+            else:  # incumbent_entry / m0_reference: entry-kernel warm
                 t1 = time.perf_counter()
                 y = execute_fft_plan(plan, xinc.clone())
                 del y
                 torch.cuda.synchronize()
-                segs["m0_kernel_probe_ms"] = (
+                segs[("m0_kernel_probe_ms" if p == M0_LABEL
+                      else "entry_kernel_probe_ms")] = (
                     time.perf_counter() - t1) * 1e3
         probe_total = sum(v for k, v in segs.items()
                           if k.endswith("_probe_ms"))
@@ -385,7 +457,7 @@ def _eligibility_block(ready, spreads, cells_total) -> dict:
         per_cand[ch] = {
             "correctness_and_contract_pass": ready[ch]["correct"],
             "meets_vendor_gate": ready[ch]["vendor"],
-            "meets_incumbent_same_protocol_gate": ready[ch]["incumbent"],
+            "meets_incumbent_profile_bound_gate": ready[ch]["incumbent"],
             "eligible_for_selector": [
                 l for l in ready[ch]["vendor"]
                 if l in set(ready[ch]["incumbent"])],
@@ -414,11 +486,22 @@ def _eligibility_block(ready, spreads, cells_total) -> dict:
             "(not paired)"),
         "gate": (
             f"steady-state plan-reuse only: eligible_for_selector "
-            f"requires (every session) no fail_closed, all paths correct "
-            f"(rel_err <= 1e-4), contract present, and bootstrap CI "
-            f"lower bound of speedup > {GATE} vs vendor AND vs the "
-            f"same-protocol incumbent_entry; one-shot ratios "
-            f"(one_shot_ratio_*) are reported separately and NOT gated"),
+            f"requires (every session) all_paths_present AND "
+            f"no_fail_closed AND correct_all_sessions (rel_err <= 1e-4) "
+            f"AND contract_all_sessions AND bootstrap CI lower bound of "
+            f"speedup > {GATE} vs vendor AND vs the PROFILE-BOUND "
+            f"deployed incumbent_entry (table profile_hash + "
+            f"env_hash=auto); a profile-bound abstain/fallback is a "
+            f"cell no-go; one-shot ratios (one_shot_ratio_*) and the "
+            f"m0_reference are reported separately and NOT gated"),
+        "cell_field_definitions": {
+            "all_paths_present": "every path row exists in every session",
+            "no_fail_closed": "no path row failed closed in any session "
+                              "(includes profile-bound incumbent no-go)",
+            "correct_all_sessions": "every path correct in every session",
+            "contract_all_sessions": "selector-grade input contract "
+                                     "present in every session",
+        },
         "candidate": CANDIDATES[0],
         "eligible_for_selector": inter,
         "cells_total": cells_total,
@@ -429,12 +512,80 @@ def _eligibility_block(ready, spreads, cells_total) -> dict:
             "PARTIAL: validated cells listed, rest of matrix still "
             "exploratory"),
         "candidates": per_cand,
+        "incumbent_policy": (
+            "the hard gate uses incumbent_entry = the PROFILE-BOUND "
+            "deployed selector (plan_fft(profile_hash=table"
+            "[profile_hash], env_hash=auto) + execute_fft_plan) "
+            "measured in this run's sessions; selection_source/"
+            "entry_tier/executed/flow are recorded per row; "
+            "m0_reference (profile_hash=None -> M0 abstain) is a "
+            "descriptive baseline only and never a gate"),
         "issue9_policy": (
-            "issue9 v61 e2e values are descriptive_issue9_reference "
-            "only (different warmup/rounds machinery); the hard "
-            "incumbent gate uses the same-protocol incumbent_entry "
-            "path measured in this run"),
+            "issue9 v61 e2e values (incl. its historical selector:e2e) "
+            "are descriptive_issue9_reference only (different "
+            "warmup/rounds machinery); the hard incumbent gate is the "
+            "profile-bound incumbent_entry measured in this run"),
+        "batched_boundary": (
+            "B>1 eligibility is entry-level contract evidence "
+            "(plan_fft(batch=b)+execute_fft_plan -> fft_*_batch / "
+            "_validate_batch_input, run_fft rank-2); the public "
+            "validate_input helper remains the 1-D single-length "
+            "contract — a full public-batched helper sync is a "
+            "separate contract PR before selector integration"),
     }
+
+
+def _cell_passes(flags: dict) -> bool:
+    """Code-level correctness/contract gate (pure, unit-tested).
+
+    A cell only feeds eligibility when EVERY session had all path rows
+    present, no fail_closed row (incl. profile-bound incumbent no-go),
+    all paths correct, and the selector-grade input contract.
+    """
+    return bool(flags.get("all_paths_present")
+                and flags.get("no_fail_closed")
+                and flags.get("correct_all_sessions")
+                and flags.get("contract_all_sessions"))
+
+
+def _collect_ready(ready, spreads, ch, label, vs, iss, cell_ok,
+                   n_sessions) -> dict:
+    """Single append-condition site for the eligibility lists (pure,
+    unit-tested).
+
+    - correctness_and_contract_pass: ``cell_ok`` ONLY (the name promises
+      correctness+contract, so CI must not gate it — but a failing cell
+      must never appear);
+    - meets_vendor_gate / meets_incumbent_profile_bound_gate: cell_ok
+      AND independent-bootstrap CI low > GATE in EVERY session;
+    - returns the cross-session display dict for this candidate.
+    """
+    out = {}
+    if not cell_ok:
+        return out
+    if len(vs) != n_sessions or len(iss) != n_sessions:
+        return out              # partial session data: no decision at all
+    if len(vs) == n_sessions:
+        pts = [sp["point"] for sp in vs]
+        spr = abs(pts[0] - pts[1]) / max(sum(pts) / len(pts), 1e-30)
+        spreads[ch]["vendor"].append(spr)
+        ok = all(sp["ci95"][0] > GATE for sp in vs)
+        out["vendor"] = {"points": pts, "spread_rel": spr,
+                         "all_ci_low_gt_gate": ok}
+        if ok:
+            ready[ch]["vendor"].append(label)
+    if len(iss) == n_sessions:
+        pts = [e["point"] for e in iss]
+        spr = abs(pts[0] - pts[1]) / max(sum(pts) / len(pts), 1e-30)
+        spreads[ch]["incumbent"].append(spr)
+        ok = all(e["ci95"][0] > GATE for e in iss)
+        out["incumbent_profile_bound"] = {
+            "points": pts, "spread_rel": spr, "all_ci_low_gt_gate": ok}
+        if ok:
+            ready[ch]["incumbent"].append(label)
+    if len(vs) == n_sessions and len(iss) == n_sessions:
+        ready[ch]["correct"].append(label)
+    return out
 
 
 def _holdout_cell_state(n, b, inverse) -> dict:
@@ -489,6 +640,14 @@ def _selector_diff(elig: dict) -> dict:
         "eligible_cells_pending_separate_pr": {
             ch: elig["candidates"][ch]["eligible_for_selector"]
             for ch in CANDIDATES},
+        "evidence_basis": (
+            "eligibility was measured against the profile-bound "
+            "deployed incumbent (table profile_hash + env_hash=auto) "
+            "in the same protocol, not against M0 or issue9 history; "
+            "see wp3_holdout.json eligibility "
+            "(meets_incumbent_profile_bound_gate) and per-row "
+            "selection_source/entry_tier"),
+        "batched_boundary": elig.get("batched_boundary"),
         "note": ("eligible_for_selector = evidence threshold met only; "
                  "the integration PR will add entries here and present "
                  "this diff with new / retained-fallback / abstain "
@@ -573,27 +732,26 @@ def main() -> int:
                 "plan-reuse definition); magnitude reference only, "
                 "never a gate input")}
         cand_sessions = {ch: {"v": [], "i": []} for ch in CANDIDATES}
-        cok = True
-        contract_ok = True
+        flags = {"all_paths_present": True, "no_fail_closed": True,
+                 "correct_all_sessions": True,
+                 "contract_all_sessions": True}
         for s in SESSIONS:
             rows = idx.get((n, b, d, s), {})
             if any(p not in rows for p in PATHS):
                 missing = [p for p in PATHS if p not in rows]
                 fail_closed.append(f"{label}/s{s}: missing {missing}")
-                cok = False
-                contract_ok = False
+                flags["all_paths_present"] = False
                 continue
             bad = {p: rows[p].get("fail_closed") for p in PATHS
                    if rows[p].get("fail_closed")}
             if bad:
                 fail_closed.append(f"{label}/s{s}: {bad}")
-                cok = False
-                contract_ok = False
+                flags["no_fail_closed"] = False
                 continue
             contract = next((rows[p].get("contract") for p in PATHS
                              if rows[p].get("contract")), None)
             if not contract:
-                contract_ok = False
+                flags["contract_all_sessions"] = False
             entry = {"contract": contract, "paths": {}}
             for p in PATHS:
                 pr = rows[p]
@@ -613,9 +771,10 @@ def main() -> int:
                     **(pr.get("meta") or {}),
                 }
                 if not pr["correct"]:
-                    cok = False
+                    flags["correct_all_sessions"] = False
             vrow = entry["paths"]["vendor"]
             inc_row = entry["paths"][INCUMBENT_LABEL]
+            m0_row = entry["paths"][M0_LABEL]
             for ch in CANDIDATES:
                 h = entry["paths"][ch]
                 rv = vrow["warm_trials_ms"]
@@ -632,56 +791,45 @@ def main() -> int:
                 if spi:
                     spi["definition"] = (
                         f"median({INCUMBENT_LABEL})/median({ch}) "
-                        "(>1 = candidate faster), same-protocol "
-                        "incumbent measured in this run")
-                    entry[f"speedup_incumbent_same_protocol_boot:{ch}"] = spi
+                        "(>1 = candidate faster), PROFILE-BOUND "
+                        "deployed incumbent (table profile_hash + "
+                        "env_hash=auto) measured in this run")
+                    entry[f"speedup_incumbent_profile_bound_boot:{ch}"] = spi
                     cand_sessions[ch]["i"].append(spi)
+                rm = m0_row["warm_trials_ms"]
+                spd = _boot_ratio(rng, rm, rh)
+                if spd:
+                    spd["definition"] = (
+                        f"median({M0_LABEL})/median({ch}) "
+                        "(>1 = candidate faster), descriptive only — "
+                        "M0 abstain baseline, NOT the deployed "
+                        "incumbent and never a gate")
+                    entry[f"speedup_m0_reference_boot:{ch}"] = spd
                 if (vrow["one_shot_ms"] and h["one_shot_ms"]):
                     entry[f"one_shot_ratio_vendor:{ch}"] = (
                         vrow["one_shot_ms"] / h["one_shot_ms"])
                 if (inc_row["one_shot_ms"] and h["one_shot_ms"]):
                     entry[f"one_shot_ratio_incumbent:{ch}"] = (
                         inc_row["one_shot_ms"] / h["one_shot_ms"])
+                if (m0_row["one_shot_ms"] and h["one_shot_ms"]):
+                    entry[f"one_shot_ratio_m0:{ch}"] = (
+                        m0_row["one_shot_ms"] / h["one_shot_ms"])
             c["sessions"][str(s)] = entry
 
-        correct_ok = cok
+        cell_ok = _cell_passes(flags)
+        c.update(flags)
+        c["eligible_inputs_ok"] = cell_ok
         for ch in CANDIDATES:
             vs, iss = cand_sessions[ch]["v"], cand_sessions[ch]["i"]
-            if len(vs) == len(SESSIONS) and len(iss) == len(SESSIONS):
-                ready[ch]["correct"].append(label)
-            if len(vs) == len(SESSIONS):
-                pts = [sp["point"] for sp in vs]
-                spr = abs(pts[0] - pts[1]) / max(
-                    sum(pts) / len(pts), 1e-30)
-                spreads[ch]["vendor"].append(spr)
-                okv = all(sp["ci95"][0] > GATE for sp in vs)
-                if okv and correct_ok and contract_ok:
-                    ready[ch]["vendor"].append(label)
-            if len(iss) == len(SESSIONS):
-                pts = [e["point"] for e in iss]
-                spr = abs(pts[0] - pts[1]) / max(
-                    sum(pts) / len(pts), 1e-30)
-                spreads[ch]["incumbent"].append(spr)
-                oki = all(e["ci95"][0] > GATE for e in iss)
-                if oki and correct_ok and contract_ok:
-                    ready[ch]["incumbent"].append(label)
-            c.setdefault("cross_session_by_candidate", {})[ch] = {
-                "vendor": {"points": [sp["point"] for sp in vs],
-                           "spread_rel": spreads[ch]["vendor"][-1]
-                           if vs else None},
-                "incumbent_same_protocol": {
-                    "points": [e["point"] for e in iss],
-                    "spread_rel": spreads[ch]["incumbent"][-1]
-                    if iss else None},
-            }
-        c["correct_all_sessions"] = cok
-        c["contract_all_sessions"] = contract_ok
+            c.setdefault("cross_session_by_candidate", {})[ch] = (
+                _collect_ready(ready, spreads, ch, label, vs, iss,
+                               cell_ok, len(SESSIONS)))
         cells_out.append(c)
 
     elig = _eligibility_block(ready, spreads, len(cells))
     wp3 = _wp3()
     doc = {
-        "schema": "issue10-wp3-holdout-v2",
+        "schema": "issue10-wp3-holdout-v3",
         "created_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "script": str(SCRIPT.relative_to(ROOT)),
         "protocol": {
@@ -695,13 +843,14 @@ def main() -> int:
                 "(seed + record in sessions[].spawn_order)"),
             "segments": (
                 "context (module import -> device context ready), setup "
-                "(path construction; incumbent setup includes table load "
-                "+ plan_fft, sub-timed as plan_fft_ms), warm probes on "
+                "(path construction; entry paths include table load + "
+                "plan_fft, sub-timed as plan_fft_ms), warm probes on "
                 "scratch (vendor_plan_probe / stage_plan_probe / "
-                "triton_jit_probe / m0_kernel_probe — itemized, cover "
-                "torch plan creation, triton JIT and M0 kernels in a "
-                "fresh process), first_call (first execution on the real "
-                "input in plan-reuse state), steady (warmup="
+                "triton_jit_probe / entry_kernel_probe / "
+                "m0_kernel_probe — itemized, cover torch plan creation, "
+                "triton JIT and entry kernels in a fresh process), "
+                "first_call (first execution on the real input in "
+                "plan-reuse state), steady (warmup="
                 f"{wp3.WARMUP} rounds={wp3.ROUNDS} trials={wp3.TRIALS} "
                 "raw trials)"),
             "one_shot": (
@@ -718,30 +867,49 @@ def main() -> int:
                 "independently (not paired), percentile 95% CI"),
             "gate": (
                 f"steady-state plan-reuse only; eligible_for_selector "
-                f"requires correctness + contract in EVERY session and "
-                f"bootstrap CI lower bound > {GATE} vs vendor AND vs "
-                f"same-protocol incumbent, every session; one-shot "
-                f"ratios reported separately"),
+                f"requires (every session) all_paths_present AND "
+                f"no_fail_closed AND correct_all_sessions AND "
+                f"contract_all_sessions AND independent-bootstrap CI "
+                f"lower bound > {GATE} vs vendor AND vs the "
+                f"profile-bound incumbent_entry, every session; "
+                f"one-shot ratios and m0_reference reported separately"),
             "input_semantics": (
                 "complex64 non-zero imag, contiguous (B,N), axis=-1, "
-                "norm=backward (fwd unscaled, inv 1/N); b==1 incumbent "
-                "measured as the 1-D (N,) production contract; input "
-                "seeded per (session, n, b) and identical for all four "
-                "paths"),
+                "norm=backward (fwd unscaled, inv 1/N); b==1 entry "
+                "paths measured as the 1-D (N,) production contract; "
+                "input seeded per (session, n, b) and identical for "
+                "all five paths"),
             "incumbent": (
-                "same-protocol 4th path: plan_fft(direction='dit', "
-                "profile_hash=None -> M0 abstain, table=config/"
+                "PROFILE-BOUND deployed selector path: "
+                "plan_fft(direction='dit', profile_hash="
+                "table['profile_hash'], env_hash='auto', table=config/"
                 "selector_table.json) + execute_fft_plan on this run's "
-                "sessions/segments"),
+                "sessions/segments; per-row record of selection_source, "
+                "entry_tier (previous-fallback), executed, flow_id/"
+                "flow_realization/processing_unit, plan_reason; an "
+                "abstain/fallback plan fails the row closed as "
+                "'profile-bound incumbent no-go' (cell ineligible), "
+                "never silently replaced by M0"),
+            "m0_reference": (
+                "m0_reference path: plan_fft(profile_hash=None) "
+                "abstains to M0 by the selector contract; recorded as "
+                "speedup_m0_reference_boot / one_shot_ratio_m0 for "
+                "descriptive comparison only — NOT the deployed "
+                "incumbent, never a gate input"),
             "issue9_join": (
                 "results/p800/issue9_v61/reports/e2e_report.csv kept "
-                "only as descriptive_issue9_reference; never used in a "
-                "gate"),
+                "only as descriptive_issue9_reference (incl. its "
+                "historical selector:e2e); never used in a gate"),
             "batched_contract": (
-                "batched (B,N) runs through plan_fft(batch=b) + "
-                "execute_fft_plan (entry contract); the public 1-D "
-                "validate_input/run_fft contract applies to B=1 — the "
-                "wp3_summary matrix stays an internal batched real-input "
+                "B>1 rows are entry-level contract evidence: "
+                "plan_fft(batch=b) + execute_fft_plan -> fft_*_batch "
+                "runners with _validate_batch_input (rank-2, tested in "
+                "tests/test_fft.py) and run_fft rank-2 (test added "
+                "with this round); the public validate_input helper "
+                "stays the 1-D single-length contract (docstring "
+                "synced) — full public-batched helper sync is a "
+                "separate contract PR before selector integration; "
+                "wp3_summary stays an internal batched real-input "
                 "microbenchmark"),
             "selector_use": (
                 "evidence-only PR: no selector wiring; "
