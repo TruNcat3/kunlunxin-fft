@@ -24,11 +24,13 @@ XPU_ENABLE_PROFILER_TRACING=1 XPU_CUPTI_ENABLE_DEVICE=0 python3 scripts/issue10_
 python3 scripts/issue10_stale_read_matrix.py
 
 # performance holdout (writes wp3_holdout.json + selector_diff.json;
-# 16 cells x 4 paths [vendor, hybrid_vendor_p, hybrid_fused_p,
-# incumbent_entry same-protocol] x 2 independent sessions; one
-# subprocess per cell/path/session with fresh TRITON_CACHE_DIR,
-# itemized context/setup/probe/first_call/steady segments, complex64
-# non-zero-imag input, independent bootstrap CI)
+# 16 cells x 5 paths [vendor, hybrid_vendor_p, hybrid_fused_p,
+# incumbent_entry (profile-bound), m0_reference] x 2 independent
+# sessions; one subprocess per cell/path/session with fresh
+# TRITON_CACHE_DIR, itemized context/setup/probe/first_call/steady
+# segments, complex64 non-zero-imag input, b==1 measured as the same
+# rank-1 (N,) entry contract on all five paths, independent
+# bootstrap CI)
 python3 scripts/issue10_wp3_holdout.py
 
 # twiddle ablation (writes wp3_ablation.json; 5 implementations x

@@ -1,6 +1,6 @@
 {
-  "schema": "issue10-selector-diff-v1",
-  "created_utc": "2026-10-22T08:59:27Z",
+  "schema": "issue10-selector-diff-v2",
+  "created_utc": "2026-10-22T21:05:12Z",
   "purpose": "PR #12 is evidence-only: this diff proves the runtime selector is untouched and records where the holdout outcome would land in the later integration PR",
   "wiring": "none",
   "changes_default_path": false,
@@ -9,6 +9,25 @@
   "table_entries": 109,
   "previous_fallbacks": 6,
   "selector_source_sha256": "695ae9221b6410464f322081e958013ba0b02caee097f24257a541176e68fa8c",
+  "tables": {
+    "selector_table": {
+      "path": "config/selector_table.json",
+      "sha256": "7c2282ed0c295f2e5179c358f75a7d73051f21cbaaf7caf04c281dcb8efe88fd",
+      "profile_hash": "a78b86793c7142a0",
+      "env_hash": "6b50bd316032c0fe",
+      "n_entries": 109,
+      "n_previous_fallbacks": 6
+    },
+    "composition_table": {
+      "path": "config/composition_table.json",
+      "sha256": "49e5f41b4a3a88b06d3e674cddecf579216a3539a8d774aa3d25afa4ae70a725",
+      "profile_hash": "a78b86793c7142a0",
+      "env_hash": "6b50bd316032c0fe",
+      "n_entries": 1,
+      "contract_id": "a1p1_materialized_subtransform"
+    },
+    "relation": "plan_fft queries composition_select (composition_table.json) BEFORE the butterfly selector: a match returns selection_source='composition' (executed=run_hybrid, entry_tier=composition-table) and outranks the butterfly table for that exact shape (c2c + forward + backward-norm only; fail-closed to the butterfly path otherwise). Butterfly-table rows stay selection_source='table'; previous_fallbacks keep entry_tier='previous-fallback'. The integration PR must keep composition entries on their own contract and runner checks."
+  },
   "new_entries": [],
   "removed_entries": [],
   "modified_entries": [],
@@ -163,20 +182,20 @@
   },
   "eligible_cells_pending_separate_pr": {
     "hybrid_fused_p": [
+      "N1024B1:c2c_inverse",
       "N2048B1:c2c_forward",
       "N2048B1:c2c_inverse",
       "N2048B16:c2c_forward",
       "N2048B16:c2c_inverse"
     ],
     "hybrid_vendor_p": [
-      "N1024B1:c2c_forward",
-      "N1024B1:c2c_inverse",
       "N2048B1:c2c_forward",
       "N2048B1:c2c_inverse",
       "N2048B16:c2c_inverse"
     ]
   },
-  "evidence_basis": "eligibility was measured against the profile-bound deployed incumbent (table profile_hash + env_hash=auto) in the same protocol, not against M0 or issue9 history; see wp3_holdout.json eligibility (meets_incumbent_profile_bound_gate) and per-row selection_source/entry_tier",
+  "evidence_basis": "eligibility was measured against the profile-bound deployed incumbent (table profile_hash + env_hash=auto, incl. composition-registry matches recorded as entry_tier=composition-table) in the same protocol, not against M0 or issue9 history, on ONE uniform entry shape per cell (B=1 = rank-1 (N,) on all five paths), see wp3_holdout.json eligibility (meets_incumbent_profile_bound_gate, entry_shape_uniform) and per-row selection_source/entry_tier/api_entry/input_shape",
   "batched_boundary": "B>1 eligibility is entry-level contract evidence (plan_fft(batch=b)+execute_fft_plan -> fft_*_batch / _validate_batch_input, run_fft rank-2); the public validate_input helper remains the 1-D single-length contract \u2014 a full public-batched helper sync is a separate contract PR before selector integration",
+  "promotion_prerequisites": "eligible_for_selector is a promotion CANDIDATE list only; the separate integration PR must (1) bind exact keys with profile_hash+env_hash+evidence_sha256, (2) keep fallback/abstain for uncovered cells, (3) add plan_fft->execute_fft_plan dispatch regressions, and (4) add an independent session or an explicit cross-session spread guard before any default-path switch (max observed spread this run: 0.503758163894817)",
   "note": "eligible_for_selector = evidence threshold met only; the integration PR will add entries here and present this diff with new / retained-fallback / abstain cells"
 }

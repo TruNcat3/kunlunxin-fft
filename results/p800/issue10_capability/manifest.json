@@ -1,17 +1,18 @@
 {
-  "schema": "issue10-manifest-v2",
+  "schema": "issue10-manifest-v3",
   "issue": "kunlunxin-fft#10",
-  "created_utc": "2026-10-22T09:08:52Z",
+  "created_utc": "2026-10-22T21:10:34Z",
   "package_dir": "results/p800/issue10_capability",
-  "evidence_source_commit": "579406f10c369cc95084f6933fca0f02252beb61",
-  "git_head_at_pack": "579406f10c369cc95084f6933fca0f02252beb61",
+  "evidence_source_commit": "50bbefc95a2ca575fd67e3896dc4511b02b673ff",
+  "git_head_at_pack": "50bbefc95a2ca575fd67e3896dc4511b02b673ff",
   "packaging_commit": null,
-  "packaging_commit_note": "self-reference: the packaging commit is the commit that adds this manifest.json (git log --diff-filter=A -- results/p800/issue10_capability/manifest.json); evidence_source_commit is the commit to check out for the exact producer scripts (run pack after committing producers; see producer_dirty_at_pack), and each producer is additionally pinned by git blob sha in producer_blobs",
+  "packaging_commit_seal": "fill packaging_commit with the sha of the commit that adds this manifest.json (git log --diff-filter=A -- results/p800/issue10_capability/manifest.json), then update the manifest.json line in SHA256SUMS in the same seal commit \u2014 non-self-referencing (the field names the packaging commit, the seal commit only records it)",
+  "packaging_commit_note": "evidence_source_commit is the commit to check out for the exact producer scripts (run pack after committing producers; see producer_dirty_at_pack), each producer is pinned by git blob sha in producer_blobs, and producer_dependencies records transitive script imports (holdout/ablation import wp3_perf)",
   "producer_dirty_at_pack": null,
   "producer_blobs": {
     "scripts/issue10_pack_artifacts.py": {
-      "git_blob": "017d584829629e70f97abc3b4f1d15f517c42f16",
-      "sha256": "0d21b8200ad7789c210993f1f5dc16708920068d02e33d6aa408d3f9a0997894"
+      "git_blob": "ad219b223e819a50b2b22677926581e19206271e",
+      "sha256": "63e8e74989aa1d270c283893600d893a13db7dd8dc39673006d3615e25d84729"
     },
     "scripts/issue10_stale_read_matrix.py": {
       "git_blob": "fdb068e87dee5dea98e933eb1372f96ebfb6d576",
@@ -34,21 +35,38 @@
       "sha256": "fdd9fb83a904040fdef0165d49f9e87cf22379532654cccf1384de4d56f144e3"
     },
     "scripts/issue10_wp3_holdout.py": {
-      "git_blob": "51e1fc8a81e168ea49646e616db871e9538779f0",
-      "sha256": "cee8e3014f53e0c6a559c925ff76348e5a83b603277d7e8e64ff449e864e2e6d"
+      "git_blob": "79e52bac1ea54a830bc2c7ff7ad7cff95797b058",
+      "sha256": "7eae20fc4c7c06bc694287459aedd5eca0b4134567feeb3cf19ca8f25dfe12fd"
     },
     "scripts/issue10_wp3_perf.py": {
-      "git_blob": "085b7cd508cbfeb43e0f37afd450395a9f84e3d7",
-      "sha256": "0fc78937056800cb8670fe184c495a2c79e3e99fa9669370a5b6467686c130c1"
+      "git_blob": "f203df7e55fa1c17134fae576ed321827a160609",
+      "sha256": "0f9adae1a84f7598fd80f20029261c39632a536fa26cb7f10d02bfa1ffb8ea11"
     },
     "scripts/issue10_wp3_profile.py": {
       "git_blob": "ba7242e4473c757950c3238095ca288987cdba11",
       "sha256": "173cd593b2d784d6230b95ced12f86db051e7d435f20c3434c818801fe025434"
     }
   },
+  "producer_dependencies": {
+    "scripts/issue10_wp3_holdout.py": [
+      "scripts/issue10_wp3_perf.py"
+    ],
+    "scripts/issue10_wp3_ablation.py": [
+      "scripts/issue10_wp3_perf.py"
+    ]
+  },
+  "config_provenance": {
+    "config/selector_table.json": {
+      "sha256": "7c2282ed0c295f2e5179c358f75a7d73051f21cbaaf7caf04c281dcb8efe88fd"
+    },
+    "config/composition_table.json": {
+      "sha256": "49e5f41b4a3a88b06d3e674cddecf579216a3539a8d774aa3d25afa4ae70a725",
+      "note": "queried by plan_fft composition_select BEFORE the butterfly selector; composition-table incumbent rows bind against it (see selector_diff.json tables + holdout binding [composition_table])"
+    }
+  },
   "note": "artifacts are committed after this pack run; SHA256SUMS additionally covers manifest.json.",
   "n_files": 77,
-  "total_bytes": 1838187,
+  "total_bytes": 1931521,
   "n_logs": 23,
   "files": [
     {
@@ -209,14 +227,14 @@
     },
     {
       "path": "repro_command.txt",
-      "bytes": 1921,
-      "sha256": "85f831810737a636c1b896a4780416c1a9b1c9697a633ebf406a385dc5c9e4fc",
+      "bytes": 2013,
+      "sha256": "95981d7d339091cea2097d0c19206b2744faedf37d7bf35095d18a60aec2a7dc",
       "producer": "scripts/issue10_pack_artifacts.py"
     },
     {
       "path": "selector_diff.json",
-      "bytes": 5540,
-      "sha256": "2d846aa29cd78947403de5b7bb795ffa9c037855c4345a409d6bedb97a962140",
+      "bytes": 7334,
+      "sha256": "a176033e75d86c6b32f0e6b25a4c89f5cc5ec083a31f475596a84485e7347edf",
       "producer": "scripts/issue10_wp3_holdout.py"
     },
     {
@@ -413,26 +431,26 @@
     },
     {
       "path": "wp3_ablation.json",
-      "bytes": 43676,
-      "sha256": "427c7f8e478970599cac765875ef39724d0f9991ddf7e913d77f2c50e9e73930",
+      "bytes": 43731,
+      "sha256": "6be76ec82d0e77ade3a9b36a4448f2d137a468e54d6c98483f72d21407559aaf",
       "producer": "scripts/issue10_wp3_ablation.py"
     },
     {
       "path": "wp3_blockmax.json",
       "bytes": 2369,
-      "sha256": "a01e566f0cf6301f7a4be415dcff933c819c4a6a2ebec66adfb45ba03d81a98e",
+      "sha256": "bd2e78cabb34b4090af7bca6642f78b246f9a32e93fde0c47764b9296dfde609",
       "producer": "scripts/issue10_wp3_perf.py"
     },
     {
       "path": "wp3_gonogo.json",
       "bytes": 4406,
-      "sha256": "4c6cdf54c83246f8de5eb390a5a0a0746a3b9ad43f87ecb55309fbce34111f87",
+      "sha256": "e3b7dba232cc6f241c8af53a55dc2f9a8d1d95437fda36569805713162ac621f",
       "producer": "scripts/issue10_wp3_perf.py"
     },
     {
       "path": "wp3_holdout.json",
-      "bytes": 1321286,
-      "sha256": "36995398e1e84c5f2798bf61a20c696acf540fa40d8e95c09597337028b4c42c",
+      "bytes": 1412747,
+      "sha256": "510615cc0de6419306983d539420f31a39216a5a119dce573d8ced5519c19fab",
       "producer": "scripts/issue10_wp3_holdout.py"
     },
     {
@@ -461,20 +479,20 @@
     },
     {
       "path": "wp3_raw.csv",
-      "bytes": 56382,
-      "sha256": "da9be9f98c03f6c3fafe036257fb6f33b18416b25bfdc5f0ff4345905cdc1863",
+      "bytes": 56340,
+      "sha256": "b193b12fd855a61056e71c587fc546d57427b067f10cb821e3acb1068b1c04a3",
       "producer": "scripts/issue10_wp3_perf.py"
     },
     {
       "path": "wp3_run_summary.json",
-      "bytes": 691,
-      "sha256": "9c8f391bddb9e6fcf2671c5bdb116abc82641362f5326716b4471bcb13b4f0a9",
+      "bytes": 692,
+      "sha256": "fa88583ff7db185254080c7775da706836caa6908fd741f9d2ba1ed747dedfd3",
       "producer": "scripts/issue10_wp3_perf.py"
     },
     {
       "path": "wp3_summary.json",
-      "bytes": 32414,
-      "sha256": "8b79ebc3f475713ffe4f6195ebd653f973a978503327a3f298db9b0b98a13fb4",
+      "bytes": 32387,
+      "sha256": "141ff1fc9ec9b1581dacbcc030f31ceefbdcad6884c475c84bd7f8c24145e7d0",
       "producer": "scripts/issue10_wp3_perf.py"
     },
     {

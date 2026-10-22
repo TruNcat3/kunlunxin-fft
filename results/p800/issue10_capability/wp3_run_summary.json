@@ -1,22 +1,22 @@
 {
   "schema": "issue10-wp3-summary-v1",
   "issue": "kunlunxin-fft#10",
-  "created_utc": "2026-10-22T05:04:41Z",
+  "created_utc": "2026-10-22T20:31:07Z",
   "script": "/workspace/kunlunxin-fft/scripts/issue10_wp3_perf.py",
   "steps": {
     "blockmax": {
       "status": "PASS",
-      "elapsed_s": 10.654223918914795,
+      "elapsed_s": 21.800537824630737,
       "log": "wp3_logs/blockmax.log"
     },
     "perf": {
       "status": "PASS",
-      "elapsed_s": 79.08560061454773,
+      "elapsed_s": 220.32081937789917,
       "log": "wp3_logs/perf.log"
     },
     "gonogo": {
       "status": "PASS",
-      "elapsed_s": 8.213104724884033,
+      "elapsed_s": 8.099953174591064,
       "log": "wp3_logs/gonogo.log"
     }
   },
