@@ -312,11 +312,14 @@ def _factors(n: int):
 # Every runner returns a zero-arg call() -> (re, im) device tensors.
 
 def run_vendor(x: torch.Tensor, inverse: bool):
-    b, n = x.shape
+    """torch.fft last-dim transform; accepts rank-1 (N,) (b==1 1-D
+    production contract, output lifted view(1,N)) or rank-2 (B,N)."""
     xc = x if x.is_complex() else torch.complex(x, torch.zeros_like(x))
 
     def call():
         y = torch.fft.ifft(xc) if inverse else torch.fft.fft(xc)
+        if y.dim() == 1:
+            y = y.view(1, -1)            # zero-copy, stable (b,n) output
         return y.real, y.imag
 
     meta = {"launches": "vendor-internal", "gm_bytes_analytic": None}
@@ -381,7 +384,11 @@ def run_triton_resident_loop(x: torch.Tensor, inverse: bool):
 
 
 def run_hybrid(x: torch.Tensor, inverse: bool):
-    b, n = x.shape
+    """4-step hybrid; accepts rank-1 (N,) at b==1 — the (N,)->(1,r,t)
+    step is a zero-copy view at setup (the 1-D production contract),
+    output stays the stable (b,n) layout."""
+    b = 1 if x.dim() == 1 else x.shape[0]
+    n = x.shape[-1]
     t, r = _factors(n)
     xc = x if x.is_complex() else torch.complex(x, torch.zeros_like(x))
     view = xc.view(b, r, t)          # [j, k], n = j*t + k
@@ -421,8 +428,10 @@ def _gm_hybrid(b: int, n: int) -> int:
 def run_hybrid_fused(x: torch.Tensor, inverse: bool):
     """hybrid_vendor_p with the twiddle fused into the stage1->stage2
     handoff (zero-copy [b,k,j] read; ablation wp3_ablation.json winner:
-    -36..-45% vs the transpose+reshape baseline on B>=16 cells)."""
-    b, n = x.shape
+    -36..-45% vs the transpose+reshape baseline on B>=16 cells).
+    Accepts rank-1 (N,) at b==1 like run_hybrid (zero-copy lift)."""
+    b = 1 if x.dim() == 1 else x.shape[0]
+    n = x.shape[-1]
     t, r = _factors(n)
     xc = x if x.is_complex() else torch.complex(x, torch.zeros_like(x))
     view = xc.view(b, r, t)          # [j, k], n = j*t + k

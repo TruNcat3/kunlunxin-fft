@@ -30,7 +30,8 @@ H = _load_holdout()
 
 def _flags(**over):
     f = {"all_paths_present": True, "no_fail_closed": True,
-         "correct_all_sessions": True, "contract_all_sessions": True}
+         "correct_all_sessions": True, "contract_all_sessions": True,
+         "entry_shape_uniform": True}
     f.update(over)
     return f
 
@@ -52,7 +53,7 @@ def _n():
     return len(H.SESSIONS)
 
 
-def test_cell_passes_requires_all_four_flags():
+def test_cell_passes_requires_all_gate_flags():
     assert H._cell_passes(_flags()) is True
     for k in _flags():
         assert H._cell_passes(_flags(**{k: False})) is False, k
@@ -140,7 +141,69 @@ def test_field_definitions_and_policies_documented():
     ready, spreads = _ready(), _spreads()
     block = H._eligibility_block(ready, spreads, 16)
     for key in ("all_paths_present", "no_fail_closed",
-                "correct_all_sessions", "contract_all_sessions"):
+                "correct_all_sessions", "contract_all_sessions",
+                "entry_shape_uniform"):
         assert key in block["cell_field_definitions"]
     assert "descriptive" in block["issue9_policy"]
     assert "entry-level" in block["batched_boundary"]
+    assert "composition_table" in block["composition_policy"]
+    assert "spread guard" in block["promotion_prerequisites"]
+
+
+def test_entry_shape_uniform_gate():
+    ok = {1: {"vendor": [1024], "incumbent_entry": [1024],
+              "m0_reference": [1024], "hybrid_vendor_p": [1024],
+              "hybrid_fused_p": [1024]},
+          2: {"vendor": [1024], "incumbent_entry": [1024],
+              "m0_reference": [1024], "hybrid_vendor_p": [1024],
+              "hybrid_fused_p": [1024]}}
+    assert H._entry_shape_uniform(ok) is True
+    bad = {1: {"vendor": [1, 1024], "incumbent_entry": [1024]}}
+    assert H._entry_shape_uniform(bad) is False          # rank-2 vs 1-D
+    assert H._entry_shape_uniform({}) is False           # no sessions
+    assert H._entry_shape_uniform(
+        {1: {"vendor": ["__missing__"]}}) is False        # lost record
+    mixed_sessions = {1: {"vendor": [1024]}, 2: {"vendor": [1, 1024]}}
+    assert H._entry_shape_uniform(mixed_sessions) is False
+
+
+def test_entry_tier_distinguishes_composition():
+    assert H._entry_tier("composition", {"flow_kind": "composition"},
+                         False) == "composition-table"
+    assert H._entry_tier("table", {"previous_fallback": True},
+                         False) == "previous-fallback"
+    assert H._entry_tier("abstain", {}, True) == "m0-abstain"
+    assert H._entry_tier("table", {}, False) == "table/semantic-or-legacy"
+    # composition wins over plain table but never over explicit
+    # previous-fallback / abstain attribution
+    assert H._entry_tier("composition", {}, False) == "composition-table"
+
+
+def test_entry_meta_records_shape_and_contract():
+    class Fake1D:
+        shape = (1024,)
+
+        def stride(self):
+            return (1,)
+
+    m1 = H._entry_meta("hybrid_fused_p", Fake1D(), 1)
+    assert m1["input_shape"] == [1024]
+    assert m1["batch_contract"].startswith("rank-1")
+    assert "rank-1" in m1["entry_contract"] or "(N,)" in m1["entry_contract"]
+    assert "run_hybrid_fused" in m1["api_entry"]
+    assert isinstance(m1["input_stride"], list)
+
+    class Fake2D:
+        shape = (16, 1024)
+        _stride = (1024, 1)
+
+        def stride(self):
+            return (1024, 1)
+
+    m2 = H._entry_meta("vendor", Fake2D(), 16)
+    assert m2["input_shape"] == [16, 1024]
+    assert m2["batch_contract"].startswith("rank-2")
+    # b==1 uniformity: every path reports the same shape/contract
+    shapes = {p: H._entry_meta(p, Fake1D(), 1)["input_shape"]
+              for p in H.PATHS}
+    assert len({tuple(v) for v in shapes.values()}) == 1

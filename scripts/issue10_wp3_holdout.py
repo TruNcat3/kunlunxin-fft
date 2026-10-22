@@ -1,5 +1,5 @@
-"""issue #10 review item 5 (v3): performance holdout (>=2 independent
-sessions) before any selector promotion — PR #12 review round 3.
+"""issue #10 review item 5 (v4): performance holdout (>=2 independent
+sessions) before any selector promotion — PR #12 review rounds 3-4.
 
 Cells (holdout set fixed by the review):
   N in {1024, 2048} x B in {1, 16, 64, 256} x {c2c_forward, c2c_inverse}
@@ -22,32 +22,50 @@ Review fixes (PR #12 comments, rounds 1-3):
   incumbent (round-3 fix): the hard gate runs the PROFILE-BOUND
     deployed selector — plan_fft(profile_hash=table["profile_hash"],
     env_hash="auto", table=config/selector_table.json) +
-    execute_fft_plan — recording selection_source / entry_tier
-    (previous-fallback) / executed / flow / plan_reason per row. If
-    that plan abstains/falls back in a cell the row fails closed as
-    "profile-bound incumbent no-go" (cell ineligible), never silently
-    replaced by M0. m0_reference (profile_hash=None -> M0 abstain) is
-    a separate descriptive baseline; issue9 v61 e2e values stay
-    descriptive_issue9_reference only.
+    execute_fft_plan — recording selection_source / entry_tier /
+    executed / flow / plan_reason per row. entry_tier distinguishes
+    table/semantic-or-legacy, previous-fallback, m0-abstain and
+    composition-table (a composition_select match comes from the
+    independent config/composition_table.json — its SHA/profile/env/
+    entry key/contract_id are recorded per row in binding
+    ["composition_table"]). If the plan abstains/falls back in a cell
+    the row fails closed as "profile-bound incumbent no-go" (cell
+    ineligible), never silently replaced by M0. m0_reference
+    (profile_hash=None -> M0 abstain) is a separate descriptive
+    baseline; issue9 v61 e2e values stay descriptive_issue9_reference
+    only.
   stats: independent bootstrap (both warm trial arrays resampled
     independently) — NOT paired.
-  input: complex64 non-zero imag, contiguous, axis=-1, norm=backward
-    (fwd unscaled, inv 1/N), seeded per (session, n, b); b==1 entry
-    paths measured as the 1-D (N,) production contract.
+  input (round-4 fix): complex64 non-zero imag, contiguous, axis=-1,
+    norm=backward (fwd unscaled, inv 1/N), seeded per (session, n,
+    b). At b==1 EVERY path (vendor, both hybrids, incumbent, m0)
+    receives the same rank-1 (N,) production-contract tensor: the
+    candidate runners accept rank-1 natively (wp3_perf run_vendor /
+    run_hybrid / run_hybrid_fused; the (N,)->(1,r,t) step is a
+    zero-copy view at setup, outputs keep the stable (b,n) layout).
+    Every path records api_entry / input_shape / input_stride /
+    batch_contract / entry_contract in its meta, and a cell only
+    stays eligible when all five paths' input_shape agree
+    (entry_shape_uniform). B>1 stays (B,N) entry-level contract on
+    all paths.
   batched boundary: B>1 rows are entry-level contract evidence
     (plan_fft(batch=b) + execute_fft_plan -> fft_*_batch with
     _validate_batch_input; batch runner tests in tests/test_fft.py,
-    run_fft rank-2 test added with this round). The public
-    validate_input helper stays the 1-D single-length contract
-    (docstring synced); a full public-batched helper sync is a
-    separate contract PR before selector integration.
+    run_fft rank-2 test). The public validate_input helper stays the
+    1-D single-length contract (docstring synced); a full
+    public-batched helper sync is a separate contract PR before
+    selector integration.
 
 Gate (code-level, steady plan-reuse only): a cell is
 eligible_for_selector for a candidate iff in EVERY session: all paths
 present, no fail_closed (incl. profile-bound incumbent no-go), all
-paths correct (rel_err <= 1e-4), contract present, and bootstrap CI
-lower bound of speedup > GATE vs BOTH vendor and the profile-bound
-incumbent. One-shot ratios are reported separately.
+paths correct (rel_err <= 1e-4), contract present, entry shapes
+uniform across the five paths, and bootstrap CI lower bound of
+speedup > GATE vs BOTH vendor and the profile-bound incumbent.
+One-shot ratios are reported separately. Promotion additionally
+requires the separate integration PR (see eligibility
+promotion_prerequisites): exact-key/fallback/abstain binding plus an
+independent session or explicit spread guard.
 
 Output: results/p800/issue10_capability/wp3_holdout.json
         results/p800/issue10_capability/selector_diff.json
@@ -172,6 +190,90 @@ def _trials(wp3, call):
     return ts
 
 
+# which API/shape actually enters the measurement, per path — the
+# round-4 review requires these recorded raw so a cell label can never
+# stand in for the shape
+_API_ENTRY = {
+    "vendor": ("torch.fft last-dim op via wp3_perf.run_vendor "
+               "(rank-1 capable; 1-D output lifted view(1,N))"),
+    "hybrid_vendor_p": ("wp3_perf.run_hybrid 4-step (rank-1 entry; "
+                        "(N,)->(1,r,t) zero-copy view at setup)"),
+    "hybrid_fused_p": ("wp3_perf.run_hybrid_fused 4-step (rank-1 "
+                       "entry; (N,)->(1,r,t) zero-copy view at setup)"),
+    "incumbent_entry": ("plan_fft + execute_fft_plan (production "
+                        "entry; rank-1 (N,) for b==1)"),
+    "m0_reference": ("plan_fft + execute_fft_plan (M0 abstain path; "
+                     "rank-1 (N,) for b==1)"),
+}
+
+
+def _entry_meta(path: str, xb, b: int) -> dict:
+    """Per-path raw record of API entry + input shape/stride/batch
+    contract (round-4: B=1 must be the same (N,) contract on every
+    path, verifiable from the artifact alone)."""
+    return {
+        "api_entry": _API_ENTRY[path],
+        "input_shape": list(xb.shape),
+        "input_stride": list(xb.stride()),
+        "batch_contract": (
+            "rank-1 (N,) production 1-D contract (b==1)"
+            if b == 1 else
+            "rank-2 (B,N) entry-level batched contract (B>1)"),
+        "entry_contract": (
+            f"complex64 {'(N,)' if b == 1 else '(B,N)'} axis=-1 "
+            "norm=backward"),
+    }
+
+
+def _entry_tier(selection_source, params, fallback) -> str:
+    """Honest entry tier for a resolved plan (round-4: composition
+    rows come from the independent composition registry, not from the
+    butterfly selector table)."""
+    if params.get("previous_fallback"):
+        return "previous-fallback"
+    if fallback:
+        return "m0-abstain"
+    if selection_source == "composition":
+        return "composition-table"
+    return "table/semantic-or-legacy"
+
+
+def _composition_record(plan, n: int, b: int, inverse: bool) -> dict:
+    """Provenance of a composition_select match (round-4): the table
+    that answered, its sha/profile/env, the exact entry key and
+    contract, so composition-table rows are auditable next to
+    butterfly-table rows."""
+    ct_path = ROOT / "config" / "composition_table.json"
+    rec = {"table": "config/composition_table.json", "matched": False}
+    if not ct_path.exists():
+        return rec
+    ct = json.loads(ct_path.read_text())
+    rec.update({
+        "table_sha256": hashlib.sha256(ct_path.read_bytes()).hexdigest(),
+        "table_profile_hash": ct.get("profile_hash"),
+        "table_env_hash": ct.get("env_hash"),
+        "entry_key": {"N": n, "batch": b, "direction": plan.direction,
+                      "transform_type": "c2c",
+                      "transform_direction": ("inverse" if inverse
+                                              else "forward")},
+        "contract_id": ct.get("contract_id"),
+        "flow_id": plan.flow_id,
+        "executed": plan.executed,
+        "guard_pct": (plan.params or {}).get("composition_guard_pct"),
+    })
+    hit = next((e for e in ct.get("entries", [])
+                if e.get("N") == n and e.get("batch") == b
+                and e.get("direction") == plan.direction), None)
+    if hit is not None:
+        rec["matched"] = True
+        rec["contract_id"] = hit.get("contract_id") or rec["contract_id"]
+        rec["flow_id"] = hit.get("flow_id", rec["flow_id"])
+        ev = hit.get("evidence") or {}
+        rec["evidence_artifact"] = ev.get("artifact")
+        rec["evidence_artifact_sha256"] = ev.get("artifact_sha256")
+    return rec
+
+
 def worker(a) -> int:
     import torch
     n, b, inverse, p = a.n, a.b, a.inverse, a.path
@@ -193,14 +295,16 @@ def worker(a) -> int:
 
         stage = "setup"
         segs = {"context_ms": context_ms}
-        xinc = x.squeeze(0) if b == 1 else x
+        # THE entry tensor for every path (round-4): at b==1 all five
+        # paths measure the same rank-1 (N,) production contract
+        xb = x.squeeze(0) if b == 1 else x
         meta = None
         plan = None
         t0 = time.perf_counter()
         if p == "vendor":
-            call, meta = wp3.run_vendor(x, inverse)
+            call, meta = wp3.run_vendor(xb, inverse)
         elif p in ("hybrid_vendor_p", "hybrid_fused_p"):
-            call, meta = wp3.PATHS[p](x, inverse)
+            call, meta = wp3.PATHS[p](xb, inverse)
         elif p in (INCUMBENT_LABEL, M0_LABEL):
             from src.xpu.entry import execute_fft_plan, plan_fft
             from src.xpu.selector import load_table
@@ -237,8 +341,10 @@ def worker(a) -> int:
 
             params = dict(plan.params or {})
             binding = {
-                "role": ("profile-bound deployed incumbent (table "
-                         "profile_hash + env_hash=auto)"
+                "role": ("profile-bound deployed incumbent "
+                         "(profile_hash + env_hash=auto; composition "
+                         "registry outranks the butterfly table for "
+                         "exact-shape c2c-forward)"
                          if p == INCUMBENT_LABEL else
                          "m0_reference (profile_hash=None abstains to "
                          "M0; NOT the deployed incumbent)"),
@@ -247,11 +353,8 @@ def worker(a) -> int:
                 "table_env_hash": table.get("env_hash"),
                 "selection_source": plan.selection_source,
                 "fallback": bool(plan.fallback),
-                "entry_tier": (
-                    "previous-fallback"
-                    if params.get("previous_fallback")
-                    else "m0-abstain" if plan.fallback
-                    else "table/semantic-or-legacy"),
+                "entry_tier": _entry_tier(plan.selection_source, params,
+                                          plan.fallback),
                 "executed": plan.executed,
                 "flow_id": plan.flow_id,
                 "flow_realization": plan.flow_realization,
@@ -259,6 +362,9 @@ def worker(a) -> int:
                 "block": plan.block,
                 "plan_reason": str(plan.reason)[:300],
                 "composition": params.get("flow_kind") == "composition",
+                "composition_table": (
+                    _composition_record(plan, n, b, inverse)
+                    if plan.selection_source == "composition" else None),
                 "params": {k: str(v)[:100]
                            for k, v in sorted(params.items())},
             }
@@ -272,7 +378,7 @@ def worker(a) -> int:
                     f"reason={plan.reason}")
 
             def call():
-                y = execute_fft_plan(plan, xinc)
+                y = execute_fft_plan(plan, xb)
                 if y.dim() == 1:
                     y = y.reshape(b, n)
                 return y.real, y.imag
@@ -282,6 +388,9 @@ def worker(a) -> int:
                     **binding}
         else:
             raise ValueError(f"unknown path {p}")
+        # round-4: raw API/shape record on EVERY path (aggregator gates
+        # on entry_shape_uniform across the five paths)
+        meta.update(_entry_meta(p, xb, b))
         segs["setup_ms"] = (time.perf_counter() - t0) * 1e3
 
         # warm probes on SCRATCH state (fresh TRITON_CACHE_DIR): cover
@@ -292,8 +401,8 @@ def worker(a) -> int:
         with torch.no_grad():
             if p == "vendor":
                 t1 = time.perf_counter()
-                y = (torch.fft.ifft(x.clone()) if inverse
-                     else torch.fft.fft(x.clone()))
+                y = (torch.fft.ifft(xb.clone()) if inverse
+                     else torch.fft.fft(xb.clone()))
                 del y
                 torch.cuda.synchronize()
                 segs["vendor_plan_probe_ms"] = (
@@ -301,7 +410,7 @@ def worker(a) -> int:
             elif p in ("hybrid_vendor_p", "hybrid_fused_p"):
                 t, r = wp3._factors(n)
                 t1 = time.perf_counter()
-                scr = x.clone()
+                scr = xb.clone()
                 op = torch.fft.ifft if inverse else torch.fft.fft
                 z1 = op(scr.view(b, r, t), dim=-1)
                 z2 = op(scr.view(b, t, r), dim=-1)
@@ -327,7 +436,7 @@ def worker(a) -> int:
                     time.perf_counter() - t1) * 1e3
             else:  # incumbent_entry / m0_reference: entry-kernel warm
                 t1 = time.perf_counter()
-                y = execute_fft_plan(plan, xinc.clone())
+                y = execute_fft_plan(plan, xb.clone())
                 del y
                 torch.cuda.synchronize()
                 segs[("m0_kernel_probe_ms" if p == M0_LABEL
@@ -488,12 +597,15 @@ def _eligibility_block(ready, spreads, cells_total) -> dict:
             f"steady-state plan-reuse only: eligible_for_selector "
             f"requires (every session) all_paths_present AND "
             f"no_fail_closed AND correct_all_sessions (rel_err <= 1e-4) "
-            f"AND contract_all_sessions AND bootstrap CI lower bound of "
-            f"speedup > {GATE} vs vendor AND vs the PROFILE-BOUND "
-            f"deployed incumbent_entry (table profile_hash + "
-            f"env_hash=auto); a profile-bound abstain/fallback is a "
-            f"cell no-go; one-shot ratios (one_shot_ratio_*) and the "
-            f"m0_reference are reported separately and NOT gated"),
+            f"AND contract_all_sessions AND entry_shape_uniform "
+            f"(all five paths measured on ONE entry shape — B=1 is the "
+            f"same rank-1 (N,) production contract everywhere) AND "
+            f"bootstrap CI lower bound of speedup > {GATE} vs vendor "
+            f"AND vs the PROFILE-BOUND deployed incumbent_entry "
+            f"(profile_hash + env_hash=auto); a profile-bound "
+            f"abstain/fallback is a cell no-go; one-shot ratios "
+            f"(one_shot_ratio_*) and the m0_reference are reported "
+            f"separately and NOT gated"),
         "cell_field_definitions": {
             "all_paths_present": "every path row exists in every session",
             "no_fail_closed": "no path row failed closed in any session "
@@ -501,7 +613,20 @@ def _eligibility_block(ready, spreads, cells_total) -> dict:
             "correct_all_sessions": "every path correct in every session",
             "contract_all_sessions": "selector-grade input contract "
                                      "present in every session",
+            "entry_shape_uniform": "all five paths' meta.input_shape "
+                                   "agree within and across sessions "
+                                   "(B=1 = rank-1 (N,) on every path; "
+                                   "missing record fails the flag)",
         },
+        "promotion_prerequisites": (
+            "eligible_for_selector is a promotion CANDIDATE list only; "
+            "the separate integration PR must (1) bind exact keys with "
+            "profile_hash+env_hash+evidence_sha256, (2) keep "
+            "fallback/abstain for uncovered cells, (3) add "
+            "plan_fft->execute_fft_plan dispatch regressions, and "
+            "(4) add an independent session or an explicit "
+            "cross-session spread guard before any default-path switch "
+            f"(max observed spread this run: {primary['max_cross_session_spread_rel']})"),
         "candidate": CANDIDATES[0],
         "eligible_for_selector": inter,
         "cells_total": cells_total,
@@ -517,9 +642,21 @@ def _eligibility_block(ready, spreads, cells_total) -> dict:
             "deployed selector (plan_fft(profile_hash=table"
             "[profile_hash], env_hash=auto) + execute_fft_plan) "
             "measured in this run's sessions; selection_source/"
-            "entry_tier/executed/flow are recorded per row; "
+            "entry_tier/executed/flow are recorded per row, with "
+            "entry_tier distinguishing table/semantic-or-legacy, "
+            "previous-fallback, m0-abstain and composition-table; "
             "m0_reference (profile_hash=None -> M0 abstain) is a "
             "descriptive baseline only and never a gate"),
+        "composition_policy": (
+            "plan_fft queries composition_select (config/"
+            "composition_table.json) BEFORE the butterfly selector; a "
+            "match returns selection_source=composition, "
+            "executed=run_hybrid, entry_tier=composition-table — the "
+            "per-row binding records the composition table sha256/"
+            "profile/env/exact entry key/contract_id under "
+            "binding.composition_table, and selector_diff.json records "
+            "both tables' provenance; the integration PR must treat "
+            "composition entries with their own contract checks"),
         "issue9_policy": (
             "issue9 v61 e2e values (incl. its historical selector:e2e) "
             "are descriptive_issue9_reference only (different "
@@ -540,12 +677,29 @@ def _cell_passes(flags: dict) -> bool:
 
     A cell only feeds eligibility when EVERY session had all path rows
     present, no fail_closed row (incl. profile-bound incumbent no-go),
-    all paths correct, and the selector-grade input contract.
+    all paths correct, the selector-grade input contract, and one
+    uniform entry shape across the five paths (round-4: B=1 must be
+    the same (N,) contract everywhere).
     """
     return bool(flags.get("all_paths_present")
                 and flags.get("no_fail_closed")
                 and flags.get("correct_all_sessions")
-                and flags.get("contract_all_sessions"))
+                and flags.get("contract_all_sessions")
+                and flags.get("entry_shape_uniform"))
+
+
+def _entry_shape_uniform(shapes) -> bool:
+    """``shapes``: {session: {path: [dims]}} for present paths (pure,
+    unit-tested). True iff every present path in every session agrees
+    on ONE shape, no record is lost ("__missing__" sentinel), and at
+    least one session reported."""
+    seen = set()
+    for per_path in shapes.values():
+        for shp in per_path.values():
+            seen.add(tuple(shp))
+    if not seen or any("__missing__" in s for s in seen):
+        return False
+    return len(seen) == 1
 
 
 def _collect_ready(ready, spreads, ch, label, vs, iss, cell_ok,
@@ -614,10 +768,15 @@ def _selector_diff(elig: dict) -> dict:
     table_sha = hashlib.sha256(SELECTOR_TABLE.read_bytes()).hexdigest()
     src_sha = hashlib.sha256(SELECTOR_SRC.read_bytes()).hexdigest()
     t = json.loads(SELECTOR_TABLE.read_text())
+    comp_path = ROOT / "config" / "composition_table.json"
+    comp_sha = (hashlib.sha256(comp_path.read_bytes()).hexdigest()
+                if comp_path.exists() else None)
+    ct = (json.loads(comp_path.read_text())
+          if comp_path.exists() else {})
     cells = [_holdout_cell_state(n, b, inv)
              for n in NS for b in BS for _, inv in DIRS]
     return {
-        "schema": "issue10-selector-diff-v1",
+        "schema": "issue10-selector-diff-v2",
         "created_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "purpose": ("PR #12 is evidence-only: this diff proves the "
                     "runtime selector is untouched and records where "
@@ -630,6 +789,37 @@ def _selector_diff(elig: dict) -> dict:
         "table_entries": len(t.get("entries", [])),
         "previous_fallbacks": len(t.get("previous_fallbacks", [])),
         "selector_source_sha256": src_sha,
+        "tables": {
+            "selector_table": {
+                "path": "config/selector_table.json",
+                "sha256": table_sha,
+                "profile_hash": t.get("profile_hash"),
+                "env_hash": t.get("env_hash"),
+                "n_entries": len(t.get("entries", [])),
+                "n_previous_fallbacks": len(t.get("previous_fallbacks",
+                                                   [])),
+            },
+            "composition_table": {
+                "path": "config/composition_table.json",
+                "sha256": comp_sha,
+                "profile_hash": ct.get("profile_hash"),
+                "env_hash": ct.get("env_hash"),
+                "n_entries": len(ct.get("entries", [])),
+                "contract_id": ct.get("contract_id"),
+            },
+            "relation": (
+                "plan_fft queries composition_select (composition_table"
+                ".json) BEFORE the butterfly selector: a match returns "
+                "selection_source='composition' (executed=run_hybrid, "
+                "entry_tier=composition-table) and outranks the "
+                "butterfly table for that exact shape (c2c + forward + "
+                "backward-norm only; fail-closed to the butterfly path "
+                "otherwise). Butterfly-table rows stay "
+                "selection_source='table'; previous_fallbacks keep "
+                "entry_tier='previous-fallback'. The integration PR "
+                "must keep composition entries on their own contract "
+                "and runner checks."),
+        },
         "new_entries": [],
         "removed_entries": [],
         "modified_entries": [],
@@ -642,12 +832,17 @@ def _selector_diff(elig: dict) -> dict:
             for ch in CANDIDATES},
         "evidence_basis": (
             "eligibility was measured against the profile-bound "
-            "deployed incumbent (table profile_hash + env_hash=auto) "
-            "in the same protocol, not against M0 or issue9 history; "
-            "see wp3_holdout.json eligibility "
-            "(meets_incumbent_profile_bound_gate) and per-row "
-            "selection_source/entry_tier"),
+            "deployed incumbent (table profile_hash + env_hash=auto, "
+            "incl. composition-registry matches recorded as "
+            "entry_tier=composition-table) in the same protocol, not "
+            "against M0 or issue9 history, on ONE uniform entry shape "
+            "per cell (B=1 = rank-1 (N,) on all five paths), see "
+            "wp3_holdout.json eligibility "
+            "(meets_incumbent_profile_bound_gate, entry_shape_uniform) "
+            "and per-row selection_source/entry_tier/api_entry/"
+            "input_shape"),
         "batched_boundary": elig.get("batched_boundary"),
+        "promotion_prerequisites": elig.get("promotion_prerequisites"),
         "note": ("eligible_for_selector = evidence threshold met only; "
                  "the integration PR will add entries here and present "
                  "this diff with new / retained-fallback / abstain "
@@ -735,6 +930,7 @@ def main() -> int:
         flags = {"all_paths_present": True, "no_fail_closed": True,
                  "correct_all_sessions": True,
                  "contract_all_sessions": True}
+        entry_shapes = {}
         for s in SESSIONS:
             rows = idx.get((n, b, d, s), {})
             if any(p not in rows for p in PATHS):
@@ -752,6 +948,12 @@ def main() -> int:
                              if rows[p].get("contract")), None)
             if not contract:
                 flags["contract_all_sessions"] = False
+            # round-4: raw per-path entry shapes (missing record fails
+            # the uniformity flag via the "__missing__" sentinel)
+            entry_shapes[s] = {
+                p: ((rows[p].get("meta") or {}).get("input_shape")
+                    or ["__missing__"])
+                for p in PATHS}
             entry = {"contract": contract, "paths": {}}
             for p in PATHS:
                 pr = rows[p]
@@ -816,6 +1018,11 @@ def main() -> int:
                         m0_row["one_shot_ms"] / h["one_shot_ms"])
             c["sessions"][str(s)] = entry
 
+        # round-4: B=1 (and every cell) must measure ONE entry shape
+        # across all five paths in all sessions before eligibility
+        flags["entry_shape_uniform"] = _entry_shape_uniform(entry_shapes)
+        c["entry_shapes"] = {str(s): {p: list(shp) for p, shp in per.items()}
+                             for s, per in entry_shapes.items()}
         cell_ok = _cell_passes(flags)
         c.update(flags)
         c["eligible_inputs_ok"] = cell_ok
@@ -829,7 +1036,7 @@ def main() -> int:
     elig = _eligibility_block(ready, spreads, len(cells))
     wp3 = _wp3()
     doc = {
-        "schema": "issue10-wp3-holdout-v3",
+        "schema": "issue10-wp3-holdout-v4",
         "created_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "script": str(SCRIPT.relative_to(ROOT)),
         "protocol": {
@@ -869,16 +1076,21 @@ def main() -> int:
                 f"steady-state plan-reuse only; eligible_for_selector "
                 f"requires (every session) all_paths_present AND "
                 f"no_fail_closed AND correct_all_sessions AND "
-                f"contract_all_sessions AND independent-bootstrap CI "
-                f"lower bound > {GATE} vs vendor AND vs the "
-                f"profile-bound incumbent_entry, every session; "
-                f"one-shot ratios and m0_reference reported separately"),
+                f"contract_all_sessions AND entry_shape_uniform AND "
+                f"independent-bootstrap CI lower bound > {GATE} vs "
+                f"vendor AND vs the profile-bound incumbent_entry, "
+                f"every session; one-shot ratios and m0_reference "
+                f"reported separately"),
             "input_semantics": (
                 "complex64 non-zero imag, contiguous (B,N), axis=-1, "
-                "norm=backward (fwd unscaled, inv 1/N); b==1 entry "
-                "paths measured as the 1-D (N,) production contract; "
-                "input seeded per (session, n, b) and identical for "
-                "all five paths"),
+                "norm=backward (fwd unscaled, inv 1/N); b==1: EVERY "
+                "path (vendor/hybrids/incumbent/m0) receives the same "
+                "rank-1 (N,) production-contract tensor — candidate "
+                "runners accept rank-1 natively (zero-copy "
+                "(N,)->(1,r,t) setup view), per-path api_entry/"
+                "input_shape/input_stride/batch_contract recorded in "
+                "meta and gated by entry_shape_uniform; input seeded "
+                "per (session, n, b) and identical for all five paths"),
             "incumbent": (
                 "PROFILE-BOUND deployed selector path: "
                 "plan_fft(direction='dit', profile_hash="

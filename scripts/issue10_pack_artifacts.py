@@ -81,11 +81,13 @@ XPU_ENABLE_PROFILER_TRACING=1 XPU_CUPTI_ENABLE_DEVICE=0 python3 scripts/issue10_
 python3 scripts/issue10_stale_read_matrix.py
 
 # performance holdout (writes wp3_holdout.json + selector_diff.json;
-# 16 cells x 4 paths [vendor, hybrid_vendor_p, hybrid_fused_p,
-# incumbent_entry same-protocol] x 2 independent sessions; one
-# subprocess per cell/path/session with fresh TRITON_CACHE_DIR,
-# itemized context/setup/probe/first_call/steady segments, complex64
-# non-zero-imag input, independent bootstrap CI)
+# 16 cells x 5 paths [vendor, hybrid_vendor_p, hybrid_fused_p,
+# incumbent_entry (profile-bound), m0_reference] x 2 independent
+# sessions; one subprocess per cell/path/session with fresh
+# TRITON_CACHE_DIR, itemized context/setup/probe/first_call/steady
+# segments, complex64 non-zero-imag input, b==1 measured as the same
+# rank-1 (N,) entry contract on all five paths, independent
+# bootstrap CI)
 python3 scripts/issue10_wp3_holdout.py
 
 # twiddle ablation (writes wp3_ablation.json; 5 implementations x
@@ -192,23 +194,46 @@ def main() -> int:
             "producer": _producer(rel),
         })
     manifest = {
-        "schema": "issue10-manifest-v2",
+        "schema": "issue10-manifest-v3",
         "issue": "kunlunxin-fft#10",
         "created_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "package_dir": str(PKG.relative_to(ROOT)),
         "evidence_source_commit": head,
         "git_head_at_pack": head,
         "packaging_commit": None,
-        "packaging_commit_note": (
-            "self-reference: the packaging commit is the commit that "
+        "packaging_commit_seal": (
+            "fill packaging_commit with the sha of the commit that "
             "adds this manifest.json (git log --diff-filter=A -- "
-            "results/p800/issue10_capability/manifest.json); "
+            "results/p800/issue10_capability/manifest.json), then "
+            "update the manifest.json line in SHA256SUMS in the same "
+            "seal commit — non-self-referencing (the field names the "
+            "packaging commit, the seal commit only records it)"),
+        "packaging_commit_note": (
             "evidence_source_commit is the commit to check out for the "
             "exact producer scripts (run pack after committing "
-            "producers; see producer_dirty_at_pack), and each producer "
-            "is additionally pinned by git blob sha in producer_blobs"),
+            "producers; see producer_dirty_at_pack), each producer is "
+            "pinned by git blob sha in producer_blobs, and "
+            "producer_dependencies records transitive script imports "
+            "(holdout/ablation import wp3_perf)"),
         "producer_dirty_at_pack": (dirty or None),
         "producer_blobs": producer_blobs,
+        "producer_dependencies": {
+            "scripts/issue10_wp3_holdout.py": ["scripts/issue10_wp3_perf.py"],
+            "scripts/issue10_wp3_ablation.py": ["scripts/issue10_wp3_perf.py"],
+        },
+        "config_provenance": {
+            "config/selector_table.json": {
+                "sha256": _sha256(ROOT / "config/selector_table.json"),
+            },
+            "config/composition_table.json": {
+                "sha256": _sha256(ROOT / "config/composition_table.json"),
+                "note": ("queried by plan_fft composition_select BEFORE "
+                         "the butterfly selector; composition-table "
+                         "incumbent rows bind against it (see "
+                         "selector_diff.json tables + holdout binding "
+                         "[composition_table])"),
+            },
+        },
         "note": ("artifacts are committed after this pack run; "
                  "SHA256SUMS additionally covers manifest.json."),
         "n_files": len(files),
