@@ -1,5 +1,14 @@
 # 原始数据与复现
 
+## 复核 Issue #10 能力与 holdout
+
+最新的有界能力证据位于 `results/p800/issue10_capability/`。`manifest.json` 固定 producer、配置、
+环境和工件 provenance，`SHA256SUMS` 覆盖 78 个条目；`wp3_holdout.json` 保存 16 cells × 5 paths ×
+2 sessions 的 160 条记录，`selector_diff.json` 明确默认 selector 尚未修改。复核时应从该目录运行
+`sha256sum -c SHA256SUMS`，并保留 Issue #10 与 Issue #9 协议边界，不将两者拼接平均。
+
+能力结论、正点和 NO-GO 边界见[Issue #10 能力与加速证据](issue10-capability.md)。
+
 ## 复核 Issue #9 v6-1
 
 v6-1 的结果不是从 README 手工抄表，而是由 release manifest、三组 session、路径身份和 artifact

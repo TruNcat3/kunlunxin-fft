@@ -30,14 +30,14 @@ lowering 分层，并提供正确性门禁、硬件绑定选择和可复现实�
 | 方法落地 | M0--M5、batch local core、外部 sub-transform 组合 | AIV/UB/MTE/GM 映射、K-plane、batch 折叠与边界融合 |
 | 模型证据 | focus guard 100%；full-space top-3 `6/6`，平均 regret `0.0816%` | 结构计数、实测系数、候选合法性与 Plan 选择闭环 |
 | 正确性/长度 | Issue #6 语义矩阵 144 cells（C2C forward/inverse、R2C、C2R）；C2C 正确性网格到 `2^20`，语义快照到 `65536` | C2C、R2C、C2R；公共 C2C 范围 64--4096，研究长度到 65536 |
-| 外部性能 | Issue #9 v6-1 的 106 个 vendor-supported cell 为 `4/0/102`，几何平均约 `0.122x`；Issue #6 的 `7/0/113` 仅作历史语义快照，exact `2048×16` composition 仍是独立正证据 | C2C 49 点 `1.555x`（47/49 严格领先）；E2E `1.442x`；R2C/C2R 为 `1.180x/1.868x` |
+| 外部性能 | Issue #9 v6-1 的 106 个 vendor-supported cell 为 `4/0/102`、几何平均约 `0.122x`；后续 Issue #10 的 16-cell holdout 中，fused 有 5 个、vendor-P 有 3 个 exact promotion candidates，但尚未生产接线 | C2C 49 点 `1.555x`（47/49 严格领先）；E2E `1.442x`；R2C/C2R 为 `1.180x/1.868x` |
 | 工程接口 | Python one-shot/plan reuse；无稳定 C ABI/stream | C++ Plan/同步主机指针接口与应用/E2E 测试更完整；同样没有公开 device-pointer/用户 stream API |
 
 因此当前严谨结论是：**Kunlunxin-FFT 已经达到完整“迁移实例”的研究闭环，方法分层、provenance
 和 fail-closed 证据纪律与 Ascend-FFT 接近；但 Ascend-FFT 在公共语义、C++ API、应用/E2E
 矩阵和对厂商库的广泛领先方面仍更成熟。Issue #9 v6-1 的主要成果是把 P800 迁移、选择闭包和
 可重放验收固定下来，同时量化了 processing unit/lowering 的物理性能缺口；Issue #6 的 `7/0/113`
-只应作为历史语义快照，不能覆盖 v6-1 的最新结论。**
+只应作为历史语义快照，不能替代 v6-1 冻结基线或 Issue #10 的后续能力证据。**
 
 ## 参考但未直接比较的专业库
 
@@ -52,8 +52,8 @@ lowering 分层，并提供正确性门禁、硬件绑定选择和可复现实�
 
 当前可支持的表述是：方法已在 P800 上形成合法实现、冻结选择和可复现的 M0 加速；Issue #9 v6-1
 在 140 个可比较 cell 上相对 M0 的几何平均延迟比为 `0.6086x`，但 106 个 vendor-supported
-cell 中为 `4/0/102`、几何平均约 `0.122x`，因此不能表述为“全面超过专业库”或“与 Ascend-FFT
-的性能覆盖相同”。Issue #3 的 experimental A1P1 `N=2048,B=16` `2.87x` 仍是 exact-shape
-materialized composition 证据，不能泛化为全局 selector。
+cell 中为 `4/0/102`、几何平均约 `0.122x`；Issue #10 又在预声明 16-cell holdout 中确认 5 个
+fused exact cell 和 3 个 vendor-P exact cell 达到双基线门槛。后者证明有界 envelope 内可以
+加速，但尚未接入默认 selector，也不能表述为“全面超过专业库”或“与 Ascend-FFT 的性能覆盖相同”。
 
 下一页：[批量与模型验证](batch-focus.md)。

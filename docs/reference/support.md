@@ -4,13 +4,18 @@
 
 ## 当前发布证据
 
-Issue #9 v6-1 是迁移验收的最新快照：`41/41` release gate 通过，`469` 个 host 测试和 `370`
+Issue #9 v6-1 是迁移验收的全语义冻结快照：`41/41` release gate 通过，`469` 个 host 测试和 `370`
 个 hardware 测试通过；140 个 current/M0 可比较 cell 的几何平均延迟比为 `0.6086x`。这证明
 方法、lowering、环境绑定和选择闭环已经在 P800 上可重放。
 
 这不代表已经追平厂商 FFT。106 个 vendor-supported 且语义匹配的 cell 中，结果为 `4/0/102`
 （win/tie/loss），几何平均 current/vendor 约 `0.122x`。支持范围表描述的是“能否正确执行”，
 不是“是否达到厂商性能”；详细边界见[Issue #9 v6-1](../benchmarks/issue9-v61.md)。
+
+后续 Issue #10 capability/holdout 在更窄但严格匹配的 `N={1024,2048}`、
+`B={1,16,64,256}`、forward/inverse 范围内证明了局部加速：`hybrid_fused_p` 有 5 个 exact cell、
+`hybrid_vendor_p` 有 3 个 exact cell 通过双基线门槛。它们尚未进入默认 selector，不能与 v6-1
+旧快照拼接平均；支持与 NO-GO 边界见[Issue #10 能力结论](../benchmarks/issue10-capability.md)。
 
 | 能力 | 当前支持 | 限制 |
 |---|---|---|

@@ -5,7 +5,7 @@
 > `0.6086x`，vendor-supported 子集为 `4/0/102`、几何平均约 `0.122x`。两轮数据协议不同，
 > 不应直接合并平均。
 
-> **协议边界：** 本页是 Issue #3 的历史 batch/model 与多进程 canary 报告。Issue #6 的最新
+> **协议边界：** 本页是 Issue #3 的历史 batch/model 与多进程 canary 报告。Issue #6 后续冻结的
 > 语义矩阵（144 cells，120 vendor-supported，win/tie/loss=`7/0/113`）单独保存在
 > [semantic-matrix-v2](https://github.com/TruNcat3/kunlunxin-fft/tree/master/results/p800/releases/20261017-wp2-semantic-matrix-v2)；两套
 > 协议不混合平均。`N=2048,B=16,c2c,dit` 的 exact-shape composition 晋升见

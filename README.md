@@ -19,12 +19,20 @@
 
 ## 当前结果
 
-> **最新状态（Issue #9 v6-1，2026-10-20/21）**：迁移验收已经闭环，但厂商级物理性能尚未
+> **冻结的全语义基线（Issue #9 v6-1，2026-10-20/21）**：迁移验收已经闭环，但厂商级物理性能尚未
 > 收敛。v6 的 140 个可比较 cell 中，current/M0 几何平均延迟比为 `0.6086x`（约降低 39%）；
 > 10-cell paired closure 的中位改善约 `60.7%`，全部通过 2% guard。相同语义且厂商调用成功的
 > 106 个 cell 中，cuButterfly/P800 相对 vendor 为 `4/0/102`（win/tie/loss），几何平均约
 > `0.122x`。这两个比值分别回答“相对旧实现是否有迁移收益”和“是否追平厂商库”，不可混为一谈。
 > [查看完整 v6-1 结果与边界](docs/benchmarks/issue9-v61.md)。
+
+> **最新能力与加速证据（Issue #10 / PR #12，2026-10-23）**：P800 capability gate 已完成。
+> 在统一 complex64 语义、B=1 各路径均为 rank-1、B>1 各路径均为 rank-2 的入口和两个独立
+> session 下，160/160 条 holdout
+> 路径通过正确性；`hybrid_fused_p` 有 5 个 exact cell、`hybrid_vendor_p` 有 3 个 exact cell
+> 同时超过 vendor 与实际 profile-bound incumbent 的 2% 证据门槛。候选尚未接入默认 selector，
+> 完整 resident/persistent pipeline 仍为 NO-GO，因此当前状态是 **受限 A 轴 + vendor-P 的
+> PARTIAL 加速证据**，不是全矩阵追平厂商库。[查看能力与 holdout 结论](docs/benchmarks/issue10-capability.md)。
 
 下面的图和表是较早的正式 release matrix，保留作为 M0/历史发布对照；它们不是 v6-1 的替代品。
 
@@ -48,14 +56,15 @@ fail-closed 选择语义已经贯通，而不是宣称这些兼容路径已经�
 [测量协议](docs/benchmarks/methodology.md)。按实验目的继续阅读[C2C 性能](docs/benchmarks/c2c.md)、
 [端到端口径](docs/benchmarks/end-to-end.md)和[规模切片](docs/benchmarks/scale.md)。
 
-Issue #9 的不可变发布目录、门禁和下一轮能力核验入口见[最新 v6-1 验收页](docs/benchmarks/issue9-v61.md)。
+Issue #9 的不可变全语义发布目录见[v6-1 冻结基线](docs/benchmarks/issue9-v61.md)；后续硬件能力、
+受限混合流和双基线 holdout 见[Issue #10 能力结论](docs/benchmarks/issue10-capability.md)。
 
-### 最新迁移验收
+### 历史迁移验收（Issue #3）
 
 Issue #3 已完成并关闭。该轮证据不改写上面的冻结 release 快照，而是验证新增 batch 核心、
 性能模型和外部计算核心组合：
 
-| 验收项 | 最新结果 | 发布边界 |
+| 验收项 | 冻结结果 | 发布边界 |
 |---|---|---|
 | Batch 局部核心 | `N=1024/2048, B=16/64` 相对旧 M4 incumbent 提升 `2.2x--2.7x` | M2/M5 参与比较；通过 2% guard 的 M2 local-fused 项进入冻结 selector |
 | 模型筛选 | full-space holdout top-3 命中 `6/6`；top-1 regret `0.00%--0.22%`，均值 `0.0816%` | 模型只筛选候选，最终仍由实测决定 |
@@ -126,8 +135,8 @@ Kunlunxin-FFT 保留这套方法层抽象，但所有 kernel、布局和 lowerin
 | 单变换局部融合/核心选择 | 已完成首轮优化，代表点相对 M0 为 `1.23x--2.07x` |
 | Batch 高效局部核心 | 已接入 matrix/radix-4/local-fused 候选；focus 点相对旧 incumbent 为 `2.2x--2.7x` |
 | 硬件 profile/成本模型 | 手动 probe、环境 fail-closed、结构模型、bounded search 与 holdout 已实现；安装期一键自动化仍在路线图中 |
-| 外部计算核心组合 | 已完成 materialized sub-transform canary；只有 `N=2048,B=16,c2c,dit` 进入独立 composition table，仍不是 resident kernel |
-| 跨 worker persistent pipeline | 路线图中，不是当前发布路径；v6-1 未把它计入已完成能力 |
+| 外部计算核心组合 | Issue #10 已验证 restricted A-axis + vendor-P；5 个 fused exact cell 和 3 个 vendor-P exact cell 通过证据门槛，但尚未接入默认 selector |
+| 跨 worker persistent pipeline | 当前 SDK/探针未验证出合法 lowering，本轮为 NO-GO；保留未来工具链能力项，不作为本次迁移收敛的阻塞条件 |
 
 新增实现应先阅读[增加设计点](docs/development/adding-design-points.md)和[测试策略](docs/testing.md)，
 再更新 selector 与发布证据。[Issue #3](https://github.com/TruNcat3/kunlunxin-fft/issues/3)
@@ -139,7 +148,7 @@ Kunlunxin-FFT 保留这套方法层抽象，但所有 kernel、布局和 lowerin
 |---|---|
 | 首次使用 | [安装](docs/getting-started/installation.md) -> [首次运行](docs/getting-started/quickstart.md) -> [支持范围](docs/reference/support.md) |
 | 了解方法 | [设计动机](docs/design/motivation.md) -> [架构与数据流](docs/design/architecture.md) -> [计算核心](docs/design/kernels.md) -> [性能模型](docs/design/performance-model.md) |
-| 阅读实验 | [结果汇总](docs/benchmarks/results.md) -> [测量协议](docs/benchmarks/methodology.md) -> [C2C](docs/benchmarks/c2c.md) -> [端到端](docs/benchmarks/end-to-end.md) -> [规模切片](docs/benchmarks/scale.md) |
+| 阅读实验 | [Issue #10 能力与加速证据](docs/benchmarks/issue10-capability.md) -> [Issue #9 全语义冻结基线](docs/benchmarks/issue9-v61.md) -> [结果汇总](docs/benchmarks/results.md) -> [测量协议](docs/benchmarks/methodology.md) |
 | 复现/开发 | [数据与复现](docs/benchmarks/reproducibility.md) -> [增加设计点](docs/development/adding-design-points.md) -> [测试策略](docs/testing.md) -> [验证与发布](docs/development/validation-and-release.md) |
 
 在线文档：<https://truncat3.github.io/kunlunxin-fft/>。

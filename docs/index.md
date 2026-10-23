@@ -8,9 +8,9 @@ selector、plan reuse、batch 局部核心、手动硬件 probe、结构成本�
 inverse/normalization、R2C/C2R compatibility path 和正式 release matrix；安装期一键校准与
 跨 worker persistent pipeline 仍在路线图中。
 
-## 最新验收状态
+## 当前验收状态
 
-Issue #9 v6-1 已完成迁移验收：`41/41` release gate 通过，`469` 个 host 测试和 `370` 个
+Issue #9 v6-1 是冻结的全语义发布基线：`41/41` release gate 通过，`469` 个 host 测试和 `370` 个
 hardware 测试通过。v6 的 140 个可比较 cell 中，current/M0 几何平均延迟比为 `0.6086x`，即
 相对旧 incumbent/M0 约降低 39%；10-cell paired closure 的中位改善约 `60.7%`，全部通过 2%
 guard。这个结果证明 cuButterfly 的 A/P 分层、合法 lowering、环境绑定、选择器和可重放实验已在
@@ -19,7 +19,14 @@ P800 上形成迁移闭环。
 这不等于已经追平厂商 FFT：在 106 个 vendor-supported、语义匹配的 cell 中，结果为 `4/0/102`
 （win/tie/loss），cuButterfly/P800 相对 vendor 的几何平均约为 `0.122x`。当前版本尚未计入真正
 的 batched M2/hybrid/h_dif、跨 worker persistent pipeline 或第三方局部 FFT core。完整定义、证据
-链接和下一轮能力门禁见[Issue #9 v6-1](benchmarks/issue9-v61.md)。
+链接见[Issue #9 v6-1](benchmarks/issue9-v61.md)。
+
+Issue #10 随 PR #12 完成了后续能力门禁和受限混合路径验证：16 个 cell、5 条路径、2 个独立
+session 共 160 条记录全部正确；`hybrid_fused_p` 有 5 个、`hybrid_vendor_p` 有 3 个 exact cell
+同时通过 vendor 与 profile-bound incumbent 的 2% 证据门槛。它们仍是 promotion candidates，
+未接入默认 selector；same-buffer in-kernel permutation read 被判定为 `not-lowered`，完整
+resident/persistent pipeline 仍为 NO-GO。当前应表述为[有界范围内已观察到加速](benchmarks/issue10-capability.md)，
+而不是全矩阵达到厂商性能。
 
 <div class="project-affiliation">
   <div class="project-affiliation__logo">
@@ -73,8 +80,9 @@ matrix 混合平均。
 | 判断性能结论 | [实验设计与结果汇总](benchmarks/results.md) | [C2C](benchmarks/c2c.md)、[端到端](benchmarks/end-to-end.md)、[规模切片](benchmarks/scale.md) |
 | 复现或扩展 | [原始数据与复现](benchmarks/reproducibility.md) | [增加设计点](development/adding-design-points.md)、[测试策略](testing.md)、[验证与发布](development/validation-and-release.md) |
 
-最新证据的阅读顺序是：[v6-1 验收结论](benchmarks/issue9-v61.md) ->
-[测量协议](benchmarks/methodology.md) -> [原始数据与复现](benchmarks/reproducibility.md)。
+建议阅读顺序是：[Issue #10 能力与 holdout](benchmarks/issue10-capability.md) ->
+[v6-1 全语义冻结基线](benchmarks/issue9-v61.md) -> [测量协议](benchmarks/methodology.md) ->
+[原始数据与复现](benchmarks/reproducibility.md)。
 
 ## 当前接口边界
 

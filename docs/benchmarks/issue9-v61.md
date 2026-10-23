@@ -1,9 +1,11 @@
 # Issue #9 v6-1：迁移验收与性能边界
 
-本页是当前 P800 迁移证据的最新入口。数据来自不可变 release
+本页是 P800 全语义迁移验收的冻结历史基线。数据来自不可变 release
 [`20261020-issue9-semantic-matrix-v6-1`](https://github.com/TruNcat3/kunlunxin-fft/tree/master/results/p800/releases/20261020-issue9-semantic-matrix-v6-1)，并与
 [Issue #9 的最终复审](https://github.com/TruNcat3/kunlunxin-fft/issues/9)保持一致。
 旧的 release matrix、Issue #3 和 Issue #6 快照仍保留作历史对照，但不能与本页的数字混合平均。
+Issue #10 后续能力门禁和 holdout 使用不同范围与协议，也不能与本页拼接平均；其最新结论见
+[Issue #10 能力与加速证据](issue10-capability.md)。
 
 ## 先看结论
 
@@ -70,21 +72,19 @@ pipeline 或第三方局部核心算作已完成能力。
 当前 selector 结果描述成已经搜索完整架构空间。应用 shape proxy 也只用于验证流程，不能外推为
 完整应用性能。
 
-## 下一轮的最小可证伪计划
+## 后续能力门禁的完成状态
 
-Issue #9 已关闭，后续工作转入独立的能力门禁与性能 issue（见
-[Issue #10](https://github.com/TruNcat3/kunlunxin-fft/issues/10)）：
+Issue #9 关闭后，独立的[Issue #10](https://github.com/TruNcat3/kunlunxin-fft/issues/10)
+已经完成 capability gate、stale-read 根因边界、受限 hybrid 候选和双 session holdout。其结果是：
 
-1. **先做 capability gate**：确认 Triton/XPU 工具链能否表达局部存储、静态重排、跨 role 同步、
-   多 role residence、批内复用和可观测计时；不能表达的组合必须在候选生成阶段 abstain。
-2. **固定一轴扫描另一轴**：固定同一个 P800 lowering 时扫描 `A`；固定一个合法 `A` 时扫描
-   `P`，并保留 holdout，避免把联合收益误归因给某一轴。
-3. **按瓶颈分类**：用 Roofline/trace 分开 `T_core`、global boundary、dispatch/plan、sync 和
-   tail；只有实际观测到的 load/compute/store overlap 才能写入模型。
-4. **先实现最小正闭环**：优先 batched local residence、边界/dispatch 减少和一个可测的高性能
-   局部 FFT core；每个候选必须通过 correctness 和同语义 vendor 对照。
-5. **使用稳定晋升门槛**：相对同 shape incumbent 至少 `2%` 且在独立 session/holdout 上稳定，
-   才能写入 selector；负结果继续保留在 evidence archive。
+1. same-buffer in-kernel permutation read 为 `not-lowered`，完整 resident/persistent pipeline 为 NO-GO；
+2. restricted A-axis + vendor-P 路线为 GO/PARTIAL；
+3. 160/160 条 holdout 路径正确，5 个 fused exact cell 和 3 个 vendor-P exact cell 达到双基线门槛；
+4. 候选尚未接入默认 selector，跨 session 波动必须在独立 integration 任务中继续门控；
+5. 未通过的尺寸、batch 和能力保留为负结果或 fallback，不从正点外推。
+
+后续工作不再扩大本页的 v6-1 矩阵，而是按[Issue #10 结论](issue10-capability.md)完成有界接线、
+稳定性复测和 AscendFFT 风格的覆盖展示。
 
 ### 推荐阅读
 

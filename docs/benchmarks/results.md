@@ -2,9 +2,21 @@
 
 本页先给当前正式发布证据，再给宽范围研究数据。两者协议不同，不混合计算平均值。
 
-## 最新：Issue #9 v6-1 迁移验收
+## 最新：Issue #10 能力与有界加速证据
 
-当前应优先阅读[Issue #9 v6-1 独立结果页](issue9-v61.md)。不可变 release 目录为
+Issue #10 / PR #12 已完成 P800 capability gate 和双 session holdout。在
+`N={1024,2048}`、`B={1,16,64,256}`、forward/inverse 的 16 个 cell 中，5 条路径共 160 条
+记录全部正确；`hybrid_fused_p` 有 5 个 exact cell、`hybrid_vendor_p` 有 3 个 exact cell
+同时通过相对 vendor 与 profile-bound incumbent 的 2% 证据门槛。候选尚未接入默认 selector，
+完整 resident/persistent pipeline 仍为 NO-GO。详细逐点结果和边界见
+[Issue #10 能力与加速证据](issue10-capability.md)。
+
+这组窄范围 holdout 与 Issue #9 的全语义矩阵采用不同目的和协议，不能拼接平均。它证明受限
+hybrid + vendor-P 在明确 envelope 内可以加速，不证明 16 个 cell 或更宽 FFT 网格全面领先。
+
+## 冻结基线：Issue #9 v6-1 迁移验收
+
+全语义迁移闭环应阅读[Issue #9 v6-1 独立结果页](issue9-v61.md)。不可变 release 目录为
 [`20261020-issue9-semantic-matrix-v6-1`](https://github.com/TruNcat3/kunlunxin-fft/tree/master/results/p800/releases/20261020-issue9-semantic-matrix-v6-1)。
 
 | 指标 | v6-1 结果 | 口径 |
@@ -19,9 +31,9 @@
 
 **不要把这张表与下方历史快照混合平均。** 下方的正式 release matrix、Issue #6 语义矩阵和
 Phase 3 扫描使用不同提交、候选集合或计时协议，保留它们是为了追溯 M0、旧 selector 和研究趋势。
-v6-1 也没有新增真正的 batched M2/hybrid/h_dif、resident/persistent pipeline 或第三方局部
-FFT core，因此 vendor 差距仍属于下一轮物理 lowering/processing-unit 工作，不应归因于“搜索已经
-覆盖完整架构空间”。
+v6-1 没有新增真正的 batched M2/hybrid/h_dif、resident/persistent pipeline 或第三方局部
+FFT core，因此该冻结快照中的 vendor 差距不能归因于“搜索已经覆盖完整架构空间”。后续
+Issue #10 已单独验证 restricted A-axis + vendor-P 的能力和正点，但不改写这张历史矩阵。
 
 ## 正式 P800 release matrix
 
@@ -66,7 +78,7 @@ plan 开销 N=16/32 分别约 `0.016/0.012 ms`，也不并入 plan-reuse speedup
 
 ## Issue #6 semantic matrix v2
 
-这是当前主线最新的统一语义快照，原始文件与不可变 provenance 位于
+这是 Issue #6 冻结的统一语义历史快照，原始文件与不可变 provenance 位于
 [`results/p800/releases/20261017-wp2-semantic-matrix-v2`](https://github.com/TruNcat3/kunlunxin-fft/tree/master/results/p800/releases/20261017-wp2-semantic-matrix-v2)。
 它与上面的正式 release matrix 使用不同 commit、候选集合和语义范围，**不能与 Issue #3 或
 release matrix 混合平均**。计时是同一 P800 栈上的同步 API wall time；该软件栈没有可靠的独立
