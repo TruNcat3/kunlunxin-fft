@@ -1,0 +1,105 @@
+# Issue #9 v6-1：迁移验收与性能边界
+
+本页是 P800 全语义迁移验收的冻结历史基线。数据来自不可变 release
+[`20261020-issue9-semantic-matrix-v6-1`](https://github.com/TruNcat3/kunlunxin-fft/tree/master/results/p800/releases/20261020-issue9-semantic-matrix-v6-1)，并与
+[Issue #9 的最终复审](https://github.com/TruNcat3/kunlunxin-fft/issues/9)保持一致。
+旧的 release matrix、Issue #3 和 Issue #6 快照仍保留作历史对照，但不能与本页的数字混合平均。
+Issue #10 后续能力门禁和 holdout 使用不同范围与协议，也不能与本页拼接平均；其最新结论见
+[Issue #10 能力与加速证据](issue10-capability.md)。
+
+## 先看结论
+
+Issue #9 的目标是证明 cuButterfly 的方法能够在 P800 上形成可复现的迁移实例，而不是在这一轮
+一次性追平厂商 FFT。这个目标已经完成；厂商级物理性能目标仍未完成。
+
+| 证据层 | 当前结果 | 应如何解读 |
+|---|---:|---|
+| 发布门禁 | `41/41 PASS` | 版本、manifest、artifact ledger 和路径身份闭合 |
+| Host 验证 | `469 passed` | 解析、选择器、报告和 provenance 测试通过 |
+| Hardware 验证 | `370 passed` | P800 上的 smoke、correctness、scale 和应用字段通过 |
+| v6 可比较 cell | `140` | current/M0 的同语义比较集合 |
+| current/M0 几何平均延迟比 | `0.6086x` | 相对旧 incumbent/M0，几何平均延迟约降低 `39%` |
+| 10-cell paired closure | `37.0%--75.2%` | paired median 改善，中位数约 `60.7%`，全部通过 `2%` guard |
+| scale slice | `N=16384/65536, B=16` | selector 相对旧 incumbent 约改善 `47%--52%` |
+| vendor-supported 子集 | `106` | 仅统计厂商调用成功且语义匹配的 cell |
+| 相对 vendor | `4 / 0 / 102` | win / tie / loss；几何平均 `cuButterfly/vendor ≈ 0.122x` |
+
+这里的比值方向必须明确：`current/M0 < 1` 表示迁移实现比旧 incumbent 延迟更低；
+`cuButterfly/vendor > 1` 才表示相对厂商基线更快。因而当前证据同时说明“相对旧实现有明显收益”和
+“相对厂商 FFT 仍有物理性能差距”，两者并不矛盾。
+
+## 迁移闭环实际覆盖了什么
+
+v6-1 的发布门禁确认了以下链路可以重放：
+
+```text
+cuButterfly 方法分层
+    -> A/P 候选与合法 lowering contract
+    -> P800 环境/profile 绑定
+    -> correctness-first selector
+    -> 交错多 session 测量
+    -> immutable release artifact
+    -> 报告与回归门禁
+```
+
+其中架构轴 `A` 描述阶段/数据的空间-时间展开、分段、layout、residence 和 pipeline；处理轴 `P`
+描述 radix、局部 FFT 或外部核心。候选必须满足：
+
+```text
+candidate = legal_lowering(A, P, device_profile)
+```
+
+因此当前发布结果证明的是方法迁移、选择闭包和实验可复现性。它不把尚未实现的 persistent
+pipeline 或第三方局部核心算作已完成能力。
+
+## 与厂商基线的边界
+
+最新 v6 vendor-supported 子集为 106 个 cell：4 个胜出、0 个持平、102 个落后，
+几何平均 `cuButterfly/vendor ≈ 0.122x`。这不是 selector 没有搜索到某个神奇参数的证据；Issue #9
+明确记录了当前实现还没有加入：
+
+作为历史 paired closure 的交叉检查，v5 的 10-cell 对照相对 vendor 几何平均约为 `0.127x`，且
+没有胜出 cell；它与 v6 的 106-cell 统计使用不同 release 协议，不应合并平均。规模切片中
+`N=16384/65536, B=16` 的 selector 相对旧 incumbent 约改善 `47%--52%`，说明迁移库内部的
+选择闭环在较大形状上也有收益，但不改变相对厂商性能的结论。
+
+- 真正的 batched `M2/hybrid/h_dif` 物理 kernel；
+- 跨 worker 的 resident/persistent pipeline；
+- 可替换的第三方或厂商局部 FFT processing unit；
+- 非二次幂 batch 的合法 lowering。
+
+因此下一轮的性能差距应归因到 **processing unit、GM 边界/dispatch 和 lowering 能力**，而不是把
+当前 selector 结果描述成已经搜索完整架构空间。应用 shape proxy 也只用于验证流程，不能外推为
+完整应用性能。
+
+## 后续能力门禁的完成状态
+
+Issue #9 关闭后，独立的[Issue #10](https://github.com/TruNcat3/kunlunxin-fft/issues/10)
+已经完成 capability gate、stale-read 根因边界、受限 hybrid 候选和双 session holdout。其结果是：
+
+1. same-buffer in-kernel permutation read 为 `not-lowered`，完整 resident/persistent pipeline 为 NO-GO；
+2. restricted A-axis + vendor-P 路线为 GO/PARTIAL；
+3. 160/160 条 holdout 路径正确，5 个 fused exact cell 和 3 个 vendor-P exact cell 达到双基线门槛；
+4. 候选尚未接入默认 selector，跨 session 波动必须在独立 integration 任务中继续门控；
+5. 未通过的尺寸、batch 和能力保留为负结果或 fallback，不从正点外推。
+
+后续工作不再扩大本页的 v6-1 矩阵，而是按[Issue #10 结论](issue10-capability.md)完成有界接线、
+稳定性复测和 AscendFFT 风格的覆盖展示。
+
+### 推荐阅读
+
+- [设计动机](../design/motivation.md)：Roofline、依赖和混合空间-时间展开的推导；
+- [架构与数据流](../design/architecture.md)：A 轴的 stage/data mapping；
+- [计算核心与 lowering](../design/kernels.md)：P 轴与合法 contract；
+- [性能模型](../design/performance-model.md)：结构成本、筛选和 holdout；
+- [Issue #10：FlagOS/Kunlunxin Triton 能力核验](https://github.com/TruNcat3/kunlunxin-fft/issues/10)。
+
+## 证据与复现入口
+
+- release manifest、环境和摘要：[v6-1 release directory](https://github.com/TruNcat3/kunlunxin-fft/tree/master/results/p800/releases/20261020-issue9-semantic-matrix-v6-1)；
+- 路径身份与 selector 证据：`results/p800/issue9_v61/`；
+- 复现命令和门禁：[`repro_command.txt`](https://github.com/TruNcat3/kunlunxin-fft/blob/master/results/p800/releases/20261020-issue9-semantic-matrix-v6-1/repro_command.txt)、[`gates_v61.txt`](https://github.com/TruNcat3/kunlunxin-fft/blob/master/results/p800/issue9_v61/release_evidence/gates_v61.txt)、[`host_tests.txt`](https://github.com/TruNcat3/kunlunxin-fft/blob/master/results/p800/issue9_v61/release_evidence/host_tests.txt) 和 [`hw_tests.txt`](https://github.com/TruNcat3/kunlunxin-fft/blob/master/results/p800/issue9_v61/release_evidence/hw_tests.txt)；
+- 迁移方法来源：[cuButterfly](https://github.com/TruNcat3/cuButterfly)；本仓库独立贡献是 P800
+  lowering、候选实现、profile 绑定和实测证据。
+
+下一页：[测量协议](methodology.md)。

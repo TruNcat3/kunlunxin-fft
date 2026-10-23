@@ -1,5 +1,17 @@
 # 性能模型与选择证据
 
+## 与冻结基线和最新证据的关系
+
+Issue #9 v6-1 的 140-cell current/M0 几何平均延迟比为 `0.6086x`，说明模型筛选和已实现的
+lowering 能够产生稳定的迁移收益；这不是模型对 vendor 的性能承诺。相同快照中 106 个
+vendor-supported cell 的 current/vendor 几何平均约 `0.122x`，说明 processing unit、局部存储、
+GM 边界和 dispatch 能力必须作为显式成本项，而不能只拟合 shape。
+
+后续 Issue #10 capability gate 已将 same-buffer in-kernel permutation read 判为 `not-lowered`，
+将完整 resident/persistent pipeline 判为 NO-GO，同时验证 restricted A-axis + vendor-P 为
+GO/PARTIAL，并得到 5 个 fused exact cell 的双基线正证据。模型可以纳入这些已观测候选的成本，
+但不能为未实现的 persistent overlap 添加假设收益；只有 trace/计时观测到的重叠才能进入方程。
+
 本页回答“为什么某个候选在某个 P800 shape 上更快”，而不是把冻结 selector 重新描述成模型。
 部署选择仍是 profile-bound 的实测精确表；结构化成本模型、probe 校准与留出验证**已实现**
 （`src/xpu/cost_model.py`、`scripts/hw_probe.py`、`scripts/validate_cost_model.py`），模型只做

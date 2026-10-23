@@ -1,5 +1,21 @@
 # 测量协议
 
+## v6-1 全语义冻结协议
+
+Issue #9 v6-1 是全语义迁移验收的权威冻结快照。它使用 clean worktree、路径身份和 selector SHA
+一致性检查、artifact ledger、独立 correctness、多个 session 以及 release gate；最终门禁为
+`41/41 PASS`（`469` host、`370` hardware）。其 headline 是 current/M0 的 140-cell 几何平均
+延迟比 `0.6086x`，而不是旧 release matrix 的单点表。
+
+相对 vendor 的 `4/0/102` 和 `0.122x` 只统计 106 个 vendor-supported、语义匹配 cell；
+unsupported、未实现的 resident pipeline 和未实现的第三方 core 不得补成性能数字。详细证据和
+release 路径见 [v6-1 验收页](issue9-v61.md)。
+
+Issue #10 / PR #12 采用更窄的 16-cell、5-path、双 session holdout，额外要求候选相对 vendor
+和实际 profile-bound incumbent 的 bootstrap speedup 置信区间下界均大于 `1.02`。这套协议用于
+能力门禁和 promotion evidence，不替代 v6-1，也不能与其拼接平均；见
+[Issue #10 能力与加速证据](issue10-capability.md)。
+
 ## Release matrix 合同
 
 | 项目 | 值 |

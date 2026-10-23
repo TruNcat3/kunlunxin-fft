@@ -3,22 +3,37 @@
 Kunlunxin-FFT 当前定位是 cuButterfly 方法的 P800 迁移实例和可复现研究库。近期目标是保持已声明
 范围内的正确性、选择闭包和可解释收益，而不是无限扩张搜索或预先承诺全面超过专业库。
 
+## v6-1 状态冻结
+
+Issue #9 已完成并关闭。全语义冻结快照 `20261020-issue9-semantic-matrix-v6-1` 的 release gate 为
+`41/41 PASS`，host/hardware 验证分别为 `469/370`；140 个可比较 cell 的 current/M0 几何平均
+延迟比为 `0.6086x`，10-cell paired closure 的中位改善约 `60.7%`。相对厂商的 106 个
+vendor-supported cell 仍为 `4/0/102`、几何平均约 `0.122x`，所以迁移证明已完成，厂商级物理
+性能尚未完成。Issue #9 的矩阵不再扩大。
+
+后续[能力门禁 Issue #10](https://github.com/TruNcat3/kunlunxin-fft/issues/10)和 PR #12 已完成：
+restricted A-axis + vendor-P 路线在 5 个 fused exact cell 上获得双基线加速证据，但默认 selector
+尚未接线；same-buffer in-kernel permutation read 为 `not-lowered`，完整 resident/persistent
+pipeline 维持 NO-GO。下一阶段只做有界的 production integration、稳定性门禁和 AscendFFT 风格
+覆盖展示，不把本轮扩成无限性能搜索。
+
 ## 优先级
 
 | 阶段 | 交付内容 | 退出条件 |
 |---|---|---|
 | P0 工程闭环 | 安装期硬件 probe、profile 版本化、bench manifest 协议字段自动生成。**已落地**：`hw_probe` + env 指纹绑定 + 运行时 fail-closed；**剩余**：manifest 协议字段自动生成 | 新环境可生成独立 profile；旧表不会静默复用 |
-| P1 Batch 性能 | **有界阶段已完成**：M2/M5/local-fused 纳入 focus 比较，M2 winner 接入 selector；**剩余**：扩展 N/B 网格与更强 residence | 已声明 B/N 网格相对 incumbent 有净收益，负点完整报告 |
+| P1 Batch 性能 | **有界阶段已完成**：M2/M5/local-fused 纳入 focus 比较；Issue #10 获得 5 个 fused、3 个 vendor-P promotion candidates；**下一步**：仅对稳定 exact key 接线 | 第三独立 session 或 spread guard 通过；相对 vendor 与实际 incumbent 的 CI 下界均大于 `1.02`；负点完整报告 |
 | P1 选择模型 | 参数化成本模型 + 小规模校准 + 留出验证。**已落地**：声明常数模型 + bounded search + focus/holdout 隔离验证（`model_validation.json`） | 排序误差、选择损失和搜索成本均可复核 |
 | P2 算子语义 | **首轮已实现**：C2C inverse、四种 normalization、R2C/C2R compatibility path；Issue #6 semantic matrix v2 已归档 | 继续补专用 real-FFT 核心、扩大语义性能矩阵，并让每种语义都有独立 selector/同语义基线 |
 | P2 尺寸/布局 | 非二次幂、stride、2D/多维 | 明确算法与 padding 语义，端到端计时包含重排 |
-| P3 平台扩展 | 其他 Kunlunxin 设备与软件栈 | 每台硬件独立 probe、lowering、校准和发布矩阵 |
+| P3 平台扩展 | 其他 Kunlunxin 设备与软件栈、FlagOS/vendor Triton 能力核验 | 每台硬件独立 probe、lowering、校准和发布矩阵；能力不足时 fail closed |
 
 ## Persistent 混合数据流
 
-当前 M1/M2/M3 已验证局部融合、驻留和 grouping，但还没有完整的跨 worker 多 role persistent
-pipeline。后续应先在单一代表 shape 上实现 load/compute/store 的可观测重叠，再扩展 role 数与
-packet 模板，并报告：
+当前 M1/M2/M3 已验证局部融合、驻留和 grouping，但 Issue #10 的当前 SDK/探针尚未验证出足以支持
+完整跨 worker 多 role persistent pipeline 的合法 lowering，因此本轮判定为 NO-GO。该方向保留为未来 SDK/工具链能力项，
+不再作为近期迁移实例收敛的阻塞条件。若以后重新开启，应先在单一代表 shape 上证明
+load/compute/store 的可观测重叠，再扩展 role 数与 packet 模板，并报告：
 
 - 物化 GM 边界和实际 bytes；
 - 每个 role 的服务时间与最慢角色；

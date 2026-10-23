@@ -1,9 +1,35 @@
 # 原始数据与复现
 
+## 复核 Issue #10 能力与 holdout
+
+最新的有界能力证据位于 `results/p800/issue10_capability/`。`manifest.json` 固定 producer、配置、
+环境和工件 provenance，`SHA256SUMS` 覆盖 78 个条目；`wp3_holdout.json` 保存 16 cells × 5 paths ×
+2 sessions 的 160 条记录，`selector_diff.json` 明确默认 selector 尚未修改。复核时应从该目录运行
+`sha256sum -c SHA256SUMS`，并保留 Issue #10 与 Issue #9 协议边界，不将两者拼接平均。
+
+能力结论、正点和 NO-GO 边界见[Issue #10 能力与加速证据](issue10-capability.md)。
+
+## 复核 Issue #9 v6-1
+
+v6-1 的结果不是从 README 手工抄表，而是由 release manifest、三组 session、路径身份和 artifact
+ledger 共同冻结。已有快照可直接审阅：
+
+```text
+results/p800/releases/20261020-issue9-semantic-matrix-v6-1/
+results/p800/issue9_v61/
+```
+
+在同一 P800/XPU 环境重新采集时，使用 release 中的
+[`repro_command.txt`](https://github.com/TruNcat3/kunlunxin-fft/blob/master/results/p800/releases/20261020-issue9-semantic-matrix-v6-1/repro_command.txt)，
+不要自行删减 cell 后把结果称为 v6-1。命令会生成三 session、warmup/trial、one-shot/E2E、
+oracle 模式和 release id；新 release id 必须唯一，且通过严格 manifest/artifact gate 后才能
+进入文档。无 P800 或 vendor runtime 时，只能审阅已有快照，不能用 host-only 结果替代硬件结论。
+
 ## 权威数据层级
 
 | 用途 | 文件 |
 |---|---|
+| Issue #9 v6-1 权威快照 | `results/p800/releases/20261020-issue9-semantic-matrix-v6-1/`；路径身份与 ledger 在 `results/p800/issue9_v61/` |
 | 正式 headline | `results/p800/release_matrix/summary.json`、`summary.csv`、`server_report.md` |
 | Session 与 raw trace | `summary_session{0,1,2}.json` 及 release 目录中的原始记录 |
 | 宽范围消融 | `results/p800/bench_phase3.json`、`bench_phase3_long.csv` |
