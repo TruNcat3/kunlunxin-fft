@@ -23,6 +23,17 @@ def validate_input(x, name: str = "x", *, allow_n: int = None, block: int = None
     Checks (Phase 0 deliverable 3): rank-1, complex64 (when required),
     contiguous, on the XPU device, and a power-of-two length. Optionally
     cross-checks an expected length and a power-of-two block.
+
+    Contract boundary (issue #10 review): this helper is the public
+    single-length (1-D) contract. Batched execution is a separate
+    entry/runner-level contract — ``plan_fft(batch=b)`` /
+    ``execute_fft_plan`` on rank-2 ``(B, N)`` inputs dispatch to the
+    ``fft_*_batch`` runners, which validate via
+    ``runner._validate_batch_input`` (rank-2, contiguous, complex64,
+    power-of-two axes); ``run_fft`` accepts rank-2 ``(B, N)`` as well.
+    The batched rows in ``results/p800/issue10_capability/`` are
+    labelled as that entry-level evidence; extending this 1-D helper to
+    batched inputs is a separate contract change.
     """
     if not isinstance(x, torch.Tensor):
         raise TypeError(f"{name} must be a torch.Tensor, got {type(x).__name__}")

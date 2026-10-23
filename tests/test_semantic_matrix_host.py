@@ -587,6 +587,11 @@ def test_declared_inventory_covers_the_runner_candidates():
 
 
 def test_declared_inventory_winner_block_mode_sweeps_declared_blocks():
+
+    try:
+        import torch  # noqa: F401
+    except ImportError:
+        pytest.skip("needs importable vendor torch (host-only CI lacks it)")
     from src.xpu.config import DeviceProfile
     from src.xpu.selector import load_table
 
@@ -644,6 +649,11 @@ def test_main_declares_inventory_and_strict_validates(tmp_path,
                                                       monkeypatch):
     """--aggregate-only stamps the pre-measurement inventory into
     manifest.json and the finished output strict-validates against it."""
+
+    try:
+        import torch  # noqa: F401
+    except ImportError:
+        pytest.skip("needs importable vendor torch (host-only CI lacks it)")
     from src.xpu.manifest_contract import declared_inventory_sha256
 
     inv, prof = _stress_inventory_and_rows()
@@ -851,6 +861,11 @@ def test_main_cells_filtered_schedule_declares_and_validates(
         tmp_path, monkeypatch):
     """--cells measures exactly the declared cell+semantic set: one
     label in shapes/inventory/schedule, strict gate green."""
+
+    try:
+        import torch  # noqa: F401
+    except ImportError:
+        pytest.skip("needs importable vendor torch (host-only CI lacks it)")
     from src.xpu.config import DeviceProfile
     from src.xpu.selector import load_table
 
@@ -881,6 +896,11 @@ def test_filtered_schedule_snapshot_and_replay_roundtrip(tmp_path,
                                                          monkeypatch):
     """A filtered-schedule run snapshots and replays with its exact
     per-shape semantics (WP1 domains survive the WP0-C replay path)."""
+
+    try:
+        import torch  # noqa: F401
+    except ImportError:
+        pytest.skip("needs importable vendor torch (host-only CI lacks it)")
     from src.xpu.config import DeviceProfile
     from src.xpu.selector import load_table
 
@@ -951,6 +971,11 @@ def _np_to_t(a):
 def test_timed_path_valid_independent_err():
     """A correctness-clean timed output yields the semantic's own err
     (never inherited from the steady tier)."""
+
+    try:
+        import torch  # noqa: F401
+    except ImportError:
+        pytest.skip("needs importable vendor torch (host-only CI lacks it)")
     import numpy as np
     import run_semantic_matrix as sm
 
@@ -967,6 +992,11 @@ def test_timed_path_valid_independent_err():
 def test_timed_path_rejects_shape_dtype_and_value():
     """Fail-closed terminal reasons for shape, dtype and value
     failures on the timed path itself."""
+
+    try:
+        import torch  # noqa: F401
+    except ImportError:
+        pytest.skip("needs importable vendor torch (host-only CI lacks it)")
     import numpy as np
     import run_semantic_matrix as sm
 
@@ -1004,6 +1034,11 @@ def test_timed_path_rejects_shape_dtype_and_value():
 def test_timed_path_real_and_r2c_half_spectrum():
     """c2r validates a float32 real output; r2c validates the complex
     half-spectrum against the rfft reference (b=1 squeeze legal)."""
+
+    try:
+        import torch  # noqa: F401
+    except ImportError:
+        pytest.skip("needs importable vendor torch (host-only CI lacks it)")
     import numpy as np
     import run_semantic_matrix as sm
 
@@ -1025,6 +1060,11 @@ def test_timed_path_real_and_r2c_half_spectrum():
 def test_timed_once_returns_samples_and_last_output(monkeypatch):
     """_timed_once captures the last output of the timed path so the
     caller can re-derive correctness on it (P1-1)."""
+
+    try:
+        import torch  # noqa: F401
+    except ImportError:
+        pytest.skip("needs importable vendor torch (host-only CI lacks it)")
     import src.xpu.runner as runner_mod
     import run_semantic_matrix as sm
 

@@ -433,6 +433,11 @@ def test_wp2_closure_domain_exact_entries_select_and_deploy():
     """WP2: every frozen closure cell is served by an exact semantic
     entry whose select() -> plan_fft() deployment matches the entry's
     recorded runner (declared -> entry -> plan -> deployed chain)."""
+
+    try:
+        import torch  # noqa: F401
+    except ImportError:
+        pytest.skip("needs importable vendor torch (host-only CI lacks it)")
     from src.xpu.entry import plan_fft
     from src.xpu.selector import load_table, select
     import src.xpu.runner as runner_mod
@@ -587,6 +592,11 @@ def test_wp4_phase_oracle_mode_override():
     """tune-p measures the full legal unit set (P axis, round 1);
     tune-a re-blocks the deployed winner (A axis, round 2); other
     phases follow the protocol default."""
+
+    try:
+        import torch  # noqa: F401
+    except ImportError:
+        pytest.skip("needs importable vendor torch (host-only CI lacks it)")
     import run_issue9 as ri
 
     assert ri.phase_oracle_mode(CFG, "tune-p") == "full"

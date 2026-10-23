@@ -1,0 +1,17 @@
+cell N=256 B=1 done (5 rows)
+cell N=256 B=16 done (15 rows)
+cell N=256 B=64 done (20 rows)
+cell N=256 B=256 done (25 rows)
+cell N=1024 B=1 done (30 rows)
+cell N=1024 B=16 done (40 rows)
+cell N=1024 B=64 done (45 rows)
+cell N=1024 B=256 done (50 rows)
+cell N=2048 B=1 done (55 rows)
+cell N=2048 B=16 done (65 rows)
+cell N=2048 B=64 done (70 rows)
+cell N=2048 B=256 done (75 rows)
+perf: written
+
+--- STDERR ---
+XCCL /root/miniconda/envs/python310_torch29_cuda/lib/python3.10/site-packages/torch_xmlir/xccl//so/libbkcl.so loaded
+[35mSYMBOL_REWRITE [0m[32mtorch success[0m

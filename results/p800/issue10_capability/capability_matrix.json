@@ -1,7 +1,7 @@
 {
   "schema": "issue10-capability-matrix-v1",
   "issue": "kunlunxin-fft#10",
-  "created_utc": "2026-10-21T07:24:52Z",
+  "created_utc": "2026-10-21T15:53:28Z",
   "wp0_hash": "e1df07ac3aba3fe409daa257b8f4bb8c6be3abd0e204ce416f808cbb6c1e5221",
   "policy": {
     "statuses": [
@@ -15,7 +15,7 @@
     "no_op_guard": "sentinel -98765.4321 prefill on every output + xpu_context around every launch"
   },
   "probe_script": "scripts/issue10_wp1_capability.py",
-  "probe_script_sha256": "feb5b29633fcbce70b8c2d853e049af47817f54bc2f29c70ac6230f67778c36f",
+  "probe_script_sha256": "0ac29858eab5d71bdf1ecb25a4d1137ce80c0f6c89bb94ddeeefb325c86bca93",
   "entries": [
     {
       "checks": [
@@ -60,7 +60,7 @@
       "status": "PASS",
       "log": "results/p800/issue10_capability/wp1_probes/logs/load_store.log",
       "rc": 0,
-      "elapsed_s": 9.4
+      "elapsed_s": 9.7
     },
     {
       "checks": [
@@ -97,7 +97,7 @@
       "status": "PASS",
       "log": "results/p800/issue10_capability/wp1_probes/logs/layout.log",
       "rc": 0,
-      "elapsed_s": 9.3
+      "elapsed_s": 9.9
     },
     {
       "checks": [
@@ -120,7 +120,7 @@
           "status": "PASS"
         },
         {
-          "detail": "max_err=2.384185791015625e-07",
+          "detail": "max_err=4.76837158203125e-07",
           "id": "complex_sim_f32_soa",
           "next_step": "",
           "status": "PASS"
@@ -148,12 +148,12 @@
       "status": "PASS",
       "log": "results/p800/issue10_capability/wp1_probes/logs/dtype.log",
       "rc": 0,
-      "elapsed_s": 9.5
+      "elapsed_s": 10.3
     },
     {
       "checks": [
         {
-          "detail": "tl.dot max_err_vs_fp64_truth=0.027746065332109993; device torch.matmul max_err=1.1877009949756712e-05 -- tl.dot uses reduced-precision accumulation while the vendor BLAS path does not (dedicated matrix path with sub-fp32 accumulator likely)",
+          "detail": "tl.dot max_err_vs_fp64_truth=0.02468021928220665; device torch.matmul max_err=1.0546042702230807e-05 -- tl.dot uses reduced-precision accumulation while the vendor BLAS path does not (dedicated matrix path with sub-fp32 accumulator likely)",
           "id": "dot_fp32",
           "next_step": "confirm accumulator width (fp16/bf16/tf32-like) from vendor matrix-unit docs; dense-dot P core only legal under the documented precision",
           "status": "UNKNOWN"
@@ -179,7 +179,7 @@
       "status": "UNKNOWN",
       "log": "results/p800/issue10_capability/wp1_probes/logs/tl_dot.log",
       "rc": 0,
-      "elapsed_s": 9.3
+      "elapsed_s": 9.6
     },
     {
       "checks": [
@@ -212,7 +212,7 @@
       "status": "FAIL",
       "log": "results/p800/issue10_capability/wp1_probes/logs/local_storage.log",
       "rc": 0,
-      "elapsed_s": 9.2
+      "elapsed_s": 9.6
     },
     {
       "checks": [
@@ -243,7 +243,7 @@
       "status": "FAIL",
       "log": "results/p800/issue10_capability/wp1_probes/logs/async_copy.log",
       "rc": 0,
-      "elapsed_s": 9.4
+      "elapsed_s": 9.1
     },
     {
       "checks": [
@@ -276,7 +276,7 @@
       "status": "PASS",
       "log": "results/p800/issue10_capability/wp1_probes/logs/sync.log",
       "rc": 0,
-      "elapsed_s": 9.3
+      "elapsed_s": 9.9
     },
     {
       "checks": [
@@ -315,19 +315,40 @@
       "status": "PASS",
       "log": "results/p800/issue10_capability/wp1_probes/logs/persistent.log",
       "rc": 0,
-      "elapsed_s": 10.4
+      "elapsed_s": 9.6
     },
     {
       "checks": [
         {
-          "detail": "libdevice.exp2 lowers and matches torch.exp2 (max_err=4.76837158203125e-07)",
-          "id": "vendor_intrinsic_libdevice",
+          "detail": "triton->torch.fft->triton sequencing correct (max_err_vs_fp64_truth=1.8540289447699365e-05)",
+          "id": "host_vendor_interop",
           "next_step": "",
           "status": "PASS"
         },
         {
-          "detail": "triton->torch.fft->triton sequencing correct (max_err_vs_fp64_truth=2.592048389438162e-05)",
-          "id": "host_vendor_interop",
+          "detail": "vendor torch.fft.fft on device complex64 rank-1 (axis=-1 contract) rel_err=3.57e-07",
+          "id": "vendor_fft_dispatch",
+          "next_step": "",
+          "status": "PASS"
+        }
+      ],
+      "notes": [
+        "host-level vendor delegate only: proves API/dispatch usability, NOT device-side core embedding"
+      ],
+      "probe": "external_host_delegate",
+      "question": "\u5916\u90e8\u5bbf\u4e3b delegate\uff1avendor FFT API / host dispatch \u53ef\u8c03\u7528\uff08\u7f16\u6392\u5c42\uff0c\u975e\u8bbe\u5907\u4fa7\u6838\u5fc3\u5d4c\u5165\uff09",
+      "repro_script": "scripts/issue10_wp1_capability.py",
+      "repro_source": "def p_external_host_delegate() -> dict:\n    \"\"\"Host-level vendor delegate: vendor FFT API callable from the\n    orchestration surface (NOT proof of embedding a device-local core).\"\"\"\n    ch = []\n    # host-side interop: triton kernel -> vendor op -> triton kernel\n    x = torch.randn(128, device=\"cuda\")\n    y = torch.full((128,), SENTINEL, device=\"cuda\")\n    z = torch.full((128,), SENTINEL, device=\"cuda\")\n    _launch(k_scale2, 1, x, y, 128, BLOCK=128)\n    y2 = torch.fft.fft(y)\n    _launch(k_scale2, 1, y2.real.contiguous(), z, 128, BLOCK=128)\n    # ground truth for the whole sequence on the host (fp64)\n    xh = x.cpu().double()\n    z_ref = (torch.fft.fft(xh * 2.0).real * 2.0)\n    err = float((z.cpu().double() - z_ref).abs().max())\n    ch.append(_check(\"host_vendor_interop\", err <= 1e-3,\n                     f\"triton->torch.fft->triton sequencing correct \"\n                     f\"(max_err_vs_fp64_truth={err})\"))\n    # explicit vendor fft dispatch contract: complex64 device tensor,\n    # default axis=-1 last-dim semantics (see wp3_blockmax vendor_fft_dim:\n    # non-trailing dims are silently wrong -> callers must transpose)\n    v = torch.randn(256, device=\"cuda\")\n    xc = torch.complex(v, torch.zeros_like(v))\n    yv = torch.fft.fft(xc)\n    ref = np.fft.fft(v.cpu().numpy().astype(np.complex128))\n    derr = float(np.abs(yv.cpu().numpy() - ref).max()\n                  / max(float(np.abs(ref).max()), 1e-30))\n    ch.append(_check(\"vendor_fft_dispatch\", derr <= 1e-5\n                     and yv.shape == xc.shape,\n                     f\"vendor torch.fft.fft on device complex64 rank-1 \"\n                     f\"(axis=-1 contract) rel_err={derr:.2e}\"))\n    return {\"checks\": ch,\n            \"notes\": [\"host-level vendor delegate only: proves API/\"\n                      \"dispatch usability, NOT device-side core embedding\"]}\n",
+      "status": "PASS",
+      "log": "results/p800/issue10_capability/wp1_probes/logs/external_host_delegate.log",
+      "rc": 0,
+      "elapsed_s": 9.0
+    },
+    {
+      "checks": [
+        {
+          "detail": "libdevice.exp2 lowers and matches torch.exp2 (max_err=4.76837158203125e-07) -- scalar math intrinsic only, does NOT prove a device-local processing unit",
+          "id": "vendor_intrinsic_libdevice",
           "next_step": "",
           "status": "PASS"
         },
@@ -342,19 +363,25 @@
           "id": "precompiled_so_link",
           "next_step": "compile a kernel referencing an extern symbol once an SDK .so sample is provided",
           "status": "FAIL"
+        },
+        {
+          "detail": "no proven route to embed a device-local processing unit (FFT core) into device code or a role/resident subgraph: inline asm unverified (UNKNOWN), precompiled .so link unsupported (FAIL); host torch.fft is an orchestration-level delegate, not a device-local core",
+          "id": "device_role_local_fft_core",
+          "next_step": "SDK/XTDK route: device-linkable vendor FFT object or documented inline-asm kernel sample",
+          "status": "FAIL"
         }
       ],
       "notes": [
-        "host-adjacent vendor ops are orchestration-level interop, NOT an in-kernel vendor core"
+        "device-side core embedding is NOT established by the host vendor delegate PASS (split per issue #10 review)"
       ],
-      "probe": "external_core",
-      "question": "\u5916\u90e8\u6838\u5fc3\uff1aTriton \u8c03\u7528 vendor intrinsic / \u9884\u7f16\u8bd1 kernel / SDK .so",
+      "probe": "device_local_processing_unit",
+      "question": "\u8bbe\u5907\u4fa7\u5904\u7406\u5355\u5143\uff1ainline intrinsic / \u9884\u7f16\u8bd1 device core / role-local FFT core \u53ef\u5d4c\u5165\u8bbe\u5907\u4ee3\u7801",
       "repro_script": "scripts/issue10_wp1_capability.py",
-      "repro_source": "def p_external_core() -> dict:\n    ch = []\n    # vendor intrinsic from inside a Triton kernel (libdevice surface)\n    x = torch.randn(128, device=\"cuda\")\n    out = torch.full((128,), SENTINEL, device=\"cuda\")\n    _launch(k_libdevice, 1, x, out, 128, BLOCK=128)\n    ref = torch.exp2(x)\n    err = float((out - ref).abs().max())\n    ch.append(_check(\"vendor_intrinsic_libdevice\", err < 1e-4\n                     and _sentinel_changed(out),\n                     f\"libdevice.exp2 lowers and matches torch.exp2 \"\n                     f\"(max_err={err})\"))\n    # host-side interop: triton kernel -> vendor op -> triton kernel\n    y = torch.full((128,), SENTINEL, device=\"cuda\")\n    z = torch.full((128,), SENTINEL, device=\"cuda\")\n    _launch(k_scale2, 1, x, y, 128, BLOCK=128)\n    y2 = torch.fft.fft(y)\n    _launch(k_scale2, 1, y2.real.contiguous(), z, 128, BLOCK=128)\n    # ground truth for the whole sequence on the host (fp64)\n    xh = x.cpu().double()\n    z_ref = (torch.fft.fft(xh * 2.0).real * 2.0)\n    err = float((z.cpu().double() - z_ref).abs().max())\n    ch.append(_check(\"host_vendor_interop\", err <= 1e-3,\n                     f\"triton->torch.fft->triton sequencing correct \"\n                     f\"(max_err_vs_fp64_truth={err})\"))\n    # inline asm: no verified XPU syntax sample -> UNKNOWN (no blind try)\n    has_asm = hasattr(tl, \"inline_asm_elementwise\")\n    ch.append(_check(\n        \"inline_asm_xpu\", has_asm,\n        f\"tl.inline_asm_elementwise present={has_asm}, but no verified \"\n        \"XPU assembly syntax sample exists in this repo; blind attempt \"\n        \"could corrupt the compiler state\", status=\"UNKNOWN\",\n        next_step=\"obtain a legal XTDK inline-asm sample from vendor \"\n                  \"docs, then run an asm axpy probe\"))\n    # precompiled .so / extern lib linkage from the Python surface\n    try:\n        import triton.compiler as tc\n        src = str(inspect.signature(tc.compile)) if hasattr(\n            tc, \"compile\") else \"\"\n        has_extern = \"extern\" in src\n    except Exception:  # noqa: BLE001\n        has_extern = False\n    ch.append(_check(\n        \"precompiled_so_link\", has_extern,\n        f\"triton.compile signature extern-libs support: {has_extern}; no \"\n        \"verified SDK .so linkage sample for the XPU backend this round\",\n        status=\"UNKNOWN\" if has_extern else \"FAIL\",\n        next_step=\"compile a kernel referencing an extern symbol once an \"\n                  \"SDK .so sample is provided\"))\n    return {\"checks\": ch,\n            \"notes\": [\"host-adjacent vendor ops are orchestration-level \"\n                      \"interop, NOT an in-kernel vendor core\"]}\n",
-      "status": "PASS",
-      "log": "results/p800/issue10_capability/wp1_probes/logs/external_core.log",
+      "repro_source": "def p_device_local_processing_unit() -> dict:\n    \"\"\"Device-local processing unit: embed an inline intrinsic /\n    precompiled device core / role-local FFT core into device code.\"\"\"\n    ch = []\n    # inline math intrinsic (works) -- sub-evidence only: a scalar math\n    # intrinsic is not a processing unit (FFT core)\n    x = torch.randn(128, device=\"cuda\")\n    out = torch.full((128,), SENTINEL, device=\"cuda\")\n    _launch(k_libdevice, 1, x, out, 128, BLOCK=128)\n    ref = torch.exp2(x)\n    err = float((out - ref).abs().max())\n    ch.append(_check(\"vendor_intrinsic_libdevice\", err < 1e-4\n                     and _sentinel_changed(out),\n                     f\"libdevice.exp2 lowers and matches torch.exp2 \"\n                     f\"(max_err={err}) -- scalar math intrinsic only, \"\n                     f\"does NOT prove a device-local processing unit\"))\n    # inline asm: no verified XPU syntax sample -> UNKNOWN (no blind try)\n    has_asm = hasattr(tl, \"inline_asm_elementwise\")\n    ch.append(_check(\n        \"inline_asm_xpu\", has_asm,\n        f\"tl.inline_asm_elementwise present={has_asm}, but no verified \"\n        \"XPU assembly syntax sample exists in this repo; blind attempt \"\n        \"could corrupt the compiler state\", status=\"UNKNOWN\",\n        next_step=\"obtain a legal XTDK inline-asm sample from vendor \"\n                  \"docs, then run an asm axpy probe\"))\n    # precompiled .so / extern lib linkage from the Python surface\n    try:\n        import triton.compiler as tc\n        src = str(inspect.signature(tc.compile)) if hasattr(\n            tc, \"compile\") else \"\"\n        has_extern = \"extern\" in src\n    except Exception:  # noqa: BLE001\n        has_extern = False\n    ch.append(_check(\n        \"precompiled_so_link\", has_extern,\n        f\"triton.compile signature extern-libs support: {has_extern}; no \"\n        \"verified SDK .so linkage sample for the XPU backend this round\",\n        status=\"UNKNOWN\" if has_extern else \"FAIL\",\n        next_step=\"compile a kernel referencing an extern symbol once an \"\n                  \"SDK .so sample is provided\"))\n    # the capability the issue asks about, stated directly\n    ch.append(_check(\n        \"device_role_local_fft_core\", False,\n        \"no proven route to embed a device-local processing unit (FFT \"\n        \"core) into device code or a role/resident subgraph: inline asm \"\n        \"unverified (UNKNOWN), precompiled .so link unsupported (FAIL); \"\n        \"host torch.fft is an orchestration-level delegate, not a \"\n        \"device-local core\", status=\"FAIL\",\n        next_step=\"SDK/XTDK route: device-linkable vendor FFT object or \"\n                  \"documented inline-asm kernel sample\"))\n    return {\"checks\": ch,\n            \"notes\": [\"device-side core embedding is NOT established by \"\n                      \"the host vendor delegate PASS (split per issue #10 \"\n                      \"review)\"]}\n",
+      "status": "FAIL",
+      "log": "results/p800/issue10_capability/wp1_probes/logs/device_local_processing_unit.log",
       "rc": 0,
-      "elapsed_s": 9.7
+      "elapsed_s": 9.3
     },
     {
       "checks": [
@@ -385,13 +412,13 @@
       "status": "PASS",
       "log": "results/p800/issue10_capability/wp1_probes/logs/resource_query.log",
       "rc": 0,
-      "elapsed_s": 9.4
+      "elapsed_s": 9.0
     }
   ],
   "totals": {
     "PASS": 7,
-    "FAIL": 2,
+    "FAIL": 3,
     "UNKNOWN": 1
   },
-  "elapsed_s": 94.8
+  "elapsed_s": 105.3
 }

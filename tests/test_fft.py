@@ -540,6 +540,28 @@ def test_run_fft_rank2_col1_semantics():
     assert err < 1e-4
 
 
+def test_run_fft_batched_rank2_semantics():
+    """(B, N) rank-2 input runs the batched entry contract end-to-end
+    and matches numpy per row.
+
+    issue #10 PR #12 round-3 review: declares/tests the batched
+    run_fft path so B>1 holdout rows can be cited as entry-level
+    contract evidence (the public validate_input helper remains the
+    1-D single-length contract).
+    """
+    from src.xpu.entry import run_fft
+    from src.xpu.config import DeviceProfile
+    b, n = 16, 64
+    x = torch.complex(torch.randn(b, n), torch.randn(b, n)).cuda()
+    ref = np.fft.fft(x.cpu().numpy(), axis=-1)
+    y, report = run_fft(x, "dit", profile_hash=DeviceProfile.load().hash())
+    assert tuple(y.shape) == (b, n)
+    assert report.batch == b and report.n == n
+    err = float(np.abs(y.cpu().numpy() - ref).max()
+                / max(np.abs(ref).max(), 1e-12))
+    assert err < 1e-4
+
+
 def test_run_fft_rejects_dtype_mismatch():
     from src.xpu.entry import run_fft
     x = torch.randn(64, dtype=torch.float32).cuda()

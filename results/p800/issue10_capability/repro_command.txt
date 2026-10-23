@@ -1,0 +1,47 @@
+issue #10 reproduction commands (P800, single card, from repo root)
+
+# runtime: conda env python310_torch29_cuda (torch 2.9 + torch_xmlir,
+# triton 3.0.0 XPU fork), Kunlunxin P800; see environment.json
+export CUDA_VISIBLE_DEVICES=2
+
+# WP0/WP1 capability matrix (writes wp0_environment.json,
+# capability_matrix.json, wp1_probes/)
+python3 scripts/issue10_wp0_env.py
+python3 scripts/issue10_wp1_capability.py
+
+# WP2 mini-kernel gates (writes wp2_*.json, wp2_logs/)
+python3 scripts/issue10_wp2_minikernels.py
+
+# WP3 blockmax + perf + go/no-go (writes wp3_blockmax.json,
+# wp3_raw.csv, wp3_summary.json, wp3_gonogo.json, wp3_logs/)
+python3 scripts/issue10_wp3_perf.py --step all
+
+# WP3 cupti profile + chrome traces (writes wp3_profile.json, wp3_trace/)
+XPU_ENABLE_PROFILER_TRACING=1 XPU_CUPTI_ENABLE_DEVICE=0 python3 scripts/issue10_wp3_profile.py
+
+# stale-read root-cause matrix (writes stale_read_matrix.json;
+# 2 independent sessions, fresh TRITON_CACHE_DIR each)
+python3 scripts/issue10_stale_read_matrix.py
+
+# performance holdout (writes wp3_holdout.json + selector_diff.json;
+# 16 cells x 5 paths [vendor, hybrid_vendor_p, hybrid_fused_p,
+# incumbent_entry (profile-bound), m0_reference] x 2 independent
+# sessions; one subprocess per cell/path/session with fresh
+# TRITON_CACHE_DIR, itemized context/setup/probe/first_call/steady
+# segments, complex64 non-zero-imag input, b==1 measured as the same
+# rank-1 (N,) entry contract on all five paths, independent
+# bootstrap CI)
+python3 scripts/issue10_wp3_holdout.py
+
+# twiddle ablation (writes wp3_ablation.json; 5 implementations x
+# 10 cells x 2 sessions)
+python3 scripts/issue10_wp3_ablation.py
+
+# package: logs/ + environment.json + repro_command.txt + manifest.json
+# + SHA256SUMS  (RUN LAST, AFTER the producer scripts are committed:
+# manifest.json records evidence_source_commit = HEAD and per-producer
+# git blob shas; the packaging commit is its child — see manifest note)
+python3 scripts/issue10_pack_artifacts.py
+
+# verify
+sha256sum -c SHA256SUMS

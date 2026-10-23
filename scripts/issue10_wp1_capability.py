@@ -43,6 +43,7 @@ from pathlib import Path
 # Import order matters (see issue10_wp0_env): torch + torch_xmlir first.
 import torch  # noqa: E402,F401
 import torch_xmlir  # noqa: E402,F401
+import numpy as np  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -764,19 +765,12 @@ def p_persistent() -> dict:
                       "multiple independent packets sequentially"]}
 
 
-def p_external_core() -> dict:
+def p_external_host_delegate() -> dict:
+    """Host-level vendor delegate: vendor FFT API callable from the
+    orchestration surface (NOT proof of embedding a device-local core)."""
     ch = []
-    # vendor intrinsic from inside a Triton kernel (libdevice surface)
-    x = torch.randn(128, device="cuda")
-    out = torch.full((128,), SENTINEL, device="cuda")
-    _launch(k_libdevice, 1, x, out, 128, BLOCK=128)
-    ref = torch.exp2(x)
-    err = float((out - ref).abs().max())
-    ch.append(_check("vendor_intrinsic_libdevice", err < 1e-4
-                     and _sentinel_changed(out),
-                     f"libdevice.exp2 lowers and matches torch.exp2 "
-                     f"(max_err={err})"))
     # host-side interop: triton kernel -> vendor op -> triton kernel
+    x = torch.randn(128, device="cuda")
     y = torch.full((128,), SENTINEL, device="cuda")
     z = torch.full((128,), SENTINEL, device="cuda")
     _launch(k_scale2, 1, x, y, 128, BLOCK=128)
@@ -789,6 +783,40 @@ def p_external_core() -> dict:
     ch.append(_check("host_vendor_interop", err <= 1e-3,
                      f"triton->torch.fft->triton sequencing correct "
                      f"(max_err_vs_fp64_truth={err})"))
+    # explicit vendor fft dispatch contract: complex64 device tensor,
+    # default axis=-1 last-dim semantics (see wp3_blockmax vendor_fft_dim:
+    # non-trailing dims are silently wrong -> callers must transpose)
+    v = torch.randn(256, device="cuda")
+    xc = torch.complex(v, torch.zeros_like(v))
+    yv = torch.fft.fft(xc)
+    ref = np.fft.fft(v.cpu().numpy().astype(np.complex128))
+    derr = float(np.abs(yv.cpu().numpy() - ref).max()
+                  / max(float(np.abs(ref).max()), 1e-30))
+    ch.append(_check("vendor_fft_dispatch", derr <= 1e-5
+                     and yv.shape == xc.shape,
+                     f"vendor torch.fft.fft on device complex64 rank-1 "
+                     f"(axis=-1 contract) rel_err={derr:.2e}"))
+    return {"checks": ch,
+            "notes": ["host-level vendor delegate only: proves API/"
+                      "dispatch usability, NOT device-side core embedding"]}
+
+
+def p_device_local_processing_unit() -> dict:
+    """Device-local processing unit: embed an inline intrinsic /
+    precompiled device core / role-local FFT core into device code."""
+    ch = []
+    # inline math intrinsic (works) -- sub-evidence only: a scalar math
+    # intrinsic is not a processing unit (FFT core)
+    x = torch.randn(128, device="cuda")
+    out = torch.full((128,), SENTINEL, device="cuda")
+    _launch(k_libdevice, 1, x, out, 128, BLOCK=128)
+    ref = torch.exp2(x)
+    err = float((out - ref).abs().max())
+    ch.append(_check("vendor_intrinsic_libdevice", err < 1e-4
+                     and _sentinel_changed(out),
+                     f"libdevice.exp2 lowers and matches torch.exp2 "
+                     f"(max_err={err}) -- scalar math intrinsic only, "
+                     f"does NOT prove a device-local processing unit"))
     # inline asm: no verified XPU syntax sample -> UNKNOWN (no blind try)
     has_asm = hasattr(tl, "inline_asm_elementwise")
     ch.append(_check(
@@ -813,9 +841,20 @@ def p_external_core() -> dict:
         status="UNKNOWN" if has_extern else "FAIL",
         next_step="compile a kernel referencing an extern symbol once an "
                   "SDK .so sample is provided"))
+    # the capability the issue asks about, stated directly
+    ch.append(_check(
+        "device_role_local_fft_core", False,
+        "no proven route to embed a device-local processing unit (FFT "
+        "core) into device code or a role/resident subgraph: inline asm "
+        "unverified (UNKNOWN), precompiled .so link unsupported (FAIL); "
+        "host torch.fft is an orchestration-level delegate, not a "
+        "device-local core", status="FAIL",
+        next_step="SDK/XTDK route: device-linkable vendor FFT object or "
+                  "documented inline-asm kernel sample"))
     return {"checks": ch,
-            "notes": ["host-adjacent vendor ops are orchestration-level "
-                      "interop, NOT an in-kernel vendor core"]}
+            "notes": ["device-side core embedding is NOT established by "
+                      "the host vendor delegate PASS (split per issue #10 "
+                      "review)"]}
 
 
 def p_resource_query() -> dict:
@@ -912,11 +951,18 @@ PROBES: dict[str, dict] = {
         "required": ["single_program_packet_loop",
                      "grid_launch_persistence", "bounded_loop_exit"],
     },
-    "external_core": {
-        "question": "外部核心：Triton 调用 vendor intrinsic / 预编译 "
-                    "kernel / SDK .so",
-        "fn": p_external_core,
-        "required": ["vendor_intrinsic_libdevice", "host_vendor_interop"],
+    "external_host_delegate": {
+        "question": "外部宿主 delegate：vendor FFT API / host dispatch "
+                    "可调用（编排层，非设备侧核心嵌入）",
+        "fn": p_external_host_delegate,
+        "required": ["host_vendor_interop", "vendor_fft_dispatch"],
+    },
+    "device_local_processing_unit": {
+        "question": "设备侧处理单元：inline intrinsic / 预编译 device "
+                    "core / role-local FFT core 可嵌入设备代码",
+        "fn": p_device_local_processing_unit,
+        "required": ["device_role_local_fft_core",
+                     "precompiled_so_link"],
     },
     "resource_query": {
         "question": "资源查询：grid、寄存器/局部存储、片上容量、"
