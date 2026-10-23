@@ -1,0 +1,52 @@
+{
+  "schema": "issue10-wp2-concurrency-v1",
+  "op_constraints": "op-subset (ops_supported.json): FFT stages cannot slice/index-register values; partner/group values are fetched via address-computed GM loads inside one kernel (in-kernel scratch ping-pong). Constraints: supported = load/store(addr-arithmetic gather), where(same shape), //, %, cos/sin, full sum; unsupported = slice, reg/scalar index, trans, sum(axis), join/split/cat, chained None, python math in jit; reshape passes the frontend but crashes the XPU lowering (GlobalEncodingAttr UNREACHABLE) -> no kernel here uses reshape.  NOTE (stale-read bug): the GM ping-pong pattern is unreliable: store->permuted-load from the same buffer returns stale values at grid>1 (this WP) and \u2014 per WP3's size sweep \u2014 also at grid=1 for n=32/64; see wp2_concurrency.json and wp3_blockmax.json.  The scalar codegen kernel sidesteps the whole op-subset: unrolling happens in python, the jit body is pure scalar load/compute/store.",
+  "stale_read_probe": {
+    "pattern": "store S0[p] <- x*2 ; load S0[p^1] ; store ORE",
+    "sentinel": -98765.4321,
+    "grid1": {
+      "grid": 1,
+      "trials": 6,
+      "total_lanes": 96,
+      "stale_sentinel_lanes": 0,
+      "wrong_lanes": 0,
+      "clean": true
+    },
+    "grid8": {
+      "grid": 8,
+      "trials": 6,
+      "total_lanes": 768,
+      "stale_sentinel_lanes": 50,
+      "wrong_lanes": 50,
+      "clean": false
+    },
+    "bug_confirmed": true,
+    "classification": "HARDWARE/COMPILER BUG (store->permuted-load stale read at grid>1): sporadic pre-store values returned by gather loads after an earlier store to the same buffer; contiguous store->load and gather-without-store unaffected; tl.debug_barrier does not fix; grid=1 clean"
+  },
+  "scalar_concurrent_fft": {
+    "kernel": "make_scalar_rad2 (fully-unrolled in-register DIT)",
+    "cases": [
+      {
+        "grid": 8,
+        "n": 16,
+        "per_packet_max_rel_err": 7.007141669222965e-08,
+        "pass": true
+      },
+      {
+        "grid": 8,
+        "n": 8,
+        "per_packet_max_rel_err": 6.295000164338813e-08,
+        "pass": true
+      },
+      {
+        "grid": 16,
+        "n": 16,
+        "per_packet_max_rel_err": 6.414630430415486e-08,
+        "pass": true
+      }
+    ],
+    "all_pass": true,
+    "why_it_works": "no GM store->load roundtrip: input loads hit a buffer this kernel never stores; butterflies are scalar register ops; output is a final store"
+  },
+  "all_pass": true
+}

@@ -1,0 +1,57 @@
+{
+  "schema": "issue10-wp2-radix4-v1",
+  "op_constraints": "op-subset (ops_supported.json): FFT stages cannot slice/index-register values; partner/group values are fetched via address-computed GM loads inside one kernel (in-kernel scratch ping-pong). Constraints: supported = load/store(addr-arithmetic gather), where(same shape), //, %, cos/sin, full sum; unsupported = slice, reg/scalar index, trans, sum(axis), join/split/cat, chained None, python math in jit; reshape passes the frontend but crashes the XPU lowering (GlobalEncodingAttr UNREACHABLE) -> no kernel here uses reshape.  NOTE (stale-read bug): the GM ping-pong pattern is unreliable: store->permuted-load from the same buffer returns stale values at grid>1 (this WP) and \u2014 per WP3's size sweep \u2014 also at grid=1 for n=32/64; see wp2_concurrency.json and wp3_blockmax.json.  The scalar codegen kernel sidesteps the whole op-subset: unrolling happens in python, the jit body is pure scalar load/compute/store.",
+  "cases": [
+    {
+      "probe": "radix4_pure_n16",
+      "ownership": "grid=1 program owns the packet; stage results live in registers then materialize to one scratch buffer (stage0) before the addressed second stage load",
+      "local_live_data_range": "register accumulator 2x32B; GM scratch S0 2x32B",
+      "required_global_boundaries": [
+        "input RE/IM (digit-reversed addressed loads)",
+        "scratch S0 (stage0 materialization)",
+        "output ORE/OIM"
+      ],
+      "synchronization_scope": "single program, program-order memory ops; no barrier",
+      "expected_launch_count": 1,
+      "expected_gm_bytes": {
+        "per_packet_bytes": 1280,
+        "formula": "(4 terms x2 comp + 4 terms x2 comp)*N*4 + 2 stores*2*N*4"
+      },
+      "latency_ms": 0.016682155546732247,
+      "rel_err": 3.206978487669708e-08,
+      "pass": true,
+      "n": 16,
+      "algorithm": {
+        "stage0": "4 contiguous 4-pt DFTs over rev4-loaded groups",
+        "stage1": "twiddle W16^(t*j) + 4-pt combine W4^(k*t)",
+        "digit_reversal": "i=a+4b -> b+4a (in-kernel //,% addressing)"
+      }
+    },
+    {
+      "probe": "radix4_mixed_n8",
+      "ownership": "grid=1 program owns the packet; stage results live in registers then materialize to one scratch buffer (stage0) before the addressed second stage load",
+      "local_live_data_range": "register accumulator 2x16B; GM scratch S0 2x16B",
+      "required_global_boundaries": [
+        "input RE/IM (digit-reversed addressed loads)",
+        "scratch S0 (stage0 materialization)",
+        "output ORE/OIM"
+      ],
+      "synchronization_scope": "single program, program-order memory ops; no barrier",
+      "expected_launch_count": 1,
+      "expected_gm_bytes": {
+        "per_packet_bytes": 448,
+        "formula": "(4 terms x2 comp)*N*4 + S0 store + partner load + final store"
+      },
+      "latency_ms": 0.015944202459650114,
+      "rel_err": 4.2592431177673886e-08,
+      "pass": true,
+      "n": 8,
+      "algorithm": {
+        "stage0": "2 contiguous 4-pt DFTs over rev42 perm (i -> (i//4)+2*(i%4))",
+        "stage1": "radix-2 combine m=4, twiddle W8^(p%4)",
+        "note": "N=8 = 4x2 mixed radix (single radix-4 stage + radix-2 tail)"
+      }
+    }
+  ],
+  "all_pass": true
+}

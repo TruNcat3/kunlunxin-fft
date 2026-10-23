@@ -1,0 +1,98 @@
+{
+  "schema": "issue10-wp3-blockmax-v1",
+  "probes": [
+    {
+      "block": 16,
+      "status": "PASS",
+      "correct": true
+    },
+    {
+      "block": 64,
+      "status": "PASS",
+      "correct": true
+    },
+    {
+      "block": 256,
+      "status": "PASS",
+      "correct": true
+    },
+    {
+      "block": 512,
+      "status": "PASS",
+      "correct": true
+    },
+    {
+      "block": 1024,
+      "status": "PASS",
+      "correct": true
+    },
+    {
+      "block": 2048,
+      "status": "PASS",
+      "correct": true
+    },
+    {
+      "block": 4096,
+      "status": "PASS",
+      "correct": true
+    }
+  ],
+  "max_block_pass": 4096,
+  "vendor_fft_dtypes": {
+    "fp32": "PASS",
+    "fp16": "FAIL: RuntimeError",
+    "bf16": "FAIL: RuntimeError"
+  },
+  "dtype_axis": "fp32 only (fp16/bf16 vendor FFT not implemented)",
+  "vendor_fft_dim": {
+    "dim0_is_actually_last_axis": true,
+    "dim1_err_vs_numpy": 2.384185791015625e-07,
+    "finding": "vendor torch.fft.fft transforms only the LAST dim: dim=0 silently computes axis=-1 -> callers must transpose non-trailing dims into last position"
+  },
+  "stale_sweep": {
+    "pattern": "store S0[p] <- x*2; load S0[p^1] (WP2 k_probe_store_gather)",
+    "grid1_by_n": [
+      {
+        "n": 16,
+        "grid": 1,
+        "trials": 8,
+        "stale_lanes": 0,
+        "total_lanes": 128,
+        "clean": true
+      },
+      {
+        "n": 32,
+        "grid": 1,
+        "trials": 8,
+        "stale_lanes": 12,
+        "total_lanes": 256,
+        "clean": false
+      },
+      {
+        "n": 64,
+        "grid": 1,
+        "trials": 8,
+        "stale_lanes": 52,
+        "total_lanes": 512,
+        "clean": false
+      },
+      {
+        "n": 128,
+        "grid": 1,
+        "trials": 8,
+        "stale_lanes": 0,
+        "total_lanes": 1024,
+        "clean": true
+      },
+      {
+        "n": 256,
+        "grid": 1,
+        "trials": 8,
+        "stale_lanes": 0,
+        "total_lanes": 2048,
+        "clean": true
+      }
+    ],
+    "finding": "in-kernel store->permuted-load is stale-read-unreliable even at grid=1 for n=32/64; small-n (16) and larger-n (128/256) were clean in this sweep but the tile kernel still corrupted at n=128 and crashed at n=256 (multi-roundtrip compounding / compiler limits) -> scratch ping-pong is not a legal general lowering; all WP3 Triton paths use cross-launch handoff only"
+  }
+}

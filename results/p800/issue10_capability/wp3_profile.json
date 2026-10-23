@@ -1,0 +1,406 @@
+{
+  "schema": "issue10-wp3-profile-v1",
+  "env": {
+    "XPU_ENABLE_PROFILER_TRACING": "1",
+    "XPU_CUPTI_ENABLE_DEVICE": "0",
+    "activities": [
+      "CPU",
+      "CUDA (cupti via xpu runtime)"
+    ]
+  },
+  "note": "device time from cupti kernel events; launch overhead from cudaLaunchKernel self CPU time; wall_ms_per_iter includes profiling overhead -- use wp3_summary.json p50 for latency",
+  "cells": {
+    "1024x64": {
+      "vendor": {
+        "wall_ms_per_iter": 31.983,
+        "launches": "vendor-internal",
+        "breakdown_ms_per_iter": {
+          "vendor_fft_kernel": 0.2297,
+          "host_other_cpu_us": 0.0232,
+          "launch_cpu_us": 0.0055,
+          "host_layout_copy_cpu_us": 0.0049,
+          "host_elementwise_cpu_us": 0.0037
+        },
+        "top_ops": [
+          {
+            "op": "void xpukernel_xpu3::FFT1024<float, 0, 1, 1>(float const*, float*, int, int, int, float)",
+            "count": 10,
+            "dev_us_total": 2297.3,
+            "dev_us_per": 229.7,
+            "cpu_us_per": 0.0
+          },
+          {
+            "op": "aten::fft_fft",
+            "count": 10,
+            "dev_us_total": 0,
+            "dev_us_per": 0.0,
+            "cpu_us_per": 17.7
+          },
+          {
+            "op": "cudaLaunchKernel",
+            "count": 10,
+            "dev_us_total": 0,
+            "dev_us_per": 0.0,
+            "cpu_us_per": 5.5
+          },
+          {
+            "op": "aten::real",
+            "count": 10,
+            "dev_us_total": 0,
+            "dev_us_per": 0.0,
+            "cpu_us_per": 2.6
+          },
+          {
+            "op": "aten::view_as_real",
+            "count": 20,
+            "dev_us_total": 0,
+            "dev_us_per": 0.0,
+            "cpu_us_per": 1.8
+          },
+          {
+            "op": "aten::select",
+            "count": 20,
+            "dev_us_total": 0,
+            "dev_us_per": 0.0,
+            "cpu_us_per": 2.8
+          },
+          {
+            "op": "aten::as_strided",
+            "count": 20,
+            "dev_us_total": 0,
+            "dev_us_per": 0.0,
+            "cpu_us_per": 0.6
+          },
+          {
+            "op": "aten::imag",
+            "count": 10,
+            "dev_us_total": 0,
+            "dev_us_per": 0.0,
+            "cpu_us_per": 1.1
+          }
+        ],
+        "status": "OK"
+      },
+      "triton_multipass": {
+        "wall_ms_per_iter": 49.61,
+        "launches": 10,
+        "breakdown_ms_per_iter": {
+          "triton_kernel": 0.9502,
+          "launch_cpu_us": 0.0537
+        },
+        "top_ops": [
+          {
+            "op": "k_stage_dit",
+            "count": 100,
+            "dev_us_total": 9502.1,
+            "dev_us_per": 95.0,
+            "cpu_us_per": 0.0
+          },
+          {
+            "op": "cudaLaunchKernel",
+            "count": 100,
+            "dev_us_total": 0,
+            "dev_us_per": 0.0,
+            "cpu_us_per": 5.4
+          }
+        ],
+        "status": "OK",
+        "trace": "wp3_trace/triton_multipass_1024x64_fwd.json.gz"
+      },
+      "triton_resident_loop": {
+        "wall_ms_per_iter": 42.766,
+        "launches": 10,
+        "breakdown_ms_per_iter": {
+          "triton_kernel": 9.2264,
+          "launch_cpu_us": 0.0566
+        },
+        "top_ops": [
+          {
+            "op": "k_stage_resident",
+            "count": 100,
+            "dev_us_total": 92264.3,
+            "dev_us_per": 922.6,
+            "cpu_us_per": 0.0
+          },
+          {
+            "op": "cudaLaunchKernel",
+            "count": 100,
+            "dev_us_total": 0,
+            "dev_us_per": 0.0,
+            "cpu_us_per": 5.7
+          }
+        ],
+        "status": "OK",
+        "trace": "wp3_trace/triton_resident_loop_1024x64_fwd.json.gz"
+      },
+      "hybrid_vendor_p": {
+        "wall_ms_per_iter": 33.749,
+        "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 triton twiddle + transpose/permute copies",
+        "breakdown_ms_per_iter": {
+          "triton_kernel": 0.6873,
+          "host_other_cpu_us": 0.1037,
+          "vendor_fft_kernel": 0.063,
+          "launch_cpu_us": 0.0619,
+          "host_layout_copy_cpu_us": 0.0316,
+          "host_elementwise_cpu_us": 0.0169
+        },
+        "top_ops": [
+          {
+            "op": "k_twiddle",
+            "count": 10,
+            "dev_us_total": 6380.8,
+            "dev_us_per": 638.1,
+            "cpu_us_per": 0.0
+          },
+          {
+            "op": "void xpukernel_xpu3::FFT32<float, 0, 1, 1>(float const*, float*, int, int, int, float)",
+            "count": 20,
+            "dev_us_total": 629.8,
+            "dev_us_per": 31.5,
+            "cpu_us_per": 0.0
+          },
+          {
+            "op": "void xpukernel_xpu3::transpose_0213_cluster<float>(float const*, float*, long, long, long, long)",
+            "count": 20,
+            "dev_us_total": 240.7,
+            "dev_us_per": 12.0,
+            "cpu_us_per": 0.0
+          },
+          {
+            "op": "void xpukernel_xpu3::transpose_021_sdnn_bsp<float>(float const*, float*, long, long, long)",
+            "count": 20,
+            "dev_us_total": 97.3,
+            "dev_us_per": 4.9,
+            "cpu_us_per": 0.0
+          },
+          {
+            "op": "void xpukernel_xpu3::strided_slice_view_update_one_dim<float>(float const*, float*, long, long, long, long)",
+            "count": 20,
+            "dev_us_total": 88.5,
+            "dev_us_per": 4.4,
+            "cpu_us_per": 0.0
+          },
+          {
+            "op": "xpukernel_xpu3::strided_slice_single_dim_m1_n1_kl3(signed char const*, signed char*, long, long, long, long, long, long, long)",
+            "count": 20,
+            "dev_us_total": 66.0,
+            "dev_us_per": 3.3,
+            "cpu_us_per": 0.0
+          },
+          {
+            "op": "aten::transpose",
+            "count": 20,
+            "dev_us_total": 0,
+            "dev_us_per": 0.0,
+            "cpu_us_per": 3.9
+          },
+          {
+            "op": "aten::as_strided",
+            "count": 90,
+            "dev_us_total": 0,
+            "dev_us_per": 0.0,
+            "cpu_us_per": 0.7
+          }
+        ],
+        "status": "OK",
+        "trace": "wp3_trace/hybrid_vendor_p_1024x64_fwd.json.gz"
+      }
+    },
+    "2048x16": {
+      "vendor": {
+        "wall_ms_per_iter": 47.24,
+        "launches": "vendor-internal",
+        "breakdown_ms_per_iter": {
+          "vendor_fft_kernel": 0.6392,
+          "host_other_cpu_us": 0.0199,
+          "launch_cpu_us": 0.006,
+          "host_layout_copy_cpu_us": 0.0049,
+          "host_elementwise_cpu_us": 0.0031
+        },
+        "top_ops": [
+          {
+            "op": "void xpukernel_xpu3::FFT2048<float, 0, 1, 1>(float const*, float*, int, int, int, float)",
+            "count": 10,
+            "dev_us_total": 6391.6,
+            "dev_us_per": 639.2,
+            "cpu_us_per": 0.0
+          },
+          {
+            "op": "aten::fft_fft",
+            "count": 10,
+            "dev_us_total": 0,
+            "dev_us_per": 0.0,
+            "cpu_us_per": 14.9
+          },
+          {
+            "op": "cudaLaunchKernel",
+            "count": 10,
+            "dev_us_total": 0,
+            "dev_us_per": 0.0,
+            "cpu_us_per": 6.0
+          },
+          {
+            "op": "aten::real",
+            "count": 10,
+            "dev_us_total": 0,
+            "dev_us_per": 0.0,
+            "cpu_us_per": 2.0
+          },
+          {
+            "op": "aten::view_as_real",
+            "count": 20,
+            "dev_us_total": 0,
+            "dev_us_per": 0.0,
+            "cpu_us_per": 1.8
+          },
+          {
+            "op": "aten::select",
+            "count": 20,
+            "dev_us_total": 0,
+            "dev_us_per": 0.0,
+            "cpu_us_per": 2.5
+          },
+          {
+            "op": "aten::as_strided",
+            "count": 20,
+            "dev_us_total": 0,
+            "dev_us_per": 0.0,
+            "cpu_us_per": 0.7
+          },
+          {
+            "op": "aten::imag",
+            "count": 10,
+            "dev_us_total": 0,
+            "dev_us_per": 0.0,
+            "cpu_us_per": 1.1
+          }
+        ],
+        "status": "OK"
+      },
+      "triton_multipass": {
+        "wall_ms_per_iter": 32.232,
+        "launches": 11,
+        "breakdown_ms_per_iter": {
+          "triton_kernel": 0.683,
+          "launch_cpu_us": 0.0576
+        },
+        "top_ops": [
+          {
+            "op": "k_stage_dit",
+            "count": 110,
+            "dev_us_total": 6830.4,
+            "dev_us_per": 62.1,
+            "cpu_us_per": 0.0
+          },
+          {
+            "op": "cudaLaunchKernel",
+            "count": 110,
+            "dev_us_total": 0,
+            "dev_us_per": 0.0,
+            "cpu_us_per": 5.2
+          }
+        ],
+        "status": "OK",
+        "trace": "wp3_trace/triton_multipass_2048x16_fwd.json.gz"
+      },
+      "triton_resident_loop": {
+        "wall_ms_per_iter": 57.237,
+        "launches": 11,
+        "breakdown_ms_per_iter": {
+          "triton_kernel": 4.9207,
+          "launch_cpu_us": 0.0581
+        },
+        "top_ops": [
+          {
+            "op": "k_stage_resident",
+            "count": 110,
+            "dev_us_total": 49207.1,
+            "dev_us_per": 447.3,
+            "cpu_us_per": 0.0
+          },
+          {
+            "op": "cudaLaunchKernel",
+            "count": 110,
+            "dev_us_total": 0,
+            "dev_us_per": 0.0,
+            "cpu_us_per": 5.3
+          }
+        ],
+        "status": "OK",
+        "trace": "wp3_trace/triton_resident_loop_2048x16_fwd.json.gz"
+      },
+      "hybrid_vendor_p": {
+        "wall_ms_per_iter": 44.152,
+        "launches": "2 vendor FFT (last-dim only; r-FFT via transpose pair) + 1 triton twiddle + transpose/permute copies",
+        "breakdown_ms_per_iter": {
+          "triton_kernel": 0.443,
+          "host_other_cpu_us": 0.0939,
+          "launch_cpu_us": 0.0564,
+          "vendor_fft_kernel": 0.038,
+          "host_layout_copy_cpu_us": 0.0296,
+          "host_elementwise_cpu_us": 0.0154
+        },
+        "top_ops": [
+          {
+            "op": "k_twiddle",
+            "count": 10,
+            "dev_us_total": 3947.4,
+            "dev_us_per": 394.7,
+            "cpu_us_per": 0.0
+          },
+          {
+            "op": "void xpukernel_xpu3::transpose_0213_cluster<float>(float const*, float*, long, long, long, long)",
+            "count": 20,
+            "dev_us_total": 228.1,
+            "dev_us_per": 11.4,
+            "cpu_us_per": 0.0
+          },
+          {
+            "op": "void xpukernel_xpu3::FFT64<float, 0, 1, 1>(float const*, float*, int, int, int, float)",
+            "count": 10,
+            "dev_us_total": 203.0,
+            "dev_us_per": 20.3,
+            "cpu_us_per": 0.0
+          },
+          {
+            "op": "void xpukernel_xpu3::FFT32<float, 0, 1, 1>(float const*, float*, int, int, int, float)",
+            "count": 10,
+            "dev_us_total": 177.3,
+            "dev_us_per": 17.7,
+            "cpu_us_per": 0.0
+          },
+          {
+            "op": "void xpukernel_xpu3::transpose_021_sdnn_bsp<float>(float const*, float*, long, long, long)",
+            "count": 20,
+            "dev_us_total": 121.8,
+            "dev_us_per": 6.1,
+            "cpu_us_per": 0.0
+          },
+          {
+            "op": "void xpukernel_xpu3::strided_slice_view_update_one_dim<float>(float const*, float*, long, long, long, long)",
+            "count": 20,
+            "dev_us_total": 74.1,
+            "dev_us_per": 3.7,
+            "cpu_us_per": 0.0
+          },
+          {
+            "op": "xpukernel_xpu3::strided_slice_single_dim_m1_n1_kl3(signed char const*, signed char*, long, long, long, long, long, long, long)",
+            "count": 20,
+            "dev_us_total": 58.8,
+            "dev_us_per": 2.9,
+            "cpu_us_per": 0.0
+          },
+          {
+            "op": "aten::transpose",
+            "count": 20,
+            "dev_us_total": 0,
+            "dev_us_per": 0.0,
+            "cpu_us_per": 3.3
+          }
+        ],
+        "status": "OK",
+        "trace": "wp3_trace/hybrid_vendor_p_2048x16_fwd.json.gz"
+      }
+    }
+  }
+}

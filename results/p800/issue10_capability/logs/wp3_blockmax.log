@@ -1,0 +1,11 @@
+[[31mERROR[0m][XDNN_PYTORCH][/home/agent/xpytorch/workspace/8ba19c15-fc11-4377-85f3-84daf8eaab09/XMLIR/xdnn_pytorch/src/xdnn_pytorch_wrapper/fft_fft.cpp:79]scalar type of (self, ret) : (kcomplex32, kcomplex64) combined is unsupported in xdnn_pytorch_wrapper !
+
+[XDNN_UNIMPLEMENTED][/home/agent/xpytorch/workspace/8ba19c15-fc11-4377-85f3-84daf8eaab09/XMLIR/xdnn_pytorch/src/xdnn_pytorch_wrapper/fft_fft.cpp:79]
+[[31mERROR[0m][XDNN_PYTORCH][/home/agent/xpytorch/workspace/8ba19c15-fc11-4377-85f3-84daf8eaab09/XMLIR/xdnn_pytorch/src/xdnn_pytorch_wrapper/complex.cpp:31]scalar type of real : kbfloat16 is unsupported in xdnn_pytorch_wrapper !
+
+[XDNN_UNIMPLEMENTED][/home/agent/xpytorch/workspace/8ba19c15-fc11-4377-85f3-84daf8eaab09/XMLIR/xdnn_pytorch/src/xdnn_pytorch_wrapper/complex.cpp:31]
+blockmax: written
+
+--- STDERR ---
+XCCL /root/miniconda/envs/python310_torch29_cuda/lib/python3.10/site-packages/torch_xmlir/xccl//so/libbkcl.so loaded
+[35mSYMBOL_REWRITE [0m[32mtorch success[0m

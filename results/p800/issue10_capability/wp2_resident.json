@@ -1,0 +1,35 @@
+{
+  "schema": "issue10-wp2-resident-v2",
+  "op_constraints": "op-subset (ops_supported.json): FFT stages cannot slice/index-register values; partner/group values are fetched via address-computed GM loads inside one kernel (in-kernel scratch ping-pong). Constraints: supported = load/store(addr-arithmetic gather), where(same shape), //, %, cos/sin, full sum; unsupported = slice, reg/scalar index, trans, sum(axis), join/split/cat, chained None, python math in jit; reshape passes the frontend but crashes the XPU lowering (GlobalEncodingAttr UNREACHABLE) -> no kernel here uses reshape.  NOTE (stale-read bug): the GM ping-pong pattern is unreliable: store->permuted-load from the same buffer returns stale values at grid>1 (this WP) and \u2014 per WP3's size sweep \u2014 also at grid=1 for n=32/64; see wp2_concurrency.json and wp3_blockmax.json.  The scalar codegen kernel sidesteps the whole op-subset: unrolling happens in python, the jit body is pure scalar load/compute/store.",
+  "kernel": "scalar_codegen",
+  "packets": 8,
+  "per_packet_max_rel_err": 5.765723721139087e-08,
+  "all_pass": true,
+  "latency_batch_ms": 0.7752235796942841,
+  "tile_kernel_comparison": {
+    "kernel": "k_rad2_tile (GM scratch ping-pong)",
+    "grid": 8,
+    "status": "FAIL",
+    "per_packet_max_rel_err": 36531.45795352581,
+    "interpretation": "expected FAIL: store->permuted-load stale-read bug at grid>1 (wp2_concurrency.json)"
+  },
+  "descriptor": {
+    "probe": "resident_packets",
+    "ownership": "program pid owns packet slice [pid*N, (pid+1)*N) of RE/IM/ORE/OIM; one thread per packet holds all N complex values in scalar registers across all 4 unrolled DIT stages (python codegen)",
+    "local_live_data_range": "per-thread scalar registers 2x16 fp32 (+ twiddle constants baked into the binary); no GM scratch",
+    "required_global_boundaries": [
+      "input tensor slices (disjoint, rev-addressed loads; buffer never stored by this kernel)",
+      "output tensor slices (disjoint, final stores)"
+    ],
+    "synchronization_scope": "no cross-program sync required: packets are disjoint; only in-program program-order RAW order matters (register dependencies, no GM roundtrips)",
+    "expected_launch_count": 1,
+    "expected_gm_bytes": {
+      "per_packet_bytes": 256,
+      "total_bytes": 2048,
+      "formula": "grid=k programs x per-packet traffic: bitrev input loads (re+im = 2*N*4B) + final output stores (re+im = 2*N*4B); no scratch"
+    },
+    "grid": 8,
+    "packets_per_program": 1,
+    "codegen": "/workspace/kunlunxin-fft/results/p800/issue10_capability/wp2_codegen/k_rad2_scalar_n16.py"
+  }
+}

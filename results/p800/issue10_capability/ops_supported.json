@@ -1,0 +1,125 @@
+{
+  "schema": "issue10-wp2-opsubset-v1",
+  "probe_script": "/workspace/kunlunxin-fft/scripts/issue10_wp2_minikernels.py",
+  "created_utc": "2026-10-21T10:51:49Z",
+  "policy": "status from executed probes only; isolated subprocess per probe (native crashes cannot poison the runner)",
+  "entries": [
+    {
+      "probe": "slice_get",
+      "status": "FAIL",
+      "detail": "CompilationError: at 3:8: def k_p_slice(A, O, BLOCK: tl.constexpr):     x = tl.load(A + tl.arange(0, BLOCK), mask=tl.arange(0, BLOCK) < BLOCK, other=0.0)     s = x.reshape(4, 4)[:, 1:2]         ^ Va"
+    },
+    {
+      "probe": "reg_adv_index",
+      "status": "FAIL",
+      "detail": "CompilationError: at 4:38: def k_p_adv(A, O, BLOCK: tl.constexpr):     x = tl.load(A + tl.arange(0, BLOCK), mask=tl.arange(0, BLOCK) < BLOCK, other=0.0)     idx = (tl.arange(0, BLOCK) + 1) % BLOCK  "
+    },
+    {
+      "probe": "reg_scalar_index",
+      "status": "FAIL",
+      "detail": "CompilationError: at 3:34: def k_p_scalar(A, O, BLOCK: tl.constexpr):     x = tl.load(A + tl.arange(0, BLOCK), mask=tl.arange(0, BLOCK) < BLOCK, other=0.0)     tl.store(O + tl.arange(0, 1), x[3], ma"
+    },
+    {
+      "probe": "tl_trans",
+      "status": "FAIL",
+      "detail": "native compiler crash (no result line); rc=1; yq]: Check Logic UNREACHABLE executed at /mnt/ssd3/sandbox/workspace/5ab9ef7a-183a-4533-a753-344aa7b305d3/subpod/triton/third_party/xpu/lib/Conversion/TritonToTritonXPU/TritonToTritonXPUPass.cpp:259! "
+    },
+    {
+      "probe": "tl_sum_axis",
+      "status": "FAIL",
+      "detail": "native compiler crash (no result line); rc=1; ::GlobalEncodingAttr Calculation Logic UNREACHABLE executed at /mnt/ssd3/sandbox/workspace/5ab9ef7a-183a-4533-a753-344aa7b305d3/subpod/triton/third_party/xpu/lib/Dialect/TritonXPU/IR/Dialect.cpp:516! "
+    },
+    {
+      "probe": "tl_sum_full",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "probe": "tl_join",
+      "status": "FAIL",
+      "detail": "CompilationError: at 4:4: def k_p_join(A, O, BLOCK: tl.constexpr):     x = tl.load(A + tl.arange(0, BLOCK), mask=tl.arange(0, BLOCK) < BLOCK, other=0.0)     j = tl.join(x, x)     tl.store(O + tl.ara"
+    },
+    {
+      "probe": "tl_split",
+      "status": "FAIL",
+      "detail": "native compiler crash (no result line); rc=1; alculation Logic UNREACHABLE executed at /mnt/ssd3/sandbox/workspace/5ab9ef7a-183a-4533-a753-344aa7b305d3/subpod/triton/third_party/xpu/lib/Conversion/TritonToTritonXPU/TritonToTritonXPUPass.cpp:247! "
+    },
+    {
+      "probe": "tl_cat",
+      "status": "FAIL",
+      "detail": "native compiler crash (no result line); rc=1; alculation Logic UNREACHABLE executed at /mnt/ssd3/sandbox/workspace/5ab9ef7a-183a-4533-a753-344aa7b305d3/subpod/triton/third_party/xpu/lib/Conversion/TritonToTritonXPU/TritonToTritonXPUPass.cpp:220! "
+    },
+    {
+      "probe": "tl_cos_sin",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "probe": "where_same_shape",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "probe": "floordiv_mod",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "probe": "reshape",
+      "status": "FAIL",
+      "detail": "native compiler crash (no result line); rc=1; ::GlobalEncodingAttr Calculation Logic UNREACHABLE executed at /mnt/ssd3/sandbox/workspace/5ab9ef7a-183a-4533-a753-344aa7b305d3/subpod/triton/third_party/xpu/lib/Dialect/TritonXPU/IR/Dialect.cpp:516! "
+    },
+    {
+      "probe": "reshape_back",
+      "status": "FAIL",
+      "detail": "native compiler crash (no result line); rc=1; ::GlobalEncodingAttr Calculation Logic UNREACHABLE executed at /mnt/ssd3/sandbox/workspace/5ab9ef7a-183a-4533-a753-344aa7b305d3/subpod/triton/third_party/xpu/lib/Dialect/TritonXPU/IR/Dialect.cpp:516! "
+    },
+    {
+      "probe": "expand_dims",
+      "status": "FAIL",
+      "detail": "native compiler crash (no result line); rc=1; ::GlobalEncodingAttr Calculation Logic UNREACHABLE executed at /mnt/ssd3/sandbox/workspace/5ab9ef7a-183a-4533-a753-344aa7b305d3/subpod/triton/third_party/xpu/lib/Dialect/TritonXPU/IR/Dialect.cpp:516! "
+    },
+    {
+      "probe": "none_chained_index",
+      "status": "FAIL",
+      "detail": "native compiler crash (no result line); rc=1; ::GlobalEncodingAttr Calculation Logic UNREACHABLE executed at /mnt/ssd3/sandbox/workspace/5ab9ef7a-183a-4533-a753-344aa7b305d3/subpod/triton/third_party/xpu/lib/Dialect/TritonXPU/IR/Dialect.cpp:516! "
+    },
+    {
+      "probe": "python_math_in_jit",
+      "status": "FAIL",
+      "detail": "AssertionError: Function \"cos\" is being called from a Triton function but is not a Triton function itself. Decorate it with @triton.jit to fix this"
+    },
+    {
+      "probe": "load_addr_gather",
+      "status": "PASS",
+      "detail": ""
+    }
+  ],
+  "supported": [
+    "tl_sum_full",
+    "tl_cos_sin",
+    "where_same_shape",
+    "floordiv_mod",
+    "load_addr_gather"
+  ],
+  "unsupported": [
+    "slice_get",
+    "reg_adv_index",
+    "reg_scalar_index",
+    "tl_trans",
+    "tl_sum_axis",
+    "tl_join",
+    "tl_split",
+    "tl_cat",
+    "reshape",
+    "reshape_back",
+    "expand_dims",
+    "none_chained_index",
+    "python_math_in_jit"
+  ],
+  "totals": {
+    "PASS": 5,
+    "FAIL": 13,
+    "UNKNOWN": 0
+  }
+}

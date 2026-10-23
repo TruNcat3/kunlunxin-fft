@@ -1,0 +1,42 @@
+{
+  "schema": "issue10-wp2-p-axis-v1",
+  "op_constraints": "op-subset (ops_supported.json): FFT stages cannot slice/index-register values; partner/group values are fetched via address-computed GM loads inside one kernel (in-kernel scratch ping-pong). Constraints: supported = load/store(addr-arithmetic gather), where(same shape), //, %, cos/sin, full sum; unsupported = slice, reg/scalar index, trans, sum(axis), join/split/cat, chained None, python math in jit; reshape passes the frontend but crashes the XPU lowering (GlobalEncodingAttr UNREACHABLE) -> no kernel here uses reshape.  NOTE (stale-read bug): the GM ping-pong pattern is unreliable: store->permuted-load from the same buffer returns stale values at grid>1 (this WP) and \u2014 per WP3's size sweep \u2014 also at grid=1 for n=32/64; see wp2_concurrency.json and wp3_blockmax.json.  The scalar codegen kernel sidesteps the whole op-subset: unrolling happens in python, the jit body is pure scalar load/compute/store.",
+  "fixed_A": "single-tile natural->natural FFT, N=16 (one launch, register-resident stage sequence per op-subset)",
+  "variants": [
+    {
+      "P": "rad2",
+      "latency_ms": 0.018291968444827944,
+      "rel_err": 4.089233185176334e-08,
+      "pass": true,
+      "launches": 1,
+      "note": "stage sequence via addressed partner loads"
+    },
+    {
+      "P": "rad4",
+      "latency_ms": 0.01619701652089134,
+      "rel_err": 5.813638775420786e-08,
+      "pass": true,
+      "launches": 1,
+      "note": "radix-4 butterflies, digit-reversed addressed loads"
+    },
+    {
+      "P": "dense",
+      "latency_ms": 0.014720171748194844,
+      "rel_err": 5.834712613971749e-08,
+      "pass": true,
+      "launches": 1,
+      "note": "O(N^2) addressed loads + twiddle (no tl.dot: fp32 dot is UNKNOWN and reduced-precision)"
+    },
+    {
+      "P": "torch",
+      "latency_ms": 0.022006734070600942,
+      "rel_err": 1.0258520047464031e-07,
+      "pass": true,
+      "launches": 1,
+      "note": "vendor torch.fft.fft on device tensor"
+    }
+  ],
+  "disclosure": "N=16 single tile: all variants are launch-dominated (host launch overhead >> kernel work); latency ordering carries no architectural signal at this scale and is reported only as a swap table for the P axis of the probe matrix",
+  "all_pass": true,
+  "latency_spread_ms": 0.007286562322406098
+}

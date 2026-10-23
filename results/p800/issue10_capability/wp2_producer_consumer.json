@@ -1,0 +1,21 @@
+{
+  "schema": "issue10-wp2-producer-consumer-v1",
+  "probe": "producer_consumer_async_pair",
+  "status": "FAIL",
+  "attempted": false,
+  "reason": "record-only: WP1 async_copy async_mechanism_api = FAIL (tl async surface: {'async_copy': False, 'async_wait': False, 'async_dot': False, 'join': True, 'split': True}; extra.xpu async/mte/copy symbols: []); without an async copy primitive, a producer/consumer packet pair would degrade to ordinary GM round-trips already covered by fusion/resident steps \u2014 no new capability would be demonstrated",
+  "source": "results/p800/issue10_capability/capability_matrix.json # async_copy.async_mechanism_api",
+  "next_step_if_enabled": "re-probe async_mechanism_api on a vendor release exposing the async copy API, then run a two-kernel producer/consumer pair with explicit event/scope sync",
+  "descriptor": {
+    "probe": "producer_consumer_async_pair",
+    "ownership": "n/a (not attempted)",
+    "local_live_data_range": "n/a",
+    "required_global_boundaries": "n/a (would be a cross-program GM handoff)",
+    "synchronization_scope": "n/a (cross-program concurrent sync UNKNOWN in WP1)",
+    "expected_launch_count": 0,
+    "expected_gm_bytes": {
+      "bytes": 0,
+      "formula": "not executed"
+    }
+  }
+}

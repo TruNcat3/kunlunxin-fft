@@ -1,0 +1,52 @@
+{
+  "schema": "issue10-wp2-fusion-v1",
+  "op_constraints": "op-subset (ops_supported.json): FFT stages cannot slice/index-register values; partner/group values are fetched via address-computed GM loads inside one kernel (in-kernel scratch ping-pong). Constraints: supported = load/store(addr-arithmetic gather), where(same shape), //, %, cos/sin, full sum; unsupported = slice, reg/scalar index, trans, sum(axis), join/split/cat, chained None, python math in jit; reshape passes the frontend but crashes the XPU lowering (GlobalEncodingAttr UNREACHABLE) -> no kernel here uses reshape.  NOTE (stale-read bug): the GM ping-pong pattern is unreliable: store->permuted-load from the same buffer returns stale values at grid>1 (this WP) and \u2014 per WP3's size sweep \u2014 also at grid=1 for n=32/64; see wp2_concurrency.json and wp3_blockmax.json.  The scalar codegen kernel sidesteps the whole op-subset: unrolling happens in python, the jit body is pure scalar load/compute/store.",
+  "n": 16,
+  "fused": {
+    "probe": "fusion_fused",
+    "ownership": "one program owns all 4 stages of the packet",
+    "local_live_data_range": "register v across 4 stages + scratch ping-pong",
+    "required_global_boundaries": [
+      "input",
+      "scratch S0/S1 (per stage)",
+      "output"
+    ],
+    "synchronization_scope": "program-order only; no cross-launch visibility needed",
+    "expected_launch_count": 1,
+    "expected_gm_bytes": {
+      "per_packet_bytes": 1408,
+      "formula": "gm_rad2(N,L): stage0 v+partner loads, per-stage partner load + result store, final output store"
+    },
+    "latency_ms": 0.018239155906485394,
+    "rel_err": 6.482058511830972e-08,
+    "pass": true
+  },
+  "split_2kernel": {
+    "probe": "fusion_split",
+    "ownership": "kernel A owns stages 0..h-1 + handoff buffer; kernel B owns stages h..3 from handoff to output",
+    "local_live_data_range": "register v per kernel; GM handoff RE/IM (2x2x16B)",
+    "required_global_boundaries": [
+      "input",
+      "handoff buffer (cross-launch GM boundary)",
+      "scratch",
+      "output"
+    ],
+    "synchronization_scope": "launch-order (host stream) establishes handoff visibility via gm_launch_order_visibility=PASS (WP1)",
+    "expected_launch_count": 2,
+    "expected_gm_bytes": {
+      "per_packet_bytes": 1536,
+      "formula": "gm_rad2(N,L) + 2*N*4 (kernel B re-loads its own vector from the handoff: register state cannot cross kernel boundaries)"
+    },
+    "latency_ms": 0.03526506043272093,
+    "rel_err": 6.482058511830972e-08,
+    "pass": true
+  },
+  "delta": {
+    "latency_ms_fused_minus_split": -0.017025904526235536,
+    "launches_fused": 1,
+    "launches_split": 2,
+    "gm_bytes_delta": 128,
+    "interpretation": "fusion saves one host launch plus one full vector reload (split kernel B re-materializes its register state from the handoff buffer); N=16 is launch-dominated so latency ordering is reported as measured, not interpreted"
+  },
+  "both_pass": true
+}
