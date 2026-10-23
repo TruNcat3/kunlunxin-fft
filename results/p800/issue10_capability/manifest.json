@@ -5,9 +5,9 @@
   "package_dir": "results/p800/issue10_capability",
   "evidence_source_commit": "50bbefc95a2ca575fd67e3896dc4511b02b673ff",
   "git_head_at_pack": "50bbefc95a2ca575fd67e3896dc4511b02b673ff",
-  "packaging_commit": "fce67b05a6386cbd55b5958f782056bfd9035d30",
-  "packaging_commit_seal": "fill packaging_commit with the sha of the commit that adds this manifest.json (git log --diff-filter=A -- results/p800/issue10_capability/manifest.json), then update the manifest.json line in SHA256SUMS in the same seal commit \u2014 non-self-referencing (the field names the packaging commit, the seal commit only records it)",
-  "packaging_commit_note": "evidence_source_commit is the commit to check out for the exact producer scripts (run pack after committing producers; see producer_dirty_at_pack), each producer is pinned by git blob sha in producer_blobs, and producer_dependencies records transitive script imports (holdout/ablation import wp3_perf)",
+  "packaging_commit": null,
+  "packaging_commit_seal": "fill packaging_commit with the sha of the commit that added or last updated THIS manifest.json \u2014 i.e. the pack commit (run `git log -1 -- results/p800/issue10_capability/manifest.json` BEFORE editing the field; do not use --diff-filter=A, which pins the first add and goes stale on every repack), then update the manifest.json line in SHA256SUMS in the same seal commit \u2014 non-self-referencing (the field names the pack commit, the seal commit only records it)",
+  "packaging_commit_note": "evidence_source_commit is the commit to check out for the exact producer scripts (run pack after committing producers; see producer_dirty_at_pack), each producer is pinned by git blob sha in producer_blobs, and producer_dependencies records transitive script imports (holdout/ablation import wp3_perf); verify with `cd results/p800/issue10_capability && sha256sum -c SHA256SUMS` (from the evidence directory, issue #13 WP0)",
   "producer_dirty_at_pack": null,
   "producer_blobs": {
     "scripts/issue10_pack_artifacts.py": {
