@@ -56,12 +56,13 @@ import math
 import weakref
 from dataclasses import dataclass, field
 
-from .composition import composition_select
+from .composition import composition_select, entry_executed
 from .config import (
     NORMALIZATIONS,
     TRANSFORM_DIRECTIONS,
     TRANSFORM_TYPES,
 )
+from .hybrid4 import EXECUTED_VARIANT as H4_EXECUTED_VARIANT
 from .selector import Selection, find_entry, load_table, select
 
 DEFAULT_BLOCK = 1024
@@ -232,6 +233,10 @@ def _dispatch(sel: Selection) -> str | None:
 # stale HybridPlan from a different shape.
 _HYBRID_CACHE: dict = {}
 
+# The hybrid4 runners (issue #13 WP2): native-direction 4-step
+# compositions dispatched inside the composition branch of execute.
+_H4_EXECUTED = frozenset(H4_EXECUTED_VARIANT)
+
 
 def _composition_plan(comp: dict, n: int, batch: int, direction: str,
                       precision: str, transform_direction: str,
@@ -243,6 +248,7 @@ def _composition_plan(comp: dict, n: int, batch: int, direction: str,
     (host API on materialized sub-blocks), never resident kernel.
     """
     ev = comp["evidence"]
+    executed = entry_executed(comp)
     reason = (
         f"composition {comp['flow_id']} (exact shape, "
         f"{comp['guard_pct']:.1f}% >= {2.0}% guard vs "
@@ -252,7 +258,7 @@ def _composition_plan(comp: dict, n: int, batch: int, direction: str,
     return ExecutionPlan(
         n=n, batch=batch, direction=direction, precision=precision,
         selection_source="composition", reason=reason, fallback=False,
-        executed="run_hybrid", block=None,
+        executed=executed, block=None,
         flow_id=comp["flow_id"],
         flow_realization=comp["flow_realization"],
         processing_unit=comp["processing_unit"],
@@ -260,6 +266,7 @@ def _composition_plan(comp: dict, n: int, batch: int, direction: str,
                 "tile": comp["tile"], "core": comp["core"],
                 "contract_id": comp.get("contract_id")
                 or comp.get("_contract_id"),
+                "variant": comp.get("variant") or "a1p1-adapter",
                 "composition_guard_pct": comp["guard_pct"],
                 "evidence_artifact": ev["artifact"]},
         transform_type="c2c",
@@ -349,8 +356,9 @@ def plan_fft(direction: str, n: int, batch: int = 1, precision: str = "fp32",
     # Exact-shape promoted composition (PR-E) outranks the butterfly
     # table for its one shape; c2c only — the real-compat path keeps
     # the butterfly lowering. Fail closed to the butterfly path.
-    # composition_select also gates on the queried semantic (issue #8
-    # P1-B: only c2c+forward+backward may match a composition entry).
+    # composition_select matches per entry on the full semantic key
+    # (issue #13 WP2): an entry answers only its own triple, a query
+    # with no matching entry falls through to the butterfly path.
     if transform_type == "c2c":
         comp = composition_select(direction, n, batch=batch,
                                   precision=precision,
@@ -528,14 +536,38 @@ def execute_fft_plan(plan: ExecutionPlan, x):
             raise ValueError(f"plan norm {plan.norm!r} not supported")
     if plan.params.get("flow_kind") == "composition":
         # Composition path: framework decomposition owns the flow,
-        # the vendor core runs only on materialized sub-blocks
-        # (adapter_hybrid). c2c only; the conjugate/scale epilogue is
-        # shared with the butterfly path so norm/inverse contracts
-        # hold unchanged.
+        # the vendor core runs only on materialized sub-blocks.
+        # c2c only; two measured implementations dispatch here:
+        #   run_hybrid        adapter A1P1 (forward-measured entry; the
+        #                     conjugate/scale epilogue wraps it for
+        #                     inverse — unchanged measured path)
+        #   run_hybrid4[_fused] the issue #13 4-step winners: native
+        #                     direction (ifft stages + conjugated
+        #                     twiddle build the inverse directly, exact
+        #                     1/N backward scaling on complex input),
+        #                     so no conj-trick is applied; the epilogue
+        #                     only carries the norm factor BEYOND the
+        #                     runner's built-in scaling.
         if plan.transform_type != "c2c":
             raise ValueError(
                 "composition plans support transform_type='c2c' only, "
                 f"got {plan.transform_type!r}")
+        if plan.executed in _H4_EXECUTED:
+            with phase("composition-core"):
+                y = _invoke_hybrid4(plan, x)
+            if plan.transform_direction == "inverse":
+                # runner output is already ifft-scaled (1/N built in):
+                # epilogue = norm factor relative to that baseline.
+                extra = norm_scale(plan.n, "inverse", plan.norm) * plan.n
+            else:
+                extra = norm_scale(plan.n, "forward", plan.norm)
+            if extra != 1.0:
+                with phase("epilogue-scale"):
+                    return _scale_complex(y, extra, conjugate=False)
+            return y
+        if plan.executed != "run_hybrid":
+            raise ValueError(
+                f"unknown composition executed {plan.executed!r}")
         z = x
         if plan.transform_direction == "inverse":
             with phase("inverse-conj"):
@@ -650,6 +682,51 @@ def _invoke_composition(plan: ExecutionPlan, x):
         x = x.unsqueeze(0)
     with phase("composition-run"):
         y = run_hybrid(x, hp)
+    return y[0] if squeeze else y
+
+
+def _invoke_hybrid4(plan: ExecutionPlan, x):
+    """Issue #13 WP2 4-step composition execution.
+
+    Plan-reuse caches the Hybrid4Plan (twiddle/staging buffer) in the
+    same registry as the adapter composition; the runner gets the
+    native ``inverse`` flag (no conj-trick: the inverse is built by
+    ifft stages + conjugated twiddle, the measured holdout call) and
+    the rank-1 ``(N,)`` input is squeezed to the measured ``(1, N)``
+    shape and restored, the same zero-copy entry contract the adapter
+    path uses.
+    """
+    from .hybrid4 import EXECUTED_VARIANT, plan_hybrid4, run_hybrid4, \
+        run_hybrid4_fused
+    from .ledger import phase
+
+    runners = {"run_hybrid4": run_hybrid4,
+               "run_hybrid4_fused": run_hybrid4_fused}
+    fn = runners.get(plan.executed)
+    if fn is None:
+        raise ValueError(
+            f"unknown hybrid4 executed {plan.executed!r}")
+    variant = H4_EXECUTED_VARIANT[plan.executed]
+    recorded = plan.params.get("variant")
+    if recorded is not None and recorded != variant:
+        raise ValueError(
+            f"plan variant {recorded!r} disagrees with executed "
+            f"{plan.executed!r} (variant {variant!r})")
+    key = id(plan)
+    cached = _HYBRID_CACHE.get(key)
+    hp = cached[0] if cached is not None and cached[1]() is plan else None
+    if hp is None:
+        with phase("composition-prepare"):
+            hp = plan_hybrid4(plan.n, plan.batch, variant=variant,
+                              direction=plan.direction)
+        _HYBRID_CACHE[key] = (
+            hp, weakref.ref(plan,
+                            lambda _r, k=key: _HYBRID_CACHE.pop(k, None)))
+    squeeze = x.dim() == 1
+    if squeeze:
+        x = x.unsqueeze(0)
+    with phase("composition-run"):
+        y = fn(x, hp, inverse=plan.transform_direction == "inverse")
     return y[0] if squeeze else y
 
 

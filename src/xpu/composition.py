@@ -26,7 +26,8 @@ from __future__ import annotations
 import json
 import os
 
-from .config import ConfigError
+from .config import (ConfigError, NORMALIZATIONS, TRANSFORM_DIRECTIONS,
+                     TRANSFORM_TYPES)
 
 TABLE_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(
@@ -54,6 +55,34 @@ EVIDENCE_REQUIRED_KEYS = (
 )
 
 KIND = "composition-promotion"
+
+# Optional per-entry semantic (issue #13): which semantic this entry
+# was measured under. Absent fields default to the legacy behavior —
+# c2c/forward/backward — so the pre-existing entry keeps answering
+# exactly the queries it has always answered.
+DEFAULT_SEMANTIC = ("c2c", "forward", "backward")
+# variant -> executed runner (the measured implementation deployed for
+# this entry; plan/execute asserts they agree). ``a1p1-adapter`` is the
+# existing adapter_hybrid composition; the 4step variants are the
+# issue #13 hybrid4 deployment of the measured holdout winners.
+ENTRY_VARIANT_EXECUTED = {
+    "a1p1-adapter": "run_hybrid",
+    "4step-transpose": "run_hybrid4",
+    "4step-fused": "run_hybrid4_fused",
+}
+
+
+def entry_semantic(entry: dict) -> tuple[str, str, str]:
+    """Entry's semantic triple; legacy entries default to c2c
+    forward/backward (the semantics they were promoted under)."""
+    return (entry.get("transform_type") or DEFAULT_SEMANTIC[0],
+            entry.get("transform_direction") or DEFAULT_SEMANTIC[1],
+            entry.get("normalization") or DEFAULT_SEMANTIC[2])
+
+
+def entry_executed(entry: dict) -> str:
+    """Runner this entry dispatches to (legacy default adapter)."""
+    return entry.get("executed") or ENTRY_VARIANT_EXECUTED["a1p1-adapter"]
 
 
 def guard_pct_of(candidate_ms: float, incumbent_ms: float) -> float:
@@ -84,6 +113,40 @@ def composition_entry_violations(entry: dict, table: dict) -> list[str]:
         bad.append(f"core {entry.get('core')!r} not in (vendor, triton)")
     if not isinstance(entry.get("tile"), int) or entry["tile"] < 16:
         bad.append(f"tile {entry.get('tile')!r} invalid")
+    # Optional semantic record: present fields must be in the shared
+    # taxonomy (absent = legacy default c2c/forward/backward).
+    if entry.get("transform_type") is not None \
+            and entry["transform_type"] not in TRANSFORM_TYPES:
+        bad.append(f"transform_type {entry['transform_type']!r} not in "
+                   f"{TRANSFORM_TYPES}")
+    if entry.get("transform_direction") is not None \
+            and entry["transform_direction"] not in TRANSFORM_DIRECTIONS:
+        bad.append(f"transform_direction {entry['transform_direction']!r}"
+                   f" not in {TRANSFORM_DIRECTIONS}")
+    if entry.get("normalization") is not None \
+            and entry["normalization"] not in NORMALIZATIONS:
+        bad.append(f"normalization {entry['normalization']!r} not in "
+                   f"{NORMALIZATIONS}")
+    # variant <-> executed must name the same measured implementation;
+    # either may be absent (legacy adapter default), never disagreeing.
+    variant = entry.get("variant")
+    executed = entry.get("executed")
+    if variant is not None:
+        if variant not in ENTRY_VARIANT_EXECUTED:
+            bad.append(f"variant {variant!r} not in "
+                       f"{tuple(ENTRY_VARIANT_EXECUTED)}")
+        elif executed is not None \
+                and executed != ENTRY_VARIANT_EXECUTED[variant]:
+            bad.append(f"executed {executed!r} != "
+                       f"{ENTRY_VARIANT_EXECUTED[variant]!r} for "
+                       f"variant {variant!r}")
+    elif executed is not None \
+            and executed != ENTRY_VARIANT_EXECUTED["a1p1-adapter"]:
+        bad.append(f"executed {executed!r} without variant must be the "
+                   "legacy adapter runner")
+    if entry.get("entry_contract") is not None \
+            and not isinstance(entry["entry_contract"], str):
+        bad.append("entry_contract not a string record")
     # Recompute the guard from the measured medians: the stamped
     # fields must agree with arithmetic (tamper-evidence).
     recomputed = guard_pct_of(float(entry["candidate_ms"]),
@@ -146,9 +209,10 @@ def table_violations(table: dict) -> list[str]:
         if not isinstance(e, dict):
             bad.append(f"entry {i} not an object")
             continue
-        key = (e.get("N"), e.get("batch"), e.get("direction"))
+        key = (e.get("N"), e.get("batch"), e.get("direction")) \
+            + entry_semantic(e)
         if key in seen:
-            bad.append(f"duplicate exact-shape key {key}")
+            bad.append(f"duplicate exact-shape+semantic key {key}")
         seen.add(key)
         bad.extend(f"entry {key}: {msg}"
                    for msg in composition_entry_violations(e, table))
@@ -206,16 +270,24 @@ def composition_select(direction: str, n: int, batch: int = 1,
     mismatch returns ``None`` so the butterfly table path decides.
     ``None`` also for DIF (the decomposition flow is DIT-only).
 
-    Semantic gate (issue #8 P1-B): a promoted composition entry is a
-    measured winner of one semantic — c2c forward with backward
-    normalization. Inverse / R2C / C2R queries (and any other norm)
-    never inherit a forward composition: they fail closed here so the
-    semantic selector decides.
+    Semantic gate (issue #8 P1-B, issue #13 WP2): matching is
+    **per entry** on the full exact key
+    ``(N, batch, direction, transform_type, transform_direction,
+    normalization)``. A legacy entry carries no semantic fields and is
+    measured under c2c/forward/backward, so it answers exactly the
+    queries it has always answered — an inverse/R2C/R2R query can only
+    hit an entry promoted under that same semantic (its own measured
+    winner), never inherit a forward composition. Entries at the same
+    shape with different semantics coexist (unique key includes the
+    triple).
     """
     if direction != "dit":
         return None
-    if (transform_type, transform_direction, normalization) != (
-            "c2c", "forward", "backward"):
+    if transform_type not in TRANSFORM_TYPES:
+        return None
+    if transform_direction not in TRANSFORM_DIRECTIONS:
+        return None
+    if normalization not in NORMALIZATIONS:
         return None
     if table is None:
         table = load_composition_table()
@@ -235,6 +307,9 @@ def composition_select(direction: str, n: int, batch: int = 1,
         return None
     for e in table["entries"]:
         if (e["N"] == n and e["batch"] == batch
-                and e["direction"] == direction):
+                and e["direction"] == direction
+                and entry_semantic(e) == (transform_type,
+                                          transform_direction,
+                                          normalization)):
             return e
     return None
