@@ -1,0 +1,3259 @@
+{
+  "schema": "issue13-wp1-promotion-v1",
+  "issue": "kunlunxin-fft#13",
+  "created_utc": "2026-10-23T08:12:59Z",
+  "script": "scripts/issue13_wp1_promotion.py",
+  "environment": {
+    "profile_hash": "a78b86793c7142a0",
+    "env_hash_table": "6b50bd316032c0fe",
+    "env_hash_live": "6b50bd316032c0fe",
+    "env_fail_closed": "assert_current_environment(load_table()) ran before any spawn; mismatch raises and aborts the run",
+    "selector_table_sha256": "7c2282ed0c295f2e5179c358f75a7d73051f21cbaaf7caf04c281dcb8efe88fd",
+    "composition_table_sha256": "49e5f41b4a3a88b06d3e674cddecf579216a3539a8d774aa3d25afa4ae70a725",
+    "producer_sha256": {
+      "scripts/issue13_wp1_promotion.py": "5df76892acd9f67158adf06942fccb19db1bec327998e2a332cc7037d72a755e",
+      "scripts/issue10_wp3_holdout.py": "0e822c348ac0d3caf5fd7a6d79d4413b798f7ac4cea02abf82ff6a2e331d0a09",
+      "scripts/issue10_wp3_perf.py": "0f9adae1a84f7598fd80f20029261c39632a536fa26cb7f10d02bfa1ffb8ea11",
+      "src/xpu/selector.py": "695ae9221b6410464f322081e958013ba0b02caee097f24257a541176e68fa8c",
+      "src/xpu/composition.py": "bc22da5b5fd0674e0caed30141f4fc30428b38b63fe2847898081d230e236b4c",
+      "src/xpu/entry.py": "65390f690cefa1154ff250b7b369498268c8bcb73e7f39a68e9f545cbc9cbe72"
+    }
+  },
+  "protocol": {
+    "cells": [
+      "N1024B1:c2c-inverse",
+      "N2048B1:c2c-forward",
+      "N2048B1:c2c-inverse",
+      "N2048B16:c2c-forward",
+      "N2048B16:c2c-inverse"
+    ],
+    "frozen_candidates": {
+      "N1024B1:c2c-inverse": [
+        "hybrid_fused_p"
+      ],
+      "N2048B1:c2c-forward": [
+        "hybrid_fused_p",
+        "hybrid_vendor_p"
+      ],
+      "N2048B1:c2c-inverse": [
+        "hybrid_fused_p",
+        "hybrid_vendor_p"
+      ],
+      "N2048B16:c2c-forward": [
+        "hybrid_fused_p"
+      ],
+      "N2048B16:c2c-inverse": [
+        "hybrid_fused_p",
+        "hybrid_vendor_p"
+      ]
+    },
+    "sessions": 4,
+    "confirmation_session": 4,
+    "paths": [
+      "vendor",
+      "hybrid_vendor_p",
+      "hybrid_fused_p",
+      "incumbent_entry",
+      "m0_reference"
+    ],
+    "spawn": "one subprocess per (cell, path, session), fresh TRITON_CACHE_DIR, spawn order shuffled per session (seed recorded) = random interleaving; protocol identical to the PR #12 holdout (issue10_wp3_holdout worker reused verbatim)",
+    "bootstrap": "independent bootstrap B=2000, seed=13102026",
+    "promotion_rules": {
+      "correctness": "all paths all sessions rel_err <= 0.0001, no fail_closed, all-path contract (WP0), uniform entry shape",
+      "ci_gate": "per session: bootstrap CI lower bound > 1.02 vs vendor AND profile-bound incumbent; M0 attribution only",
+      "spread": "per-session speedup point vs cross-session median deviates <= 0.1 for both baselines; exceed => not promoted",
+      "both_pass": "pooled cross-session bootstrap of the two candidates' own warm trials; the measured faster wins"
+    },
+    "input_semantics": "same as PR #12 holdout: complex64 non-zero imag, b==1 rank-1 (N,) on all five paths, B>1 (B,N), seeded per (session, n, b)"
+  },
+  "sessions": [
+    {
+      "session": 1,
+      "role": "protocol",
+      "jobs_ok": 25,
+      "jobs_total": 25,
+      "elapsed_s": 273.3,
+      "spawn_seed": 13102727,
+      "spawn_order": [
+        "N2048B1:c2c-inverse:m0_reference",
+        "N1024B1:c2c-inverse:vendor",
+        "N2048B16:c2c-inverse:incumbent_entry",
+        "N2048B1:c2c-forward:hybrid_vendor_p",
+        "N2048B16:c2c-forward:hybrid_vendor_p",
+        "N2048B16:c2c-inverse:m0_reference",
+        "N2048B16:c2c-forward:incumbent_entry",
+        "N1024B1:c2c-inverse:hybrid_fused_p",
+        "N2048B16:c2c-forward:m0_reference",
+        "N1024B1:c2c-inverse:hybrid_vendor_p",
+        "N2048B1:c2c-forward:m0_reference",
+        "N2048B1:c2c-forward:vendor",
+        "N2048B16:c2c-inverse:hybrid_fused_p",
+        "N2048B1:c2c-inverse:vendor",
+        "N2048B16:c2c-inverse:hybrid_vendor_p",
+        "N2048B1:c2c-inverse:incumbent_entry",
+        "N1024B1:c2c-inverse:incumbent_entry",
+        "N2048B1:c2c-inverse:hybrid_fused_p",
+        "N2048B1:c2c-inverse:hybrid_vendor_p",
+        "N2048B16:c2c-inverse:vendor",
+        "N1024B1:c2c-inverse:m0_reference",
+        "N2048B16:c2c-forward:hybrid_fused_p",
+        "N2048B1:c2c-forward:hybrid_fused_p",
+        "N2048B16:c2c-forward:vendor",
+        "N2048B1:c2c-forward:incumbent_entry"
+      ],
+      "isolation": "one subprocess per (cell, path) with its own fresh TRITON_CACHE_DIR; spawn order shuffled per session"
+    },
+    {
+      "session": 2,
+      "role": "protocol",
+      "jobs_ok": 25,
+      "jobs_total": 25,
+      "elapsed_s": 269.8,
+      "spawn_seed": 13102728,
+      "spawn_order": [
+        "N2048B16:c2c-inverse:vendor",
+        "N2048B16:c2c-forward:m0_reference",
+        "N2048B1:c2c-inverse:m0_reference",
+        "N2048B1:c2c-forward:m0_reference",
+        "N2048B16:c2c-inverse:m0_reference",
+        "N2048B16:c2c-inverse:hybrid_vendor_p",
+        "N1024B1:c2c-inverse:incumbent_entry",
+        "N2048B1:c2c-inverse:hybrid_vendor_p",
+        "N2048B16:c2c-forward:hybrid_fused_p",
+        "N2048B16:c2c-inverse:incumbent_entry",
+        "N2048B1:c2c-forward:vendor",
+        "N2048B16:c2c-forward:vendor",
+        "N2048B1:c2c-inverse:incumbent_entry",
+        "N1024B1:c2c-inverse:m0_reference",
+        "N2048B1:c2c-inverse:hybrid_fused_p",
+        "N2048B1:c2c-inverse:vendor",
+        "N1024B1:c2c-inverse:hybrid_fused_p",
+        "N2048B1:c2c-forward:incumbent_entry",
+        "N2048B1:c2c-forward:hybrid_vendor_p",
+        "N2048B16:c2c-forward:hybrid_vendor_p",
+        "N1024B1:c2c-inverse:hybrid_vendor_p",
+        "N2048B16:c2c-forward:incumbent_entry",
+        "N2048B1:c2c-forward:hybrid_fused_p",
+        "N2048B16:c2c-inverse:hybrid_fused_p",
+        "N1024B1:c2c-inverse:vendor"
+      ],
+      "isolation": "one subprocess per (cell, path) with its own fresh TRITON_CACHE_DIR; spawn order shuffled per session"
+    },
+    {
+      "session": 3,
+      "role": "protocol",
+      "jobs_ok": 25,
+      "jobs_total": 25,
+      "elapsed_s": 282.1,
+      "spawn_seed": 13102729,
+      "spawn_order": [
+        "N2048B16:c2c-forward:incumbent_entry",
+        "N2048B1:c2c-inverse:vendor",
+        "N2048B1:c2c-forward:hybrid_vendor_p",
+        "N2048B1:c2c-inverse:hybrid_vendor_p",
+        "N2048B16:c2c-forward:m0_reference",
+        "N2048B16:c2c-inverse:incumbent_entry",
+        "N2048B16:c2c-forward:hybrid_vendor_p",
+        "N2048B16:c2c-forward:hybrid_fused_p",
+        "N2048B16:c2c-inverse:hybrid_fused_p",
+        "N2048B16:c2c-inverse:vendor",
+        "N1024B1:c2c-inverse:hybrid_vendor_p",
+        "N2048B1:c2c-forward:incumbent_entry",
+        "N2048B1:c2c-inverse:incumbent_entry",
+        "N2048B1:c2c-forward:m0_reference",
+        "N2048B16:c2c-inverse:m0_reference",
+        "N1024B1:c2c-inverse:hybrid_fused_p",
+        "N2048B1:c2c-inverse:m0_reference",
+        "N1024B1:c2c-inverse:m0_reference",
+        "N2048B16:c2c-inverse:hybrid_vendor_p",
+        "N1024B1:c2c-inverse:vendor",
+        "N1024B1:c2c-inverse:incumbent_entry",
+        "N2048B1:c2c-forward:vendor",
+        "N2048B16:c2c-forward:vendor",
+        "N2048B1:c2c-forward:hybrid_fused_p",
+        "N2048B1:c2c-inverse:hybrid_fused_p"
+      ],
+      "isolation": "one subprocess per (cell, path) with its own fresh TRITON_CACHE_DIR; spawn order shuffled per session"
+    },
+    {
+      "session": 4,
+      "role": "confirmation",
+      "jobs_ok": 25,
+      "jobs_total": 25,
+      "elapsed_s": 277.0,
+      "spawn_seed": 13102730,
+      "spawn_order": [
+        "N2048B1:c2c-inverse:hybrid_fused_p",
+        "N2048B1:c2c-inverse:m0_reference",
+        "N2048B1:c2c-inverse:incumbent_entry",
+        "N2048B16:c2c-forward:hybrid_fused_p",
+        "N2048B1:c2c-forward:incumbent_entry",
+        "N2048B16:c2c-inverse:hybrid_fused_p",
+        "N2048B16:c2c-forward:hybrid_vendor_p",
+        "N1024B1:c2c-inverse:m0_reference",
+        "N1024B1:c2c-inverse:hybrid_fused_p",
+        "N2048B1:c2c-forward:m0_reference",
+        "N2048B1:c2c-forward:hybrid_fused_p",
+        "N2048B16:c2c-inverse:vendor",
+        "N2048B1:c2c-inverse:hybrid_vendor_p",
+        "N2048B16:c2c-forward:m0_reference",
+        "N1024B1:c2c-inverse:incumbent_entry",
+        "N2048B16:c2c-inverse:hybrid_vendor_p",
+        "N2048B16:c2c-inverse:incumbent_entry",
+        "N2048B1:c2c-inverse:vendor",
+        "N2048B16:c2c-forward:vendor",
+        "N2048B1:c2c-forward:hybrid_vendor_p",
+        "N2048B1:c2c-forward:vendor",
+        "N2048B16:c2c-forward:incumbent_entry",
+        "N1024B1:c2c-inverse:hybrid_vendor_p",
+        "N1024B1:c2c-inverse:vendor",
+        "N2048B16:c2c-inverse:m0_reference"
+      ],
+      "isolation": "one subprocess per (cell, path) with its own fresh TRITON_CACHE_DIR; spawn order shuffled per session"
+    }
+  ],
+  "cells": [
+    {
+      "label": "N1024B1:c2c_inverse",
+      "n": 1024,
+      "batch": 1,
+      "direction": "c2c_inverse",
+      "frozen_candidates": [
+        "hybrid_fused_p"
+      ],
+      "sessions": {
+        "1": {
+          "flags": {
+            "all_paths_present": true,
+            "no_fail_closed": true,
+            "correct_all_sessions": true,
+            "contract_all_sessions": true
+          },
+          "role": "protocol",
+          "paths": {
+            "vendor": {
+              "warm_p50_ms": 0.24014501832425594,
+              "warm_mad_ms": 0.0004100147634744644,
+              "rel_err": 3.368466805042186e-07,
+              "correct": true,
+              "one_shot_ms": 0.6163560319691896,
+              "binding": {
+                "input_shape": [
+                  1024
+                ]
+              }
+            },
+            "hybrid_vendor_p": {
+              "warm_p50_ms": 0.17367699183523655,
+              "warm_mad_ms": 0.002020038664340973,
+              "rel_err": 3.432197635509875e-07,
+              "correct": true,
+              "one_shot_ms": 1863.691951846704,
+              "binding": {
+                "input_shape": [
+                  1024
+                ]
+              }
+            },
+            "hybrid_fused_p": {
+              "warm_p50_ms": 0.15284703113138676,
+              "warm_mad_ms": 0.0025599729269742966,
+              "rel_err": 3.432197635509875e-07,
+              "correct": true,
+              "one_shot_ms": 1882.3585819918662,
+              "binding": {
+                "input_shape": [
+                  1024
+                ]
+              }
+            },
+            "incumbent_entry": {
+              "warm_p50_ms": 0.5489280447363853,
+              "warm_mad_ms": 0.01400010660290718,
+              "rel_err": 6.947357800122839e-07,
+              "correct": true,
+              "one_shot_ms": 5354.0058301296085,
+              "binding": {
+                "selection_source": "table",
+                "entry_tier": "table/semantic-or-legacy",
+                "executed": "fft_dit_matrix",
+                "flow_id": "local-fused-tile",
+                "fallback": false,
+                "plan_reason": "challenger m2_dit_t64@block256 beats M0 incumbent m0_dit@block256 by 25.9% (>= 2.0%)",
+                "composition": false,
+                "composition_table": null,
+                "profile_hash": "a78b86793c7142a0",
+                "input_shape": [
+                  1024
+                ]
+              }
+            },
+            "m0_reference": {
+              "warm_p50_ms": 0.6071170791983604,
+              "warm_mad_ms": 0.011079944670200348,
+              "rel_err": 2.555708272835431e-07,
+              "correct": true,
+              "one_shot_ms": 4557.340539759025,
+              "binding": {
+                "selection_source": "abstain",
+                "entry_tier": "m0-abstain",
+                "executed": "fft_dit",
+                "flow_id": "baseline-global-stage",
+                "fallback": true,
+                "plan_reason": "profile_hash is required; None cannot bypass the table (fall back to M0)",
+                "composition": false,
+                "composition_table": null,
+                "profile_hash": null,
+                "input_shape": [
+                  1024
+                ]
+              }
+            }
+          }
+        },
+        "2": {
+          "flags": {
+            "all_paths_present": true,
+            "no_fail_closed": true,
+            "correct_all_sessions": true,
+            "contract_all_sessions": true
+          },
+          "role": "protocol",
+          "paths": {
+            "vendor": {
+              "warm_p50_ms": 0.24009495973587036,
+              "warm_mad_ms": 0.0004200264811515808,
+              "rel_err": 2.9348469190240717e-07,
+              "correct": true,
+              "one_shot_ms": 0.6195162422955036,
+              "binding": {
+                "input_shape": [
+                  1024
+                ]
+              }
+            },
+            "hybrid_vendor_p": {
+              "warm_p50_ms": 0.18524611368775368,
+              "warm_mad_ms": 0.0034798868000507355,
+              "rel_err": 3.1428812460760354e-07,
+              "correct": true,
+              "one_shot_ms": 1881.69122999534,
+              "binding": {
+                "input_shape": [
+                  1024
+                ]
+              }
+            },
+            "hybrid_fused_p": {
+              "warm_p50_ms": 0.1558670774102211,
+              "warm_mad_ms": 0.002320157364010811,
+              "rel_err": 3.1428812460760354e-07,
+              "correct": true,
+              "one_shot_ms": 1900.0581118743867,
+              "binding": {
+                "input_shape": [
+                  1024
+                ]
+              }
+            },
+            "incumbent_entry": {
+              "warm_p50_ms": 0.5549590568989515,
+              "warm_mad_ms": 0.016661128029227257,
+              "rel_err": 6.747351244059323e-07,
+              "correct": true,
+              "one_shot_ms": 5385.548867052421,
+              "binding": {
+                "selection_source": "table",
+                "entry_tier": "table/semantic-or-legacy",
+                "executed": "fft_dit_matrix",
+                "flow_id": "local-fused-tile",
+                "fallback": false,
+                "plan_reason": "challenger m2_dit_t64@block256 beats M0 incumbent m0_dit@block256 by 25.9% (>= 2.0%)",
+                "composition": false,
+                "composition_table": null,
+                "profile_hash": "a78b86793c7142a0",
+                "input_shape": [
+                  1024
+                ]
+              }
+            },
+            "m0_reference": {
+              "warm_p50_ms": 0.6140680052340031,
+              "warm_mad_ms": 0.012250151485204697,
+              "rel_err": 2.486486735252082e-07,
+              "correct": true,
+              "one_shot_ms": 4461.745732231066,
+              "binding": {
+                "selection_source": "abstain",
+                "entry_tier": "m0-abstain",
+                "executed": "fft_dit",
+                "flow_id": "baseline-global-stage",
+                "fallback": true,
+                "plan_reason": "profile_hash is required; None cannot bypass the table (fall back to M0)",
+                "composition": false,
+                "composition_table": null,
+                "profile_hash": null,
+                "input_shape": [
+                  1024
+                ]
+              }
+            }
+          }
+        },
+        "3": {
+          "flags": {
+            "all_paths_present": true,
+            "no_fail_closed": true,
+            "correct_all_sessions": true,
+            "contract_all_sessions": true
+          },
+          "role": "protocol",
+          "paths": {
+            "vendor": {
+              "warm_p50_ms": 0.24032406508922577,
+              "warm_mad_ms": 0.0004991888999938965,
+              "rel_err": 3.776219677408616e-07,
+              "correct": true,
+              "one_shot_ms": 0.6191579159349203,
+              "binding": {
+                "input_shape": [
+                  1024
+                ]
+              }
+            },
+            "hybrid_vendor_p": {
+              "warm_p50_ms": 0.18441583961248398,
+              "warm_mad_ms": 0.0030298251658678055,
+              "rel_err": 5.102696639952974e-07,
+              "correct": true,
+              "one_shot_ms": 1940.989910857752,
+              "binding": {
+                "input_shape": [
+                  1024
+                ]
+              }
+            },
+            "hybrid_fused_p": {
+              "warm_p50_ms": 0.25125499814748764,
+              "warm_mad_ms": 0.01807999797165394,
+              "rel_err": 5.102696639952974e-07,
+              "correct": true,
+              "one_shot_ms": 1976.047175237909,
+              "binding": {
+                "input_shape": [
+                  1024
+                ]
+              }
+            },
+            "incumbent_entry": {
+              "warm_p50_ms": 0.5597281269729137,
+              "warm_mad_ms": 0.01881900243461132,
+              "rel_err": 8.412073470571573e-07,
+              "correct": true,
+              "one_shot_ms": 5410.416233120486,
+              "binding": {
+                "selection_source": "table",
+                "entry_tier": "table/semantic-or-legacy",
+                "executed": "fft_dit_matrix",
+                "flow_id": "local-fused-tile",
+                "fallback": false,
+                "plan_reason": "challenger m2_dit_t64@block256 beats M0 incumbent m0_dit@block256 by 25.9% (>= 2.0%)",
+                "composition": false,
+                "composition_table": null,
+                "profile_hash": "a78b86793c7142a0",
+                "input_shape": [
+                  1024
+                ]
+              }
+            },
+            "m0_reference": {
+              "warm_p50_ms": 0.6047170609235764,
+              "warm_mad_ms": 0.00622984953224659,
+              "rel_err": 3.4634905292158876e-07,
+              "correct": true,
+              "one_shot_ms": 4608.749185223132,
+              "binding": {
+                "selection_source": "abstain",
+                "entry_tier": "m0-abstain",
+                "executed": "fft_dit",
+                "flow_id": "baseline-global-stage",
+                "fallback": true,
+                "plan_reason": "profile_hash is required; None cannot bypass the table (fall back to M0)",
+                "composition": false,
+                "composition_table": null,
+                "profile_hash": null,
+                "input_shape": [
+                  1024
+                ]
+              }
+            }
+          }
+        },
+        "4": {
+          "flags": {
+            "all_paths_present": true,
+            "no_fail_closed": true,
+            "correct_all_sessions": true,
+            "contract_all_sessions": true
+          },
+          "role": "confirmation",
+          "paths": {
+            "vendor": {
+              "warm_p50_ms": 0.24164491333067417,
+              "warm_mad_ms": 0.0004798639565706253,
+              "rel_err": 4.403653224064939e-07,
+              "correct": true,
+              "one_shot_ms": 0.6267658900469542,
+              "binding": {
+                "input_shape": [
+                  1024
+                ]
+              }
+            },
+            "hybrid_vendor_p": {
+              "warm_p50_ms": 0.1678860280662775,
+              "warm_mad_ms": 0.0026400666683912277,
+              "rel_err": 5.518868746120028e-07,
+              "correct": true,
+              "one_shot_ms": 1868.5492891818285,
+              "binding": {
+                "input_shape": [
+                  1024
+                ]
+              }
+            },
+            "hybrid_fused_p": {
+              "warm_p50_ms": 0.26369490660727024,
+              "warm_mad_ms": 0.01437915489077568,
+              "rel_err": 5.518868746120028e-07,
+              "correct": true,
+              "one_shot_ms": 1906.7387063987553,
+              "binding": {
+                "input_shape": [
+                  1024
+                ]
+              }
+            },
+            "incumbent_entry": {
+              "warm_p50_ms": 0.5461589898914099,
+              "warm_mad_ms": 0.01400010660290718,
+              "rel_err": 7.19539236403748e-07,
+              "correct": true,
+              "one_shot_ms": 5337.224344955757,
+              "binding": {
+                "selection_source": "table",
+                "entry_tier": "table/semantic-or-legacy",
+                "executed": "fft_dit_matrix",
+                "flow_id": "local-fused-tile",
+                "fallback": false,
+                "plan_reason": "challenger m2_dit_t64@block256 beats M0 incumbent m0_dit@block256 by 25.9% (>= 2.0%)",
+                "composition": false,
+                "composition_table": null,
+                "profile_hash": "a78b86793c7142a0",
+                "input_shape": [
+                  1024
+                ]
+              }
+            },
+            "m0_reference": {
+              "warm_p50_ms": 0.6434661336243153,
+              "warm_mad_ms": 0.012429198250174522,
+              "rel_err": 3.4005372734612725e-07,
+              "correct": true,
+              "one_shot_ms": 4561.6726411972195,
+              "binding": {
+                "selection_source": "abstain",
+                "entry_tier": "m0-abstain",
+                "executed": "fft_dit",
+                "flow_id": "baseline-global-stage",
+                "fallback": true,
+                "plan_reason": "profile_hash is required; None cannot bypass the table (fall back to M0)",
+                "composition": false,
+                "composition_table": null,
+                "profile_hash": null,
+                "input_shape": [
+                  1024
+                ]
+              }
+            }
+          }
+        }
+      },
+      "verdicts": {
+        "hybrid_fused_p": {
+          "pass": false,
+          "reasons": [
+            "vendor: CI lower bound <= 1.02 in session(s) 3, 4 (lows=['1.5640', '1.5344', '0.9488', '0.9103'])",
+            "vendor: cross-session spread 0.266 > 0.1 (points=1.572, 1.541, 0.957, 0.917)",
+            "incumbent: cross-session spread 0.284 > 0.1 (points=3.591, 3.560, 2.226, 2.072)"
+          ],
+          "gate_ci_low_gt": 1.02,
+          "spread_rel_max": 0.1,
+          "ci_low_by_session": {
+            "vendor": [
+              1.5640254783666772,
+              1.5344078921113136,
+              0.9487526515616457,
+              0.9102959684332376
+            ],
+            "incumbent": [
+              3.567719745532956,
+              3.535344228908437,
+              2.2035146080334975,
+              2.0583181238193196
+            ]
+          },
+          "points_by_session": {
+            "vendor": [
+              1.5715765919855793,
+              1.5406482747286405,
+              0.9565927186351079,
+              0.9166777071773918
+            ],
+            "incumbent": [
+              3.5912069476495914,
+              3.5596378386858207,
+              2.22567124590246,
+              2.0717332895245866
+            ]
+          },
+          "frozen_candidate": true
+        },
+        "hybrid_vendor_p": {
+          "pass": true,
+          "reasons": [],
+          "gate_ci_low_gt": 1.02,
+          "spread_rel_max": 0.1,
+          "ci_low_by_session": {
+            "vendor": [
+              1.3770027595727268,
+              1.2838091070277375,
+              1.294524764234961,
+              1.4335263359262753
+            ],
+            "incumbent": [
+              3.1417009596542314,
+              2.9614839999858287,
+              3.0045359406314804,
+              3.238139832389574
+            ]
+          },
+          "points_by_session": {
+            "vendor": [
+              1.3829237208310734,
+              1.2978820881827644,
+              1.303170542939065,
+              1.4395486573457612
+            ],
+            "incumbent": [
+              3.160116598608352,
+              2.9987312919048117,
+              3.0320419018712417,
+              3.2534454061251665
+            ]
+          },
+          "frozen_candidate": false
+        }
+      },
+      "entry_shapes": {
+        "1": {
+          "vendor": [
+            1024
+          ],
+          "hybrid_vendor_p": [
+            1024
+          ],
+          "hybrid_fused_p": [
+            1024
+          ],
+          "incumbent_entry": [
+            1024
+          ],
+          "m0_reference": [
+            1024
+          ]
+        },
+        "2": {
+          "vendor": [
+            1024
+          ],
+          "hybrid_vendor_p": [
+            1024
+          ],
+          "hybrid_fused_p": [
+            1024
+          ],
+          "incumbent_entry": [
+            1024
+          ],
+          "m0_reference": [
+            1024
+          ]
+        },
+        "3": {
+          "vendor": [
+            1024
+          ],
+          "hybrid_vendor_p": [
+            1024
+          ],
+          "hybrid_fused_p": [
+            1024
+          ],
+          "incumbent_entry": [
+            1024
+          ],
+          "m0_reference": [
+            1024
+          ]
+        },
+        "4": {
+          "vendor": [
+            1024
+          ],
+          "hybrid_vendor_p": [
+            1024
+          ],
+          "hybrid_fused_p": [
+            1024
+          ],
+          "incumbent_entry": [
+            1024
+          ],
+          "m0_reference": [
+            1024
+          ]
+        }
+      },
+      "entry_shape_uniform": true,
+      "gate_flags_by_session": [
+        {
+          "all_paths_present": true,
+          "no_fail_closed": true,
+          "correct_all_sessions": true,
+          "contract_all_sessions": true
+        },
+        {
+          "all_paths_present": true,
+          "no_fail_closed": true,
+          "correct_all_sessions": true,
+          "contract_all_sessions": true
+        },
+        {
+          "all_paths_present": true,
+          "no_fail_closed": true,
+          "correct_all_sessions": true,
+          "contract_all_sessions": true
+        },
+        {
+          "all_paths_present": true,
+          "no_fail_closed": true,
+          "correct_all_sessions": true,
+          "contract_all_sessions": true
+        }
+      ],
+      "promotion": {
+        "passing_frozen_candidates": [],
+        "selected": null,
+        "selection_reason": "no frozen candidate passed"
+      }
+    },
+    {
+      "label": "N2048B1:c2c_forward",
+      "n": 2048,
+      "batch": 1,
+      "direction": "c2c_forward",
+      "frozen_candidates": [
+        "hybrid_fused_p",
+        "hybrid_vendor_p"
+      ],
+      "sessions": {
+        "1": {
+          "flags": {
+            "all_paths_present": true,
+            "no_fail_closed": true,
+            "correct_all_sessions": true,
+            "contract_all_sessions": true
+          },
+          "role": "protocol",
+          "paths": {
+            "vendor": {
+              "warm_p50_ms": 0.6388570182025433,
+              "warm_mad_ms": 0.0047299545258283615,
+              "rel_err": 3.6374042531152607e-07,
+              "correct": true,
+              "one_shot_ms": 1.3970318250358105,
+              "binding": {
+                "input_shape": [
+                  2048
+                ]
+              }
+            },
+            "hybrid_vendor_p": {
+              "warm_p50_ms": 0.2007461152970791,
+              "warm_mad_ms": 0.0031401868909597397,
+              "rel_err": 4.82261234112588e-07,
+              "correct": true,
+              "one_shot_ms": 1894.690900342539,
+              "binding": {
+                "input_shape": [
+                  2048
+                ]
+              }
+            },
+            "hybrid_fused_p": {
+              "warm_p50_ms": 0.26018405333161354,
+              "warm_mad_ms": 0.016309786587953568,
+              "rel_err": 4.82261234112588e-07,
+              "correct": true,
+              "one_shot_ms": 1897.5994833745062,
+              "binding": {
+                "input_shape": [
+                  2048
+                ]
+              }
+            },
+            "incumbent_entry": {
+              "warm_p50_ms": 0.7877429015934467,
+              "warm_mad_ms": 0.05288911052048206,
+              "rel_err": 9.246076633558596e-07,
+              "correct": true,
+              "one_shot_ms": 5525.356482248753,
+              "binding": {
+                "selection_source": "table",
+                "entry_tier": "table/semantic-or-legacy",
+                "executed": "fft_dit_matrix",
+                "flow_id": "local-fused-tile",
+                "fallback": false,
+                "plan_reason": "challenger m2_dit_t64@block256 beats M0 incumbent m0_dit@block256 by 32.4% (>= 2.0%)",
+                "composition": false,
+                "composition_table": null,
+                "profile_hash": "a78b86793c7142a0",
+                "input_shape": [
+                  2048
+                ]
+              }
+            },
+            "m0_reference": {
+              "warm_p50_ms": 0.508429016917944,
+              "warm_mad_ms": 0.005349051207304001,
+              "rel_err": 3.017344797022599e-07,
+              "correct": true,
+              "one_shot_ms": 4584.319659741595,
+              "binding": {
+                "selection_source": "abstain",
+                "entry_tier": "m0-abstain",
+                "executed": "fft_dit",
+                "flow_id": "baseline-global-stage",
+                "fallback": true,
+                "plan_reason": "profile_hash is required; None cannot bypass the table (fall back to M0)",
+                "composition": false,
+                "composition_table": null,
+                "profile_hash": null,
+                "input_shape": [
+                  2048
+                ]
+              }
+            }
+          }
+        },
+        "2": {
+          "flags": {
+            "all_paths_present": true,
+            "no_fail_closed": true,
+            "correct_all_sessions": true,
+            "contract_all_sessions": true
+          },
+          "role": "protocol",
+          "paths": {
+            "vendor": {
+              "warm_p50_ms": 0.6384470034390688,
+              "warm_mad_ms": 0.003979075700044632,
+              "rel_err": 3.270920208379225e-07,
+              "correct": true,
+              "one_shot_ms": 1.3963289093226194,
+              "binding": {
+                "input_shape": [
+                  2048
+                ]
+              }
+            },
+            "hybrid_vendor_p": {
+              "warm_p50_ms": 0.18898607231676579,
+              "warm_mad_ms": 0.0026391353458166122,
+              "rel_err": 6.445755624467001e-07,
+              "correct": true,
+              "one_shot_ms": 1873.126229736954,
+              "binding": {
+                "input_shape": [
+                  2048
+                ]
+              }
+            },
+            "hybrid_fused_p": {
+              "warm_p50_ms": 0.16365689225494862,
+              "warm_mad_ms": 0.002359040081501007,
+              "rel_err": 6.445755624467001e-07,
+              "correct": true,
+              "one_shot_ms": 1872.481482103467,
+              "binding": {
+                "input_shape": [
+                  2048
+                ]
+              }
+            },
+            "incumbent_entry": {
+              "warm_p50_ms": 0.7911541033536196,
+              "warm_mad_ms": 0.31997403129935265,
+              "rel_err": 8.076182853930336e-07,
+              "correct": true,
+              "one_shot_ms": 5475.495603168383,
+              "binding": {
+                "selection_source": "table",
+                "entry_tier": "table/semantic-or-legacy",
+                "executed": "fft_dit_matrix",
+                "flow_id": "local-fused-tile",
+                "fallback": false,
+                "plan_reason": "challenger m2_dit_t64@block256 beats M0 incumbent m0_dit@block256 by 32.4% (>= 2.0%)",
+                "composition": false,
+                "composition_table": null,
+                "profile_hash": "a78b86793c7142a0",
+                "input_shape": [
+                  2048
+                ]
+              }
+            },
+            "m0_reference": {
+              "warm_p50_ms": 0.6080879829823971,
+              "warm_mad_ms": 0.08493894711136818,
+              "rel_err": 4.138409374209778e-07,
+              "correct": true,
+              "one_shot_ms": 4551.613244693726,
+              "binding": {
+                "selection_source": "abstain",
+                "entry_tier": "m0-abstain",
+                "executed": "fft_dit",
+                "flow_id": "baseline-global-stage",
+                "fallback": true,
+                "plan_reason": "profile_hash is required; None cannot bypass the table (fall back to M0)",
+                "composition": false,
+                "composition_table": null,
+                "profile_hash": null,
+                "input_shape": [
+                  2048
+                ]
+              }
+            }
+          }
+        },
+        "3": {
+          "flags": {
+            "all_paths_present": true,
+            "no_fail_closed": true,
+            "correct_all_sessions": true,
+            "contract_all_sessions": true
+          },
+          "role": "protocol",
+          "paths": {
+            "vendor": {
+              "warm_p50_ms": 0.6516571156680584,
+              "warm_mad_ms": 0.0029189977794885635,
+              "rel_err": 4.0059495042093824e-07,
+              "correct": true,
+              "one_shot_ms": 1.4292611740529537,
+              "binding": {
+                "input_shape": [
+                  2048
+                ]
+              }
+            },
+            "hybrid_vendor_p": {
+              "warm_p50_ms": 0.3014630638062954,
+              "warm_mad_ms": 0.016631092876195908,
+              "rel_err": 5.63022892896607e-07,
+              "correct": true,
+              "one_shot_ms": 1896.3147879112512,
+              "binding": {
+                "input_shape": [
+                  2048
+                ]
+              }
+            },
+            "hybrid_fused_p": {
+              "warm_p50_ms": 0.1587460283190012,
+              "warm_mad_ms": 0.002870103344321251,
+              "rel_err": 5.63022892896607e-07,
+              "correct": true,
+              "one_shot_ms": 1939.3993020057678,
+              "binding": {
+                "input_shape": [
+                  2048
+                ]
+              }
+            },
+            "incumbent_entry": {
+              "warm_p50_ms": 0.8054932113736868,
+              "warm_mad_ms": 0.05147862248122692,
+              "rel_err": 1.0847573080605359e-06,
+              "correct": true,
+              "one_shot_ms": 5570.907507091761,
+              "binding": {
+                "selection_source": "table",
+                "entry_tier": "table/semantic-or-legacy",
+                "executed": "fft_dit_matrix",
+                "flow_id": "local-fused-tile",
+                "fallback": false,
+                "plan_reason": "challenger m2_dit_t64@block256 beats M0 incumbent m0_dit@block256 by 32.4% (>= 2.0%)",
+                "composition": false,
+                "composition_table": null,
+                "profile_hash": "a78b86793c7142a0",
+                "input_shape": [
+                  2048
+                ]
+              }
+            },
+            "m0_reference": {
+              "warm_p50_ms": 0.5146500188857317,
+              "warm_mad_ms": 0.013280892744660378,
+              "rel_err": 3.9462514303803103e-07,
+              "correct": true,
+              "one_shot_ms": 4518.06191727519,
+              "binding": {
+                "selection_source": "abstain",
+                "entry_tier": "m0-abstain",
+                "executed": "fft_dit",
+                "flow_id": "baseline-global-stage",
+                "fallback": true,
+                "plan_reason": "profile_hash is required; None cannot bypass the table (fall back to M0)",
+                "composition": false,
+                "composition_table": null,
+                "profile_hash": null,
+                "input_shape": [
+                  2048
+                ]
+              }
+            }
+          }
+        },
+        "4": {
+          "flags": {
+            "all_paths_present": true,
+            "no_fail_closed": true,
+            "correct_all_sessions": true,
+            "contract_all_sessions": true
+          },
+          "role": "confirmation",
+          "paths": {
+            "vendor": {
+              "warm_p50_ms": 0.6503860931843519,
+              "warm_mad_ms": 0.003859167918562889,
+              "rel_err": 3.0853787446423705e-07,
+              "correct": true,
+              "one_shot_ms": 1.4306609518826008,
+              "binding": {
+                "input_shape": [
+                  2048
+                ]
+              }
+            },
+            "hybrid_vendor_p": {
+              "warm_p50_ms": 0.18480606377124786,
+              "warm_mad_ms": 0.0027990899980068207,
+              "rel_err": 6.002723912928595e-07,
+              "correct": true,
+              "one_shot_ms": 1903.151418780908,
+              "binding": {
+                "input_shape": [
+                  2048
+                ]
+              }
+            },
+            "hybrid_fused_p": {
+              "warm_p50_ms": 0.17491611652076244,
+              "warm_mad_ms": 0.0024901237338781357,
+              "rel_err": 6.002723912928595e-07,
+              "correct": true,
+              "one_shot_ms": 1893.395554739982,
+              "binding": {
+                "input_shape": [
+                  2048
+                ]
+              }
+            },
+            "incumbent_entry": {
+              "warm_p50_ms": 0.7710340432822704,
+              "warm_mad_ms": 0.3372631035745144,
+              "rel_err": 9.517994972435167e-07,
+              "correct": true,
+              "one_shot_ms": 5539.260663092136,
+              "binding": {
+                "selection_source": "table",
+                "entry_tier": "table/semantic-or-legacy",
+                "executed": "fft_dit_matrix",
+                "flow_id": "local-fused-tile",
+                "fallback": false,
+                "plan_reason": "challenger m2_dit_t64@block256 beats M0 incumbent m0_dit@block256 by 32.4% (>= 2.0%)",
+                "composition": false,
+                "composition_table": null,
+                "profile_hash": "a78b86793c7142a0",
+                "input_shape": [
+                  2048
+                ]
+              }
+            },
+            "m0_reference": {
+              "warm_p50_ms": 0.5402881652116776,
+              "warm_mad_ms": 0.013109995052218437,
+              "rel_err": 3.959366706735873e-07,
+              "correct": true,
+              "one_shot_ms": 4572.32653000392,
+              "binding": {
+                "selection_source": "abstain",
+                "entry_tier": "m0-abstain",
+                "executed": "fft_dit",
+                "flow_id": "baseline-global-stage",
+                "fallback": true,
+                "plan_reason": "profile_hash is required; None cannot bypass the table (fall back to M0)",
+                "composition": false,
+                "composition_table": null,
+                "profile_hash": null,
+                "input_shape": [
+                  2048
+                ]
+              }
+            }
+          }
+        }
+      },
+      "verdicts": {
+        "hybrid_fused_p": {
+          "pass": false,
+          "reasons": [
+            "vendor: cross-session spread 0.355 > 0.1 (points=2.456, 3.902, 4.106, 3.719)",
+            "incumbent: cross-session spread 0.346 > 0.1 (points=3.021, 4.831, 5.071, 4.406)"
+          ],
+          "gate_ci_low_gt": 1.02,
+          "spread_rel_max": 0.1,
+          "ci_low_by_session": {
+            "vendor": [
+              2.432638330757198,
+              3.886543342700043,
+              4.07987685886393,
+              3.7002343884467535
+            ],
+            "incumbent": [
+              1.6446546634461972,
+              2.6998739819453808,
+              2.8340877696186597,
+              2.540029982766403
+            ]
+          },
+          "points_by_session": {
+            "vendor": [
+              2.4564719207257704,
+              3.9024218597121663,
+              4.105598617581824,
+              3.7186533777716537
+            ],
+            "incumbent": [
+              3.0206865986350397,
+              4.831463896251757,
+              5.0712266614249,
+              4.4064941453378035
+            ]
+          },
+          "frozen_candidate": true
+        },
+        "hybrid_vendor_p": {
+          "pass": false,
+          "reasons": [
+            "vendor: cross-session spread 0.341 > 0.1 (points=3.184, 3.378, 2.162, 3.520)",
+            "incumbent: cross-session spread 0.340 > 0.1 (points=3.916, 4.182, 2.670, 4.172)"
+          ],
+          "gate_ci_low_gt": 1.02,
+          "spread_rel_max": 0.1,
+          "ci_low_by_session": {
+            "vendor": [
+              3.1695279781103376,
+              3.362999111372303,
+              2.1425105536191738,
+              3.4997442305599122
+            ],
+            "incumbent": [
+              2.135248784887942,
+              2.3353352390740967,
+              1.4910107352667687,
+              2.4048501715269173
+            ]
+          },
+          "points_by_session": {
+            "vendor": [
+              3.1844672533584664,
+              3.3782464712469924,
+              2.161970737570497,
+              3.520487172555299
+            ],
+            "incumbent": [
+              3.9158915169565693,
+              4.182499085240775,
+              2.670461646843988,
+              4.171673059750919
+            ]
+          },
+          "frozen_candidate": true
+        }
+      },
+      "entry_shapes": {
+        "1": {
+          "vendor": [
+            2048
+          ],
+          "hybrid_vendor_p": [
+            2048
+          ],
+          "hybrid_fused_p": [
+            2048
+          ],
+          "incumbent_entry": [
+            2048
+          ],
+          "m0_reference": [
+            2048
+          ]
+        },
+        "2": {
+          "vendor": [
+            2048
+          ],
+          "hybrid_vendor_p": [
+            2048
+          ],
+          "hybrid_fused_p": [
+            2048
+          ],
+          "incumbent_entry": [
+            2048
+          ],
+          "m0_reference": [
+            2048
+          ]
+        },
+        "3": {
+          "vendor": [
+            2048
+          ],
+          "hybrid_vendor_p": [
+            2048
+          ],
+          "hybrid_fused_p": [
+            2048
+          ],
+          "incumbent_entry": [
+            2048
+          ],
+          "m0_reference": [
+            2048
+          ]
+        },
+        "4": {
+          "vendor": [
+            2048
+          ],
+          "hybrid_vendor_p": [
+            2048
+          ],
+          "hybrid_fused_p": [
+            2048
+          ],
+          "incumbent_entry": [
+            2048
+          ],
+          "m0_reference": [
+            2048
+          ]
+        }
+      },
+      "entry_shape_uniform": true,
+      "gate_flags_by_session": [
+        {
+          "all_paths_present": true,
+          "no_fail_closed": true,
+          "correct_all_sessions": true,
+          "contract_all_sessions": true
+        },
+        {
+          "all_paths_present": true,
+          "no_fail_closed": true,
+          "correct_all_sessions": true,
+          "contract_all_sessions": true
+        },
+        {
+          "all_paths_present": true,
+          "no_fail_closed": true,
+          "correct_all_sessions": true,
+          "contract_all_sessions": true
+        },
+        {
+          "all_paths_present": true,
+          "no_fail_closed": true,
+          "correct_all_sessions": true,
+          "contract_all_sessions": true
+        }
+      ],
+      "promotion": {
+        "passing_frozen_candidates": [],
+        "selected": null,
+        "selection_reason": "no frozen candidate passed"
+      }
+    },
+    {
+      "label": "N2048B1:c2c_inverse",
+      "n": 2048,
+      "batch": 1,
+      "direction": "c2c_inverse",
+      "frozen_candidates": [
+        "hybrid_fused_p",
+        "hybrid_vendor_p"
+      ],
+      "sessions": {
+        "1": {
+          "flags": {
+            "all_paths_present": true,
+            "no_fail_closed": true,
+            "correct_all_sessions": true,
+            "contract_all_sessions": true
+          },
+          "role": "protocol",
+          "paths": {
+            "vendor": {
+              "warm_p50_ms": 0.637926859781146,
+              "warm_mad_ms": 0.00567990355193615,
+              "rel_err": 3.197898835666751e-07,
+              "correct": true,
+              "one_shot_ms": 1.461300067603588,
+              "binding": {
+                "input_shape": [
+                  2048
+                ]
+              }
+            },
+            "hybrid_vendor_p": {
+              "warm_p50_ms": 0.20095589570701122,
+              "warm_mad_ms": 0.002661021426320076,
+              "rel_err": 4.3353926278130417e-07,
+              "correct": true,
+              "one_shot_ms": 1899.2943910416216,
+              "binding": {
+                "input_shape": [
+                  2048
+                ]
+              }
+            },
+            "hybrid_fused_p": {
+              "warm_p50_ms": 0.17181620933115482,
+              "warm_mad_ms": 0.002819811925292015,
+              "rel_err": 4.3353926278130417e-07,
+              "correct": true,
+              "one_shot_ms": 1918.1322301737964,
+              "binding": {
+                "input_shape": [
+                  2048
+                ]
+              }
+            },
+            "incumbent_entry": {
+              "warm_p50_ms": 0.5536391399800777,
+              "warm_mad_ms": 0.017410144209861755,
+              "rel_err": 8.61281379289473e-07,
+              "correct": true,
+              "one_shot_ms": 5583.623903105035,
+              "binding": {
+                "selection_source": "table",
+                "entry_tier": "table/semantic-or-legacy",
+                "executed": "fft_dit_matrix",
+                "flow_id": "local-fused-tile",
+                "fallback": false,
+                "plan_reason": "challenger m2_dit_t64@block256 beats M0 incumbent m0_dit@block256 by 32.4% (>= 2.0%)",
+                "composition": false,
+                "composition_table": null,
+                "profile_hash": "a78b86793c7142a0",
+                "input_shape": [
+                  2048
+                ]
+              }
+            },
+            "m0_reference": {
+              "warm_p50_ms": 0.6464170292019844,
+              "warm_mad_ms": 0.03081001341342926,
+              "rel_err": 3.0479722867289163e-07,
+              "correct": true,
+              "one_shot_ms": 4551.171405008063,
+              "binding": {
+                "selection_source": "abstain",
+                "entry_tier": "m0-abstain",
+                "executed": "fft_dit",
+                "flow_id": "baseline-global-stage",
+                "fallback": true,
+                "plan_reason": "profile_hash is required; None cannot bypass the table (fall back to M0)",
+                "composition": false,
+                "composition_table": null,
+                "profile_hash": null,
+                "input_shape": [
+                  2048
+                ]
+              }
+            }
+          }
+        },
+        "2": {
+          "flags": {
+            "all_paths_present": true,
+            "no_fail_closed": true,
+            "correct_all_sessions": true,
+            "contract_all_sessions": true
+          },
+          "role": "protocol",
+          "paths": {
+            "vendor": {
+              "warm_p50_ms": 0.6404970772564411,
+              "warm_mad_ms": 0.00502890907227993,
+              "rel_err": 3.327106951384676e-07,
+              "correct": true,
+              "one_shot_ms": 1.4183500315994024,
+              "binding": {
+                "input_shape": [
+                  2048
+                ]
+              }
+            },
+            "hybrid_vendor_p": {
+              "warm_p50_ms": 0.1857769675552845,
+              "warm_mad_ms": 0.003341119736433029,
+              "rel_err": 4.0265652820309615e-07,
+              "correct": true,
+              "one_shot_ms": 1898.2714188750833,
+              "binding": {
+                "input_shape": [
+                  2048
+                ]
+              }
+            },
+            "hybrid_fused_p": {
+              "warm_p50_ms": 0.16191601753234863,
+              "warm_mad_ms": 0.002840999513864517,
+              "rel_err": 4.0265652820309615e-07,
+              "correct": true,
+              "one_shot_ms": 1856.028147507459,
+              "binding": {
+                "input_shape": [
+                  2048
+                ]
+              }
+            },
+            "incumbent_entry": {
+              "warm_p50_ms": 0.5368790589272976,
+              "warm_mad_ms": 0.006299931555986404,
+              "rel_err": 8.555324160368994e-07,
+              "correct": true,
+              "one_shot_ms": 5550.666938070208,
+              "binding": {
+                "selection_source": "table",
+                "entry_tier": "table/semantic-or-legacy",
+                "executed": "fft_dit_matrix",
+                "flow_id": "local-fused-tile",
+                "fallback": false,
+                "plan_reason": "challenger m2_dit_t64@block256 beats M0 incumbent m0_dit@block256 by 32.4% (>= 2.0%)",
+                "composition": false,
+                "composition_table": null,
+                "profile_hash": "a78b86793c7142a0",
+                "input_shape": [
+                  2048
+                ]
+              }
+            },
+            "m0_reference": {
+              "warm_p50_ms": 0.6341771222651005,
+              "warm_mad_ms": 0.011531170457601547,
+              "rel_err": 2.960126030159809e-07,
+              "correct": true,
+              "one_shot_ms": 4476.255413144827,
+              "binding": {
+                "selection_source": "abstain",
+                "entry_tier": "m0-abstain",
+                "executed": "fft_dit",
+                "flow_id": "baseline-global-stage",
+                "fallback": true,
+                "plan_reason": "profile_hash is required; None cannot bypass the table (fall back to M0)",
+                "composition": false,
+                "composition_table": null,
+                "profile_hash": null,
+                "input_shape": [
+                  2048
+                ]
+              }
+            }
+          }
+        },
+        "3": {
+          "flags": {
+            "all_paths_present": true,
+            "no_fail_closed": true,
+            "correct_all_sessions": true,
+            "contract_all_sessions": true
+          },
+          "role": "protocol",
+          "paths": {
+            "vendor": {
+              "warm_p50_ms": 0.6441059522330761,
+              "warm_mad_ms": 0.003949971869587898,
+              "rel_err": 3.6439851680649344e-07,
+              "correct": true,
+              "one_shot_ms": 1.4200280420482159,
+              "binding": {
+                "input_shape": [
+                  2048
+                ]
+              }
+            },
+            "hybrid_vendor_p": {
+              "warm_p50_ms": 0.18451595678925514,
+              "warm_mad_ms": 0.0019997823983430862,
+              "rel_err": 4.818912749671017e-07,
+              "correct": true,
+              "one_shot_ms": 1872.076370054856,
+              "binding": {
+                "input_shape": [
+                  2048
+                ]
+              }
+            },
+            "hybrid_fused_p": {
+              "warm_p50_ms": 0.26860483922064304,
+              "warm_mad_ms": 0.016719335690140724,
+              "rel_err": 4.818912749671017e-07,
+              "correct": true,
+              "one_shot_ms": 1933.1481826957315,
+              "binding": {
+                "input_shape": [
+                  2048
+                ]
+              }
+            },
+            "incumbent_entry": {
+              "warm_p50_ms": 0.5462989211082458,
+              "warm_mad_ms": 0.017369864508509636,
+              "rel_err": 9.400081906866361e-07,
+              "correct": true,
+              "one_shot_ms": 5647.221426013857,
+              "binding": {
+                "selection_source": "table",
+                "entry_tier": "table/semantic-or-legacy",
+                "executed": "fft_dit_matrix",
+                "flow_id": "local-fused-tile",
+                "fallback": false,
+                "plan_reason": "challenger m2_dit_t64@block256 beats M0 incumbent m0_dit@block256 by 32.4% (>= 2.0%)",
+                "composition": false,
+                "composition_table": null,
+                "profile_hash": "a78b86793c7142a0",
+                "input_shape": [
+                  2048
+                ]
+              }
+            },
+            "m0_reference": {
+              "warm_p50_ms": 0.6679762154817581,
+              "warm_mad_ms": 0.007830094546079636,
+              "rel_err": 3.676335421257027e-07,
+              "correct": true,
+              "one_shot_ms": 4644.080084050074,
+              "binding": {
+                "selection_source": "abstain",
+                "entry_tier": "m0-abstain",
+                "executed": "fft_dit",
+                "flow_id": "baseline-global-stage",
+                "fallback": true,
+                "plan_reason": "profile_hash is required; None cannot bypass the table (fall back to M0)",
+                "composition": false,
+                "composition_table": null,
+                "profile_hash": null,
+                "input_shape": [
+                  2048
+                ]
+              }
+            }
+          }
+        },
+        "4": {
+          "flags": {
+            "all_paths_present": true,
+            "no_fail_closed": true,
+            "correct_all_sessions": true,
+            "contract_all_sessions": true
+          },
+          "role": "confirmation",
+          "paths": {
+            "vendor": {
+              "warm_p50_ms": 0.6366169545799494,
+              "warm_mad_ms": 0.00600004568696022,
+              "rel_err": 3.3549629246788406e-07,
+              "correct": true,
+              "one_shot_ms": 1.4310278929769993,
+              "binding": {
+                "input_shape": [
+                  2048
+                ]
+              }
+            },
+            "hybrid_vendor_p": {
+              "warm_p50_ms": 0.18377602100372314,
+              "warm_mad_ms": 0.003150198608636856,
+              "rel_err": 4.848601217027295e-07,
+              "correct": true,
+              "one_shot_ms": 1902.0959394983947,
+              "binding": {
+                "input_shape": [
+                  2048
+                ]
+              }
+            },
+            "hybrid_fused_p": {
+              "warm_p50_ms": 0.17371587455272675,
+              "warm_mad_ms": 0.0023602042347192764,
+              "rel_err": 4.848601217027295e-07,
+              "correct": true,
+              "one_shot_ms": 1964.1785509884357,
+              "binding": {
+                "input_shape": [
+                  2048
+                ]
+              }
+            },
+            "incumbent_entry": {
+              "warm_p50_ms": 0.5540179554373026,
+              "warm_mad_ms": 0.018018996343016624,
+              "rel_err": 1.0038293458064629e-06,
+              "correct": true,
+              "one_shot_ms": 5578.366506844759,
+              "binding": {
+                "selection_source": "table",
+                "entry_tier": "table/semantic-or-legacy",
+                "executed": "fft_dit_matrix",
+                "flow_id": "local-fused-tile",
+                "fallback": false,
+                "plan_reason": "challenger m2_dit_t64@block256 beats M0 incumbent m0_dit@block256 by 32.4% (>= 2.0%)",
+                "composition": false,
+                "composition_table": null,
+                "profile_hash": "a78b86793c7142a0",
+                "input_shape": [
+                  2048
+                ]
+              }
+            },
+            "m0_reference": {
+              "warm_p50_ms": 0.6436160765588284,
+              "warm_mad_ms": 0.012249220162630081,
+              "rel_err": 3.1871269468160927e-07,
+              "correct": true,
+              "one_shot_ms": 4600.676318164915,
+              "binding": {
+                "selection_source": "abstain",
+                "entry_tier": "m0-abstain",
+                "executed": "fft_dit",
+                "flow_id": "baseline-global-stage",
+                "fallback": true,
+                "plan_reason": "profile_hash is required; None cannot bypass the table (fall back to M0)",
+                "composition": false,
+                "composition_table": null,
+                "profile_hash": null,
+                "input_shape": [
+                  2048
+                ]
+              }
+            }
+          }
+        }
+      },
+      "verdicts": {
+        "hybrid_fused_p": {
+          "pass": false,
+          "reasons": [
+            "vendor: cross-session spread 0.350 > 0.1 (points=3.713, 3.958, 2.398, 3.664)",
+            "incumbent: cross-session spread 0.365 > 0.1 (points=3.222, 3.317, 2.033, 3.188)"
+          ],
+          "gate_ci_low_gt": 1.02,
+          "spread_rel_max": 0.1,
+          "ci_low_by_session": {
+            "vendor": [
+              3.6950417890768317,
+              3.936228886306771,
+              2.3784212014097688,
+              3.646351868660312
+            ],
+            "incumbent": [
+              3.1948841792365816,
+              3.2956952359627976,
+              2.009868364767151,
+              3.161975914581413
+            ]
+          },
+          "points_by_session": {
+            "vendor": [
+              3.7126728365073527,
+              3.957951448739457,
+              2.397978037981679,
+              3.664414746469661
+            ],
+            "incumbent": [
+              3.221692146225089,
+              3.317380988693818,
+              2.0333972646082965,
+              3.1875234551751497
+            ]
+          },
+          "frozen_candidate": true
+        },
+        "hybrid_vendor_p": {
+          "pass": true,
+          "reasons": [],
+          "gate_ci_low_gt": 1.02,
+          "spread_rel_max": 0.1,
+          "ci_low_by_session": {
+            "vendor": [
+              3.157472020857546,
+              3.419785379793764,
+              3.478785590127428,
+              3.445915824644078
+            ],
+            "incumbent": [
+              2.731016885553471,
+              2.866003704530167,
+              2.9354014623122278,
+              2.987916415872367
+            ]
+          },
+          "points_by_session": {
+            "vendor": [
+              3.17502311955184,
+              3.448056615941534,
+              3.4907870868417152,
+              3.4650467502922884
+            ],
+            "incumbent": [
+              2.755143665706346,
+              2.890009545040621,
+              2.9600591837314143,
+              3.0141014470253125
+            ]
+          },
+          "frozen_candidate": true
+        }
+      },
+      "entry_shapes": {
+        "1": {
+          "vendor": [
+            2048
+          ],
+          "hybrid_vendor_p": [
+            2048
+          ],
+          "hybrid_fused_p": [
+            2048
+          ],
+          "incumbent_entry": [
+            2048
+          ],
+          "m0_reference": [
+            2048
+          ]
+        },
+        "2": {
+          "vendor": [
+            2048
+          ],
+          "hybrid_vendor_p": [
+            2048
+          ],
+          "hybrid_fused_p": [
+            2048
+          ],
+          "incumbent_entry": [
+            2048
+          ],
+          "m0_reference": [
+            2048
+          ]
+        },
+        "3": {
+          "vendor": [
+            2048
+          ],
+          "hybrid_vendor_p": [
+            2048
+          ],
+          "hybrid_fused_p": [
+            2048
+          ],
+          "incumbent_entry": [
+            2048
+          ],
+          "m0_reference": [
+            2048
+          ]
+        },
+        "4": {
+          "vendor": [
+            2048
+          ],
+          "hybrid_vendor_p": [
+            2048
+          ],
+          "hybrid_fused_p": [
+            2048
+          ],
+          "incumbent_entry": [
+            2048
+          ],
+          "m0_reference": [
+            2048
+          ]
+        }
+      },
+      "entry_shape_uniform": true,
+      "gate_flags_by_session": [
+        {
+          "all_paths_present": true,
+          "no_fail_closed": true,
+          "correct_all_sessions": true,
+          "contract_all_sessions": true
+        },
+        {
+          "all_paths_present": true,
+          "no_fail_closed": true,
+          "correct_all_sessions": true,
+          "contract_all_sessions": true
+        },
+        {
+          "all_paths_present": true,
+          "no_fail_closed": true,
+          "correct_all_sessions": true,
+          "contract_all_sessions": true
+        },
+        {
+          "all_paths_present": true,
+          "no_fail_closed": true,
+          "correct_all_sessions": true,
+          "contract_all_sessions": true
+        }
+      ],
+      "promotion": {
+        "passing_frozen_candidates": [
+          "hybrid_vendor_p"
+        ],
+        "selected": "hybrid_vendor_p",
+        "selection_reason": "only passing frozen candidate"
+      }
+    },
+    {
+      "label": "N2048B16:c2c_forward",
+      "n": 2048,
+      "batch": 16,
+      "direction": "c2c_forward",
+      "frozen_candidates": [
+        "hybrid_fused_p"
+      ],
+      "sessions": {
+        "1": {
+          "flags": {
+            "all_paths_present": true,
+            "no_fail_closed": true,
+            "correct_all_sessions": true,
+            "contract_all_sessions": true
+          },
+          "role": "protocol",
+          "paths": {
+            "vendor": {
+              "warm_p50_ms": 0.6538860034197569,
+              "warm_mad_ms": 0.0027599744498729706,
+              "rel_err": 4.6056149238107234e-07,
+              "correct": true,
+              "one_shot_ms": 1.4461197424679995,
+              "binding": {
+                "input_shape": [
+                  16,
+                  2048
+                ]
+              }
+            },
+            "hybrid_vendor_p": {
+              "warm_p50_ms": 0.5115799140185118,
+              "warm_mad_ms": 0.005179084837436676,
+              "rel_err": 5.792786955288927e-07,
+              "correct": true,
+              "one_shot_ms": 1946.712746983394,
+              "binding": {
+                "input_shape": [
+                  16,
+                  2048
+                ]
+              }
+            },
+            "hybrid_fused_p": {
+              "warm_p50_ms": 0.3147530369460583,
+              "warm_mad_ms": 0.00939890742301941,
+              "rel_err": 5.792786955288927e-07,
+              "correct": true,
+              "one_shot_ms": 1918.6385951470584,
+              "binding": {
+                "input_shape": [
+                  16,
+                  2048
+                ]
+              }
+            },
+            "incumbent_entry": {
+              "warm_p50_ms": 0.4851499106734991,
+              "warm_mad_ms": 0.04603923298418522,
+              "rel_err": 6.413281640458401e-07,
+              "correct": true,
+              "one_shot_ms": 314.41753217950463,
+              "binding": {
+                "selection_source": "composition",
+                "entry_tier": "composition-table",
+                "executed": "run_hybrid",
+                "flow_id": "hybrid-A1P1",
+                "fallback": false,
+                "plan_reason": "composition hybrid-A1P1 (exact shape, 83.6% >= 2.0% guard vs A0P0-production; p50=0.2477ms over 4 sessions + confirmation, err_max=0.0001): exact-shape composition: A1P1 0.2477ms vs production A0P0 1.5076ms (+83.6%), vendor_full 0.6588ms (+62.4% vendor delta recorded, not a gate)",
+                "composition": true,
+                "composition_table": {
+                  "table": "config/composition_table.json",
+                  "matched": true,
+                  "table_sha256": "49e5f41b4a3a88b06d3e674cddecf579216a3539a8d774aa3d25afa4ae70a725",
+                  "table_profile_hash": "a78b86793c7142a0",
+                  "table_env_hash": "6b50bd316032c0fe",
+                  "entry_key": {
+                    "N": 2048,
+                    "batch": 16,
+                    "direction": "dit",
+                    "transform_type": "c2c",
+                    "transform_direction": "forward"
+                  },
+                  "contract_id": "a1p1_materialized_subtransform",
+                  "flow_id": "hybrid-A1P1",
+                  "executed": "run_hybrid",
+                  "guard_pct": 83.569912443619,
+                  "evidence_artifact": "results/p800/composition_confirm.json",
+                  "evidence_artifact_sha256": "3a687d7a9072cfe19593c188f79dcd5bf3e560041e67157ef8086477844abcf2"
+                },
+                "profile_hash": "a78b86793c7142a0",
+                "input_shape": [
+                  16,
+                  2048
+                ]
+              }
+            },
+            "m0_reference": {
+              "warm_p50_ms": 3.6123439203947783,
+              "warm_mad_ms": 0.024027889594435692,
+              "rel_err": 4.353432807710646e-07,
+              "correct": true,
+              "one_shot_ms": 4498.450896004215,
+              "binding": {
+                "selection_source": "abstain",
+                "entry_tier": "m0-abstain",
+                "executed": "fft_dit_batch",
+                "flow_id": "baseline-global-stage",
+                "fallback": true,
+                "plan_reason": "profile_hash is required; None cannot bypass the table (fall back to M0)",
+                "composition": false,
+                "composition_table": null,
+                "profile_hash": null,
+                "input_shape": [
+                  16,
+                  2048
+                ]
+              }
+            }
+          }
+        },
+        "2": {
+          "flags": {
+            "all_paths_present": true,
+            "no_fail_closed": true,
+            "correct_all_sessions": true,
+            "contract_all_sessions": true
+          },
+          "role": "protocol",
+          "paths": {
+            "vendor": {
+              "warm_p50_ms": 0.6534259300678968,
+              "warm_mad_ms": 0.0026100315153598785,
+              "rel_err": 4.4583826153519826e-07,
+              "correct": true,
+              "one_shot_ms": 1.4404486864805222,
+              "binding": {
+                "input_shape": [
+                  16,
+                  2048
+                ]
+              }
+            },
+            "hybrid_vendor_p": {
+              "warm_p50_ms": 0.5151990335434675,
+              "warm_mad_ms": 0.005410052835941315,
+              "rel_err": 6.729115387775814e-07,
+              "correct": true,
+              "one_shot_ms": 1893.2050000876188,
+              "binding": {
+                "input_shape": [
+                  16,
+                  2048
+                ]
+              }
+            },
+            "hybrid_fused_p": {
+              "warm_p50_ms": 0.31845318153500557,
+              "warm_mad_ms": 0.017559155821800232,
+              "rel_err": 6.729115387775814e-07,
+              "correct": true,
+              "one_shot_ms": 1907.4472847860307,
+              "binding": {
+                "input_shape": [
+                  16,
+                  2048
+                ]
+              }
+            },
+            "incumbent_entry": {
+              "warm_p50_ms": 0.4090119618922472,
+              "warm_mad_ms": 0.008339760825037956,
+              "rel_err": 7.334200014415515e-07,
+              "correct": true,
+              "one_shot_ms": 327.1901656407863,
+              "binding": {
+                "selection_source": "composition",
+                "entry_tier": "composition-table",
+                "executed": "run_hybrid",
+                "flow_id": "hybrid-A1P1",
+                "fallback": false,
+                "plan_reason": "composition hybrid-A1P1 (exact shape, 83.6% >= 2.0% guard vs A0P0-production; p50=0.2477ms over 4 sessions + confirmation, err_max=0.0001): exact-shape composition: A1P1 0.2477ms vs production A0P0 1.5076ms (+83.6%), vendor_full 0.6588ms (+62.4% vendor delta recorded, not a gate)",
+                "composition": true,
+                "composition_table": {
+                  "table": "config/composition_table.json",
+                  "matched": true,
+                  "table_sha256": "49e5f41b4a3a88b06d3e674cddecf579216a3539a8d774aa3d25afa4ae70a725",
+                  "table_profile_hash": "a78b86793c7142a0",
+                  "table_env_hash": "6b50bd316032c0fe",
+                  "entry_key": {
+                    "N": 2048,
+                    "batch": 16,
+                    "direction": "dit",
+                    "transform_type": "c2c",
+                    "transform_direction": "forward"
+                  },
+                  "contract_id": "a1p1_materialized_subtransform",
+                  "flow_id": "hybrid-A1P1",
+                  "executed": "run_hybrid",
+                  "guard_pct": 83.569912443619,
+                  "evidence_artifact": "results/p800/composition_confirm.json",
+                  "evidence_artifact_sha256": "3a687d7a9072cfe19593c188f79dcd5bf3e560041e67157ef8086477844abcf2"
+                },
+                "profile_hash": "a78b86793c7142a0",
+                "input_shape": [
+                  16,
+                  2048
+                ]
+              }
+            },
+            "m0_reference": {
+              "warm_p50_ms": 3.609013045206666,
+              "warm_mad_ms": 0.03039906732738018,
+              "rel_err": 4.0692862628050126e-07,
+              "correct": true,
+              "one_shot_ms": 4737.497251946479,
+              "binding": {
+                "selection_source": "abstain",
+                "entry_tier": "m0-abstain",
+                "executed": "fft_dit_batch",
+                "flow_id": "baseline-global-stage",
+                "fallback": true,
+                "plan_reason": "profile_hash is required; None cannot bypass the table (fall back to M0)",
+                "composition": false,
+                "composition_table": null,
+                "profile_hash": null,
+                "input_shape": [
+                  16,
+                  2048
+                ]
+              }
+            }
+          }
+        },
+        "3": {
+          "flags": {
+            "all_paths_present": true,
+            "no_fail_closed": true,
+            "correct_all_sessions": true,
+            "contract_all_sessions": true
+          },
+          "role": "protocol",
+          "paths": {
+            "vendor": {
+              "warm_p50_ms": 0.6556659936904907,
+              "warm_mad_ms": 0.00245007686316967,
+              "rel_err": 4.208185316178408e-07,
+              "correct": true,
+              "one_shot_ms": 1.4543000143021345,
+              "binding": {
+                "input_shape": [
+                  16,
+                  2048
+                ]
+              }
+            },
+            "hybrid_vendor_p": {
+              "warm_p50_ms": 0.5021789111196995,
+              "warm_mad_ms": 0.004180241376161575,
+              "rel_err": 5.580643109960479e-07,
+              "correct": true,
+              "one_shot_ms": 1869.0508641302586,
+              "binding": {
+                "input_shape": [
+                  16,
+                  2048
+                ]
+              }
+            },
+            "hybrid_fused_p": {
+              "warm_p50_ms": 0.31407386995851994,
+              "warm_mad_ms": 0.0039008446037769318,
+              "rel_err": 5.580643109960479e-07,
+              "correct": true,
+              "one_shot_ms": 1936.9649458676577,
+              "binding": {
+                "input_shape": [
+                  16,
+                  2048
+                ]
+              }
+            },
+            "incumbent_entry": {
+              "warm_p50_ms": 0.5074399523437023,
+              "warm_mad_ms": 0.06336881779134274,
+              "rel_err": 5.884490213646636e-07,
+              "correct": true,
+              "one_shot_ms": 339.08294700086117,
+              "binding": {
+                "selection_source": "composition",
+                "entry_tier": "composition-table",
+                "executed": "run_hybrid",
+                "flow_id": "hybrid-A1P1",
+                "fallback": false,
+                "plan_reason": "composition hybrid-A1P1 (exact shape, 83.6% >= 2.0% guard vs A0P0-production; p50=0.2477ms over 4 sessions + confirmation, err_max=0.0001): exact-shape composition: A1P1 0.2477ms vs production A0P0 1.5076ms (+83.6%), vendor_full 0.6588ms (+62.4% vendor delta recorded, not a gate)",
+                "composition": true,
+                "composition_table": {
+                  "table": "config/composition_table.json",
+                  "matched": true,
+                  "table_sha256": "49e5f41b4a3a88b06d3e674cddecf579216a3539a8d774aa3d25afa4ae70a725",
+                  "table_profile_hash": "a78b86793c7142a0",
+                  "table_env_hash": "6b50bd316032c0fe",
+                  "entry_key": {
+                    "N": 2048,
+                    "batch": 16,
+                    "direction": "dit",
+                    "transform_type": "c2c",
+                    "transform_direction": "forward"
+                  },
+                  "contract_id": "a1p1_materialized_subtransform",
+                  "flow_id": "hybrid-A1P1",
+                  "executed": "run_hybrid",
+                  "guard_pct": 83.569912443619,
+                  "evidence_artifact": "results/p800/composition_confirm.json",
+                  "evidence_artifact_sha256": "3a687d7a9072cfe19593c188f79dcd5bf3e560041e67157ef8086477844abcf2"
+                },
+                "profile_hash": "a78b86793c7142a0",
+                "input_shape": [
+                  16,
+                  2048
+                ]
+              }
+            },
+            "m0_reference": {
+              "warm_p50_ms": 3.558554919436574,
+              "warm_mad_ms": 0.022900057956576347,
+              "rel_err": 4.507032888754169e-07,
+              "correct": true,
+              "one_shot_ms": 4599.404568085447,
+              "binding": {
+                "selection_source": "abstain",
+                "entry_tier": "m0-abstain",
+                "executed": "fft_dit_batch",
+                "flow_id": "baseline-global-stage",
+                "fallback": true,
+                "plan_reason": "profile_hash is required; None cannot bypass the table (fall back to M0)",
+                "composition": false,
+                "composition_table": null,
+                "profile_hash": null,
+                "input_shape": [
+                  16,
+                  2048
+                ]
+              }
+            }
+          }
+        },
+        "4": {
+          "flags": {
+            "all_paths_present": true,
+            "no_fail_closed": true,
+            "correct_all_sessions": true,
+            "contract_all_sessions": true
+          },
+          "role": "confirmation",
+          "paths": {
+            "vendor": {
+              "warm_p50_ms": 0.6560960318893194,
+              "warm_mad_ms": 0.00300002284348011,
+              "rel_err": 4.4259649623706165e-07,
+              "correct": true,
+              "one_shot_ms": 1.4506876468658447,
+              "binding": {
+                "input_shape": [
+                  16,
+                  2048
+                ]
+              }
+            },
+            "hybrid_vendor_p": {
+              "warm_p50_ms": 0.5157701671123505,
+              "warm_mad_ms": 0.00486103817820549,
+              "rel_err": 6.500570102063583e-07,
+              "correct": true,
+              "one_shot_ms": 1869.7078370023519,
+              "binding": {
+                "input_shape": [
+                  16,
+                  2048
+                ]
+              }
+            },
+            "hybrid_fused_p": {
+              "warm_p50_ms": 0.32613310031592846,
+              "warm_mad_ms": 0.00400003045797348,
+              "rel_err": 6.500570102063583e-07,
+              "correct": true,
+              "one_shot_ms": 1929.7363641671836,
+              "binding": {
+                "input_shape": [
+                  16,
+                  2048
+                ]
+              }
+            },
+            "incumbent_entry": {
+              "warm_p50_ms": 0.22479519248008728,
+              "warm_mad_ms": 0.0035602133721113205,
+              "rel_err": 6.130948929624788e-07,
+              "correct": true,
+              "one_shot_ms": 316.0577758681029,
+              "binding": {
+                "selection_source": "composition",
+                "entry_tier": "composition-table",
+                "executed": "run_hybrid",
+                "flow_id": "hybrid-A1P1",
+                "fallback": false,
+                "plan_reason": "composition hybrid-A1P1 (exact shape, 83.6% >= 2.0% guard vs A0P0-production; p50=0.2477ms over 4 sessions + confirmation, err_max=0.0001): exact-shape composition: A1P1 0.2477ms vs production A0P0 1.5076ms (+83.6%), vendor_full 0.6588ms (+62.4% vendor delta recorded, not a gate)",
+                "composition": true,
+                "composition_table": {
+                  "table": "config/composition_table.json",
+                  "matched": true,
+                  "table_sha256": "49e5f41b4a3a88b06d3e674cddecf579216a3539a8d774aa3d25afa4ae70a725",
+                  "table_profile_hash": "a78b86793c7142a0",
+                  "table_env_hash": "6b50bd316032c0fe",
+                  "entry_key": {
+                    "N": 2048,
+                    "batch": 16,
+                    "direction": "dit",
+                    "transform_type": "c2c",
+                    "transform_direction": "forward"
+                  },
+                  "contract_id": "a1p1_materialized_subtransform",
+                  "flow_id": "hybrid-A1P1",
+                  "executed": "run_hybrid",
+                  "guard_pct": 83.569912443619,
+                  "evidence_artifact": "results/p800/composition_confirm.json",
+                  "evidence_artifact_sha256": "3a687d7a9072cfe19593c188f79dcd5bf3e560041e67157ef8086477844abcf2"
+                },
+                "profile_hash": "a78b86793c7142a0",
+                "input_shape": [
+                  16,
+                  2048
+                ]
+              }
+            },
+            "m0_reference": {
+              "warm_p50_ms": 3.564224112778902,
+              "warm_mad_ms": 0.025168759748339653,
+              "rel_err": 4.2693196917749175e-07,
+              "correct": true,
+              "one_shot_ms": 4696.700384141877,
+              "binding": {
+                "selection_source": "abstain",
+                "entry_tier": "m0-abstain",
+                "executed": "fft_dit_batch",
+                "flow_id": "baseline-global-stage",
+                "fallback": true,
+                "plan_reason": "profile_hash is required; None cannot bypass the table (fall back to M0)",
+                "composition": false,
+                "composition_table": null,
+                "profile_hash": null,
+                "input_shape": [
+                  16,
+                  2048
+                ]
+              }
+            }
+          }
+        }
+      },
+      "verdicts": {
+        "hybrid_fused_p": {
+          "pass": false,
+          "reasons": [
+            "incumbent: CI lower bound <= 1.02 in session(s) 2, 4 (lows=['1.3164', '0.9905', '1.3704', '0.6852'])",
+            "incumbent: cross-session spread 0.512 > 0.1 (points=1.540, 1.284, 1.614, 0.689)"
+          ],
+          "gate_ci_low_gt": 1.02,
+          "spread_rel_max": 0.1,
+          "ci_low_by_session": {
+            "vendor": [
+              2.0515187099823957,
+              1.5847038970286786,
+              2.0788284750996335,
+              2.0039276646335997
+            ],
+            "incumbent": [
+              1.3164404012989703,
+              0.9905247342831298,
+              1.3703774939764655,
+              0.6851775240478376
+            ]
+          },
+          "points_by_session": {
+            "vendor": [
+              2.0775405490277885,
+              2.0520520388766954,
+              2.0876885043354934,
+              2.012498634077847
+            ],
+            "incumbent": [
+              1.5401536259898454,
+              1.2842522912249568,
+              1.614423767347255,
+              0.6893743040939098
+            ]
+          },
+          "frozen_candidate": true
+        },
+        "hybrid_vendor_p": {
+          "pass": false,
+          "reasons": [
+            "incumbent: CI lower bound <= 1.02 in session(s) 1, 2, 3, 4 (lows=['0.8132', '0.7888', '0.8577', '0.4334'])",
+            "incumbent: cross-session spread 0.500 > 0.1 (points=0.948, 0.794, 1.010, 0.436)"
+          ],
+          "gate_ci_low_gt": 1.02,
+          "spread_rel_max": 0.1,
+          "ci_low_by_session": {
+            "vendor": [
+              1.2755754443367715,
+              1.264320126484146,
+              1.3013237960613662,
+              1.2684318627870308
+            ],
+            "incumbent": [
+              0.8131964213491264,
+              0.7887558005456147,
+              0.857675591772676,
+              0.43341212129251955
+            ]
+          },
+          "points_by_session": {
+            "vendor": [
+              1.278210930934266,
+              1.2683400287855104,
+              1.30579496563346,
+              1.2720848662717876
+            ],
+            "incumbent": [
+              0.9475825639020696,
+              0.7937754779902028,
+              1.00978015801838,
+              0.43574818118390135
+            ]
+          },
+          "frozen_candidate": false
+        }
+      },
+      "entry_shapes": {
+        "1": {
+          "vendor": [
+            16,
+            2048
+          ],
+          "hybrid_vendor_p": [
+            16,
+            2048
+          ],
+          "hybrid_fused_p": [
+            16,
+            2048
+          ],
+          "incumbent_entry": [
+            16,
+            2048
+          ],
+          "m0_reference": [
+            16,
+            2048
+          ]
+        },
+        "2": {
+          "vendor": [
+            16,
+            2048
+          ],
+          "hybrid_vendor_p": [
+            16,
+            2048
+          ],
+          "hybrid_fused_p": [
+            16,
+            2048
+          ],
+          "incumbent_entry": [
+            16,
+            2048
+          ],
+          "m0_reference": [
+            16,
+            2048
+          ]
+        },
+        "3": {
+          "vendor": [
+            16,
+            2048
+          ],
+          "hybrid_vendor_p": [
+            16,
+            2048
+          ],
+          "hybrid_fused_p": [
+            16,
+            2048
+          ],
+          "incumbent_entry": [
+            16,
+            2048
+          ],
+          "m0_reference": [
+            16,
+            2048
+          ]
+        },
+        "4": {
+          "vendor": [
+            16,
+            2048
+          ],
+          "hybrid_vendor_p": [
+            16,
+            2048
+          ],
+          "hybrid_fused_p": [
+            16,
+            2048
+          ],
+          "incumbent_entry": [
+            16,
+            2048
+          ],
+          "m0_reference": [
+            16,
+            2048
+          ]
+        }
+      },
+      "entry_shape_uniform": true,
+      "gate_flags_by_session": [
+        {
+          "all_paths_present": true,
+          "no_fail_closed": true,
+          "correct_all_sessions": true,
+          "contract_all_sessions": true
+        },
+        {
+          "all_paths_present": true,
+          "no_fail_closed": true,
+          "correct_all_sessions": true,
+          "contract_all_sessions": true
+        },
+        {
+          "all_paths_present": true,
+          "no_fail_closed": true,
+          "correct_all_sessions": true,
+          "contract_all_sessions": true
+        },
+        {
+          "all_paths_present": true,
+          "no_fail_closed": true,
+          "correct_all_sessions": true,
+          "contract_all_sessions": true
+        }
+      ],
+      "promotion": {
+        "passing_frozen_candidates": [],
+        "selected": null,
+        "selection_reason": "no frozen candidate passed"
+      }
+    },
+    {
+      "label": "N2048B16:c2c_inverse",
+      "n": 2048,
+      "batch": 16,
+      "direction": "c2c_inverse",
+      "frozen_candidates": [
+        "hybrid_fused_p",
+        "hybrid_vendor_p"
+      ],
+      "sessions": {
+        "1": {
+          "flags": {
+            "all_paths_present": true,
+            "no_fail_closed": true,
+            "correct_all_sessions": true,
+            "contract_all_sessions": true
+          },
+          "role": "protocol",
+          "paths": {
+            "vendor": {
+              "warm_p50_ms": 0.6535660941153765,
+              "warm_mad_ms": 0.003020046278834343,
+              "rel_err": 4.024672755529932e-07,
+              "correct": true,
+              "one_shot_ms": 1.4286090154200792,
+              "binding": {
+                "input_shape": [
+                  16,
+                  2048
+                ]
+              }
+            },
+            "hybrid_vendor_p": {
+              "warm_p50_ms": 0.5009188316762447,
+              "warm_mad_ms": 0.004698755219578743,
+              "rel_err": 5.558419293298697e-07,
+              "correct": true,
+              "one_shot_ms": 1870.883913943544,
+              "binding": {
+                "input_shape": [
+                  16,
+                  2048
+                ]
+              }
+            },
+            "hybrid_fused_p": {
+              "warm_p50_ms": 0.3223039675503969,
+              "warm_mad_ms": 0.004759058356285095,
+              "rel_err": 5.558419293298697e-07,
+              "correct": true,
+              "one_shot_ms": 1896.200715797022,
+              "binding": {
+                "input_shape": [
+                  16,
+                  2048
+                ]
+              }
+            },
+            "incumbent_entry": {
+              "warm_p50_ms": 1.883861143141985,
+              "warm_mad_ms": 0.015980098396539688,
+              "rel_err": 1.0621788330213176e-06,
+              "correct": true,
+              "one_shot_ms": 5557.836088817567,
+              "binding": {
+                "selection_source": "table",
+                "entry_tier": "table/semantic-or-legacy",
+                "executed": "fft_dit_matrix_batch",
+                "flow_id": "local-fused-tile",
+                "fallback": false,
+                "plan_reason": "independent matrix confirmation (c2c-inverse): oracle:winner-b256 beats incumbent by 49.7% (>= 2.0%) over 3 sessions; exact semantic key ('c2c', 'inverse', 'backward')",
+                "composition": false,
+                "composition_table": null,
+                "profile_hash": "a78b86793c7142a0",
+                "input_shape": [
+                  16,
+                  2048
+                ]
+              }
+            },
+            "m0_reference": {
+              "warm_p50_ms": 3.57193686068058,
+              "warm_mad_ms": 0.030758092179894447,
+              "rel_err": 3.763187158144664e-07,
+              "correct": true,
+              "one_shot_ms": 4619.219387881458,
+              "binding": {
+                "selection_source": "abstain",
+                "entry_tier": "m0-abstain",
+                "executed": "fft_dit_batch",
+                "flow_id": "baseline-global-stage",
+                "fallback": true,
+                "plan_reason": "profile_hash is required; None cannot bypass the table (fall back to M0)",
+                "composition": false,
+                "composition_table": null,
+                "profile_hash": null,
+                "input_shape": [
+                  16,
+                  2048
+                ]
+              }
+            }
+          }
+        },
+        "2": {
+          "flags": {
+            "all_paths_present": true,
+            "no_fail_closed": true,
+            "correct_all_sessions": true,
+            "contract_all_sessions": true
+          },
+          "role": "protocol",
+          "paths": {
+            "vendor": {
+              "warm_p50_ms": 0.6523458287119865,
+              "warm_mad_ms": 0.0026603229343891144,
+              "rel_err": 4.6819849175938696e-07,
+              "correct": true,
+              "one_shot_ms": 1.4371888246387243,
+              "binding": {
+                "input_shape": [
+                  16,
+                  2048
+                ]
+              }
+            },
+            "hybrid_vendor_p": {
+              "warm_p50_ms": 0.49892906099557877,
+              "warm_mad_ms": 0.0075891148298978806,
+              "rel_err": 6.523171803684591e-07,
+              "correct": true,
+              "one_shot_ms": 1970.0265019200742,
+              "binding": {
+                "input_shape": [
+                  16,
+                  2048
+                ]
+              }
+            },
+            "hybrid_fused_p": {
+              "warm_p50_ms": 0.3096240106970072,
+              "warm_mad_ms": 0.004049856215715408,
+              "rel_err": 6.523171803684591e-07,
+              "correct": true,
+              "one_shot_ms": 1885.7798359822482,
+              "binding": {
+                "input_shape": [
+                  16,
+                  2048
+                ]
+              }
+            },
+            "incumbent_entry": {
+              "warm_p50_ms": 1.863630022853613,
+              "warm_mad_ms": 0.014800112694501877,
+              "rel_err": 1.1108731557624238e-06,
+              "correct": true,
+              "one_shot_ms": 5487.378657096997,
+              "binding": {
+                "selection_source": "table",
+                "entry_tier": "table/semantic-or-legacy",
+                "executed": "fft_dit_matrix_batch",
+                "flow_id": "local-fused-tile",
+                "fallback": false,
+                "plan_reason": "independent matrix confirmation (c2c-inverse): oracle:winner-b256 beats incumbent by 49.7% (>= 2.0%) over 3 sessions; exact semantic key ('c2c', 'inverse', 'backward')",
+                "composition": false,
+                "composition_table": null,
+                "profile_hash": "a78b86793c7142a0",
+                "input_shape": [
+                  16,
+                  2048
+                ]
+              }
+            },
+            "m0_reference": {
+              "warm_p50_ms": 3.472857177257538,
+              "warm_mad_ms": 0.024510081857442856,
+              "rel_err": 4.0642966464897003e-07,
+              "correct": true,
+              "one_shot_ms": 4595.067888963968,
+              "binding": {
+                "selection_source": "abstain",
+                "entry_tier": "m0-abstain",
+                "executed": "fft_dit_batch",
+                "flow_id": "baseline-global-stage",
+                "fallback": true,
+                "plan_reason": "profile_hash is required; None cannot bypass the table (fall back to M0)",
+                "composition": false,
+                "composition_table": null,
+                "profile_hash": null,
+                "input_shape": [
+                  16,
+                  2048
+                ]
+              }
+            }
+          }
+        },
+        "3": {
+          "flags": {
+            "all_paths_present": true,
+            "no_fail_closed": true,
+            "correct_all_sessions": true,
+            "contract_all_sessions": true
+          },
+          "role": "protocol",
+          "paths": {
+            "vendor": {
+              "warm_p50_ms": 0.6553460843861103,
+              "warm_mad_ms": 0.0027099158614873886,
+              "rel_err": 3.859142108608481e-07,
+              "correct": true,
+              "one_shot_ms": 1.4338498003780842,
+              "binding": {
+                "input_shape": [
+                  16,
+                  2048
+                ]
+              }
+            },
+            "hybrid_vendor_p": {
+              "warm_p50_ms": 0.5144288297742605,
+              "warm_mad_ms": 0.005160225555300713,
+              "rel_err": 6.785906625797904e-07,
+              "correct": true,
+              "one_shot_ms": 1901.101146126166,
+              "binding": {
+                "input_shape": [
+                  16,
+                  2048
+                ]
+              }
+            },
+            "hybrid_fused_p": {
+              "warm_p50_ms": 0.30873389914631844,
+              "warm_mad_ms": 0.004210043698549271,
+              "rel_err": 6.785906625797904e-07,
+              "correct": true,
+              "one_shot_ms": 1869.6304319892079,
+              "binding": {
+                "input_shape": [
+                  16,
+                  2048
+                ]
+              }
+            },
+            "incumbent_entry": {
+              "warm_p50_ms": 1.8613100983202457,
+              "warm_mad_ms": 0.01668906770646572,
+              "rel_err": 1.0151595455751143e-06,
+              "correct": true,
+              "one_shot_ms": 5445.64370601438,
+              "binding": {
+                "selection_source": "table",
+                "entry_tier": "table/semantic-or-legacy",
+                "executed": "fft_dit_matrix_batch",
+                "flow_id": "local-fused-tile",
+                "fallback": false,
+                "plan_reason": "independent matrix confirmation (c2c-inverse): oracle:winner-b256 beats incumbent by 49.7% (>= 2.0%) over 3 sessions; exact semantic key ('c2c', 'inverse', 'backward')",
+                "composition": false,
+                "composition_table": null,
+                "profile_hash": "a78b86793c7142a0",
+                "input_shape": [
+                  16,
+                  2048
+                ]
+              }
+            },
+            "m0_reference": {
+              "warm_p50_ms": 3.5490950103849173,
+              "warm_mad_ms": 0.022467924281954765,
+              "rel_err": 3.7857088401569474e-07,
+              "correct": true,
+              "one_shot_ms": 4687.7749029081315,
+              "binding": {
+                "selection_source": "abstain",
+                "entry_tier": "m0-abstain",
+                "executed": "fft_dit_batch",
+                "flow_id": "baseline-global-stage",
+                "fallback": true,
+                "plan_reason": "profile_hash is required; None cannot bypass the table (fall back to M0)",
+                "composition": false,
+                "composition_table": null,
+                "profile_hash": null,
+                "input_shape": [
+                  16,
+                  2048
+                ]
+              }
+            }
+          }
+        },
+        "4": {
+          "flags": {
+            "all_paths_present": true,
+            "no_fail_closed": true,
+            "correct_all_sessions": true,
+            "contract_all_sessions": true
+          },
+          "role": "confirmation",
+          "paths": {
+            "vendor": {
+              "warm_p50_ms": 0.6494061090052128,
+              "warm_mad_ms": 0.0033797696232795715,
+              "rel_err": 3.788096242094299e-07,
+              "correct": true,
+              "one_shot_ms": 1.4405192341655493,
+              "binding": {
+                "input_shape": [
+                  16,
+                  2048
+                ]
+              }
+            },
+            "hybrid_vendor_p": {
+              "warm_p50_ms": 0.4993691109120846,
+              "warm_mad_ms": 0.004990957677364349,
+              "rel_err": 5.702161726139618e-07,
+              "correct": true,
+              "one_shot_ms": 1965.3959560673684,
+              "binding": {
+                "input_shape": [
+                  16,
+                  2048
+                ]
+              }
+            },
+            "hybrid_fused_p": {
+              "warm_p50_ms": 0.322593143209815,
+              "warm_mad_ms": 0.004650093615055084,
+              "rel_err": 5.702161726139618e-07,
+              "correct": true,
+              "one_shot_ms": 1901.9914651289582,
+              "binding": {
+                "input_shape": [
+                  16,
+                  2048
+                ]
+              }
+            },
+            "incumbent_entry": {
+              "warm_p50_ms": 1.8857910763472319,
+              "warm_mad_ms": 0.011301133781671524,
+              "rel_err": 1.043758461331537e-06,
+              "correct": true,
+              "one_shot_ms": 5575.055588968098,
+              "binding": {
+                "selection_source": "table",
+                "entry_tier": "table/semantic-or-legacy",
+                "executed": "fft_dit_matrix_batch",
+                "flow_id": "local-fused-tile",
+                "fallback": false,
+                "plan_reason": "independent matrix confirmation (c2c-inverse): oracle:winner-b256 beats incumbent by 49.7% (>= 2.0%) over 3 sessions; exact semantic key ('c2c', 'inverse', 'backward')",
+                "composition": false,
+                "composition_table": null,
+                "profile_hash": "a78b86793c7142a0",
+                "input_shape": [
+                  16,
+                  2048
+                ]
+              }
+            },
+            "m0_reference": {
+              "warm_p50_ms": 3.5474151372909546,
+              "warm_mad_ms": 0.0242691021412611,
+              "rel_err": 3.9789840032874445e-07,
+              "correct": true,
+              "one_shot_ms": 4583.14921008423,
+              "binding": {
+                "selection_source": "abstain",
+                "entry_tier": "m0-abstain",
+                "executed": "fft_dit_batch",
+                "flow_id": "baseline-global-stage",
+                "fallback": true,
+                "plan_reason": "profile_hash is required; None cannot bypass the table (fall back to M0)",
+                "composition": false,
+                "composition_table": null,
+                "profile_hash": null,
+                "input_shape": [
+                  16,
+                  2048
+                ]
+              }
+            }
+          }
+        }
+      },
+      "verdicts": {
+        "hybrid_fused_p": {
+          "pass": true,
+          "reasons": [],
+          "gate_ci_low_gt": 1.02,
+          "spread_rel_max": 0.1,
+          "ci_low_by_session": {
+            "vendor": [
+              2.017338882475852,
+              2.099148073567604,
+              2.117576164817064,
+              2.0069255240522623
+            ],
+            "incumbent": [
+              5.816580543656563,
+              5.998236687546534,
+              6.00557015527452,
+              5.827811557926509
+            ]
+          },
+          "points_by_session": {
+            "vendor": [
+              2.0279549818878535,
+              2.107258534890359,
+              2.1227449088988637,
+              2.0135184304167755
+            ],
+            "incumbent": [
+              5.845487929811278,
+              6.019265764205638,
+              6.028883040523291,
+              5.846896763821098
+            ]
+          },
+          "frozen_candidate": true
+        },
+        "hybrid_vendor_p": {
+          "pass": true,
+          "reasons": [],
+          "gate_ci_low_gt": 1.02,
+          "spread_rel_max": 0.1,
+          "ci_low_by_session": {
+            "vendor": [
+              1.3015896989899474,
+              1.3012214803713875,
+              1.26969226208159,
+              1.2956035541434965
+            ],
+            "incumbent": [
+              3.7500367621630195,
+              3.717227449896222,
+              3.601922134497425,
+              3.7643841954232538
+            ]
+          },
+          "points_by_session": {
+            "vendor": [
+              1.3049225810020701,
+              1.3076117827674472,
+              1.2740158182454357,
+              1.3006083373767139
+            ],
+            "incumbent": [
+              3.761379944186358,
+              3.735119685868786,
+              3.6183774733265706,
+              3.776733584322145
+            ]
+          },
+          "frozen_candidate": true
+        }
+      },
+      "entry_shapes": {
+        "1": {
+          "vendor": [
+            16,
+            2048
+          ],
+          "hybrid_vendor_p": [
+            16,
+            2048
+          ],
+          "hybrid_fused_p": [
+            16,
+            2048
+          ],
+          "incumbent_entry": [
+            16,
+            2048
+          ],
+          "m0_reference": [
+            16,
+            2048
+          ]
+        },
+        "2": {
+          "vendor": [
+            16,
+            2048
+          ],
+          "hybrid_vendor_p": [
+            16,
+            2048
+          ],
+          "hybrid_fused_p": [
+            16,
+            2048
+          ],
+          "incumbent_entry": [
+            16,
+            2048
+          ],
+          "m0_reference": [
+            16,
+            2048
+          ]
+        },
+        "3": {
+          "vendor": [
+            16,
+            2048
+          ],
+          "hybrid_vendor_p": [
+            16,
+            2048
+          ],
+          "hybrid_fused_p": [
+            16,
+            2048
+          ],
+          "incumbent_entry": [
+            16,
+            2048
+          ],
+          "m0_reference": [
+            16,
+            2048
+          ]
+        },
+        "4": {
+          "vendor": [
+            16,
+            2048
+          ],
+          "hybrid_vendor_p": [
+            16,
+            2048
+          ],
+          "hybrid_fused_p": [
+            16,
+            2048
+          ],
+          "incumbent_entry": [
+            16,
+            2048
+          ],
+          "m0_reference": [
+            16,
+            2048
+          ]
+        }
+      },
+      "entry_shape_uniform": true,
+      "gate_flags_by_session": [
+        {
+          "all_paths_present": true,
+          "no_fail_closed": true,
+          "correct_all_sessions": true,
+          "contract_all_sessions": true
+        },
+        {
+          "all_paths_present": true,
+          "no_fail_closed": true,
+          "correct_all_sessions": true,
+          "contract_all_sessions": true
+        },
+        {
+          "all_paths_present": true,
+          "no_fail_closed": true,
+          "correct_all_sessions": true,
+          "contract_all_sessions": true
+        },
+        {
+          "all_paths_present": true,
+          "no_fail_closed": true,
+          "correct_all_sessions": true,
+          "contract_all_sessions": true
+        }
+      ],
+      "promotion": {
+        "passing_frozen_candidates": [
+          "hybrid_fused_p",
+          "hybrid_vendor_p"
+        ],
+        "selected": "hybrid_fused_p",
+        "pairwise": {
+          "definition": "median(hybrid_fused_p)/median(hybrid_vendor_p) pooled across sessions (independent bootstrap)",
+          "point": 0.6284511193832953,
+          "ci95": [
+            0.6262547869032171,
+            0.6306620405493633
+          ],
+          "n_boot": 2000,
+          "bootstrap_kind": "independent"
+        },
+        "policy": "stable measured faster candidate wins (never name / static score)"
+      }
+    }
+  ],
+  "promotion_summary": {
+    "promoted_keys": [
+      {
+        "key": {
+          "N": 2048,
+          "batch": 1,
+          "direction": "dit",
+          "transform_type": "c2c",
+          "transform_direction": "inverse",
+          "normalization": "backward"
+        },
+        "label": "N2048B1:c2c_inverse",
+        "candidate": "hybrid_vendor_p",
+        "verdict": {
+          "pass": true,
+          "reasons": [],
+          "gate_ci_low_gt": 1.02,
+          "spread_rel_max": 0.1,
+          "ci_low_by_session": {
+            "vendor": [
+              3.157472020857546,
+              3.419785379793764,
+              3.478785590127428,
+              3.445915824644078
+            ],
+            "incumbent": [
+              2.731016885553471,
+              2.866003704530167,
+              2.9354014623122278,
+              2.987916415872367
+            ]
+          },
+          "points_by_session": {
+            "vendor": [
+              3.17502311955184,
+              3.448056615941534,
+              3.4907870868417152,
+              3.4650467502922884
+            ],
+            "incumbent": [
+              2.755143665706346,
+              2.890009545040621,
+              2.9600591837314143,
+              3.0141014470253125
+            ]
+          },
+          "frozen_candidate": true
+        }
+      },
+      {
+        "key": {
+          "N": 2048,
+          "batch": 16,
+          "direction": "dit",
+          "transform_type": "c2c",
+          "transform_direction": "inverse",
+          "normalization": "backward"
+        },
+        "label": "N2048B16:c2c_inverse",
+        "candidate": "hybrid_fused_p",
+        "verdict": {
+          "pass": true,
+          "reasons": [],
+          "gate_ci_low_gt": 1.02,
+          "spread_rel_max": 0.1,
+          "ci_low_by_session": {
+            "vendor": [
+              2.017338882475852,
+              2.099148073567604,
+              2.117576164817064,
+              2.0069255240522623
+            ],
+            "incumbent": [
+              5.816580543656563,
+              5.998236687546534,
+              6.00557015527452,
+              5.827811557926509
+            ]
+          },
+          "points_by_session": {
+            "vendor": [
+              2.0279549818878535,
+              2.107258534890359,
+              2.1227449088988637,
+              2.0135184304167755
+            ],
+            "incumbent": [
+              5.845487929811278,
+              6.019265764205638,
+              6.028883040523291,
+              5.846896763821098
+            ]
+          },
+          "frozen_candidate": true
+        }
+      }
+    ],
+    "not_promoted": [
+      {
+        "label": "N1024B1:c2c_inverse",
+        "frozen_candidates": [
+          "hybrid_fused_p"
+        ],
+        "reasons": {
+          "hybrid_fused_p": [
+            "vendor: CI lower bound <= 1.02 in session(s) 3, 4 (lows=['1.5640', '1.5344', '0.9488', '0.9103'])",
+            "vendor: cross-session spread 0.266 > 0.1 (points=1.572, 1.541, 0.957, 0.917)",
+            "incumbent: cross-session spread 0.284 > 0.1 (points=3.591, 3.560, 2.226, 2.072)"
+          ]
+        }
+      },
+      {
+        "label": "N2048B1:c2c_forward",
+        "frozen_candidates": [
+          "hybrid_fused_p",
+          "hybrid_vendor_p"
+        ],
+        "reasons": {
+          "hybrid_fused_p": [
+            "vendor: cross-session spread 0.355 > 0.1 (points=2.456, 3.902, 4.106, 3.719)",
+            "incumbent: cross-session spread 0.346 > 0.1 (points=3.021, 4.831, 5.071, 4.406)"
+          ],
+          "hybrid_vendor_p": [
+            "vendor: cross-session spread 0.341 > 0.1 (points=3.184, 3.378, 2.162, 3.520)",
+            "incumbent: cross-session spread 0.340 > 0.1 (points=3.916, 4.182, 2.670, 4.172)"
+          ]
+        }
+      },
+      {
+        "label": "N2048B16:c2c_forward",
+        "frozen_candidates": [
+          "hybrid_fused_p"
+        ],
+        "reasons": {
+          "hybrid_fused_p": [
+            "incumbent: CI lower bound <= 1.02 in session(s) 2, 4 (lows=['1.3164', '0.9905', '1.3704', '0.6852'])",
+            "incumbent: cross-session spread 0.512 > 0.1 (points=1.540, 1.284, 1.614, 0.689)"
+          ]
+        }
+      }
+    ],
+    "note": "promoted_keys feed scripts/issue13_promote_hybrid.py (composition table) \u2014 exact keys only, no N/B extrapolation (issue #13 WP2)"
+  },
+  "elapsed_s": 5.6
+}
