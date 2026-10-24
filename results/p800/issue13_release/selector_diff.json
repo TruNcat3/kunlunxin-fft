@@ -1,0 +1,103 @@
+{
+  "commit": "9490c7d0c33811e9be1ab76d9228350ac19b459e",
+  "composition_table": {
+    "added_entries": [
+      {
+        "N": 2048,
+        "batch": 1,
+        "candidate_ms": 0.185146,
+        "direction": "dit",
+        "executed": "run_hybrid4",
+        "flow_id": "hybrid-A1P1-4step",
+        "guard_pct": 66.3351934381756,
+        "incumbent_ms": 0.549969,
+        "transform_direction": "inverse",
+        "variant": "4step-transpose"
+      },
+      {
+        "N": 2048,
+        "batch": 16,
+        "candidate_ms": 0.315964,
+        "direction": "dit",
+        "executed": "run_hybrid4_fused",
+        "flow_id": "hybrid-A1P1-4step-fused",
+        "guard_pct": 83.13730889885824,
+        "incumbent_ms": 1.873746,
+        "transform_direction": "inverse",
+        "variant": "4step-fused"
+      }
+    ],
+    "path": "config/composition_table.json",
+    "replaced_entries": [],
+    "result_sha256": "77135f5fa90aa0e79e065f04b341c094cd22a56f01711fdaf31f1af9e78345cc",
+    "sha256_after": "bc20b62bfc8630dcfea925421dbb7e7d1478390994ea4a5e8fd49d6c32b16ea4",
+    "sha256_before": "49e5f41b4a3a88b06d3e674cddecf579216a3539a8d774aa3d25afa4ae70a725"
+  },
+  "created_utc": "2026-10-24T00:09:52Z",
+  "dispatch": {
+    "modules": [
+      "src/xpu/composition.py",
+      "src/xpu/entry.py",
+      "src/xpu/hybrid4.py"
+    ],
+    "plan_execute_consistency": "plan.executed names the runner; entry.execute dispatches exactly it; composition_entry_violations enforces variant<->executed pairing at load",
+    "semantics": "per-entry semantic matching on (N, batch, direction, transform_type, transform_direction, normalization); legacy entries default c2c/forward/backward"
+  },
+  "issue": "kunlunxin-fft#13",
+  "schema": "issue13-selector-diff-v3",
+  "selector_table": {
+    "changed": false,
+    "note": "butterfly table untouched this round: composition wins never enter selector_table.json (separately named, separately validated)",
+    "path": "config/selector_table.json",
+    "sha256_after": "7c2282ed0c295f2e5179c358f75a7d73051f21cbaaf7caf04c281dcb8efe88fd",
+    "sha256_before": "7c2282ed0c295f2e5179c358f75a7d73051f21cbaaf7caf04c281dcb8efe88fd",
+    "wiring": "none"
+  },
+  "uncovered_points": {
+    "policy": "exact keys only; every query without a matching entry (shape+semantic) falls through to the butterfly table / M0 \u2014 composition_select fails closed, no extrapolation",
+    "wp1_not_promoted": [
+      {
+        "frozen_candidates": [
+          "hybrid_fused_p"
+        ],
+        "label": "N1024B1:c2c_inverse",
+        "reasons": {
+          "hybrid_fused_p": [
+            "vendor: CI lower bound <= 1.02 in session(s) 3, 4 (lows=['1.5640', '1.5344', '0.9488', '0.9103'])",
+            "vendor: cross-session spread 0.266 > 0.1 (points=1.572, 1.541, 0.957, 0.917)",
+            "incumbent: cross-session spread 0.284 > 0.1 (points=3.591, 3.560, 2.226, 2.072)"
+          ]
+        }
+      },
+      {
+        "frozen_candidates": [
+          "hybrid_fused_p",
+          "hybrid_vendor_p"
+        ],
+        "label": "N2048B1:c2c_forward",
+        "reasons": {
+          "hybrid_fused_p": [
+            "vendor: cross-session spread 0.355 > 0.1 (points=2.456, 3.902, 4.106, 3.719)",
+            "incumbent: cross-session spread 0.346 > 0.1 (points=3.021, 4.831, 5.071, 4.406)"
+          ],
+          "hybrid_vendor_p": [
+            "vendor: cross-session spread 0.341 > 0.1 (points=3.184, 3.378, 2.162, 3.520)",
+            "incumbent: cross-session spread 0.340 > 0.1 (points=3.916, 4.182, 2.670, 4.172)"
+          ]
+        }
+      },
+      {
+        "frozen_candidates": [
+          "hybrid_fused_p"
+        ],
+        "label": "N2048B16:c2c_forward",
+        "reasons": {
+          "hybrid_fused_p": [
+            "incumbent: CI lower bound <= 1.02 in session(s) 2, 4 (lows=['1.3164', '0.9905', '1.3704', '0.6852'])",
+            "incumbent: cross-session spread 0.512 > 0.1 (points=1.540, 1.284, 1.614, 0.689)"
+          ]
+        }
+      }
+    ]
+  }
+}
