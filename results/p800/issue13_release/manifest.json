@@ -1,0 +1,183 @@
+{
+  "schema": "issue13-manifest-v1",
+  "issue": "kunlunxin-fft#13",
+  "created_utc": "2026-10-26T00:35:40Z",
+  "package_dir": "results/p800/issue13_release",
+  "evidence_source_commit": "2fd07a0dca3dd82f56ef1a518709886d973c6783",
+  "git_head_at_pack": "2fd07a0dca3dd82f56ef1a518709886d973c6783",
+  "packaging_commit": null,
+  "packaging_commit_seal": "fill packaging_commit with the sha of the commit that added or last updated THIS manifest.json \u2014 i.e. the pack commit (run `git log -1 -- results/p800/issue13_release/manifest.json` BEFORE editing the field; do not use --diff-filter=A, which pins the first add and goes stale on every repack), then update the manifest.json line in SHA256SUMS in the same seal commit \u2014 non-self-referencing (the field names the pack commit, the seal commit only records it)",
+  "packaging_commit_note": "evidence_source_commit is the commit to check out for the exact producer scripts (run pack after committing producers; see producer_dirty_at_pack), each producer is pinned by git blob sha in producer_blobs, and producer_dependencies records transitive script imports (wp3/wp4 import issue10 holdout/perf cores; wp4 imports the wp3 release module); verify with `cd results/p800/issue13_release && sha256sum -c SHA256SUMS`",
+  "producer_dirty_at_pack": null,
+  "producer_blobs": {
+    "scripts/issue13_pack_artifacts.py": {
+      "git_blob": "92b0b45ee7725e47c4eca5d989ff33e85d0c891e",
+      "sha256": "08480486156bc380d2d936f016d0564f34959569c45699a4f02ffe5d536e05f0"
+    },
+    "scripts/issue13_promote_hybrid.py": {
+      "git_blob": "89ddf60f8f94bb0ab86d0a4bbe754fcfdb7afe85",
+      "sha256": "a4ad8e7a0b721fb3ec8c4eb6e154e92baab77765b761daa563ea386eb68ea324"
+    },
+    "scripts/issue13_wp1_promotion.py": {
+      "git_blob": "253802f09c446f0e96d844539d20b18b890489a8",
+      "sha256": "5df76892acd9f67158adf06942fccb19db1bec327998e2a332cc7037d72a755e"
+    },
+    "scripts/issue13_wp3_release.py": {
+      "git_blob": "0d3a2050dd8225790206954eeeebfab9cf72201b",
+      "sha256": "1d05457a8147c96be28c5b3436a29438cedb7463166960b30f23fa8548961515"
+    },
+    "scripts/issue13_wp4_coverage.py": {
+      "git_blob": "d0874fcd53ffab24d622e4255bcd990bcca4b873",
+      "sha256": "574db86e4611ed77912b563b71674fc194b1cb8050ef515786f99c4c793fc1f7"
+    }
+  },
+  "producer_dependencies": {
+    "scripts/issue13_wp3_release.py": [
+      "scripts/issue10_wp3_holdout.py",
+      "scripts/issue10_wp3_perf.py"
+    ],
+    "scripts/issue13_wp4_coverage.py": [
+      "scripts/issue13_wp3_release.py",
+      "scripts/issue10_wp3_holdout.py",
+      "scripts/issue10_wp3_perf.py"
+    ],
+    "scripts/issue13_wp1_promotion.py": [
+      "scripts/issue10_wp3_holdout.py",
+      "scripts/issue10_wp3_perf.py"
+    ]
+  },
+  "config_provenance": {
+    "config/selector_table.json": {
+      "sha256": "7c2282ed0c295f2e5179c358f75a7d73051f21cbaaf7caf04c281dcb8efe88fd"
+    },
+    "config/composition_table.json": {
+      "sha256": "bc20b62bfc8630dcfea925421dbb7e7d1478390994ea4a5e8fd49d6c32b16ea4",
+      "note": "WP2 wiring: 2 WP1-stable inverse keys (hybrid4 variants) + the pre-existing hybrid-A1P1 entry; the legacy snapshot used by the incumbent_old measurement path is committed next to the artifacts"
+    }
+  },
+  "note": "artifacts are committed after this pack run; SHA256SUMS additionally covers manifest.json.",
+  "n_files": 20,
+  "total_bytes": 6519021,
+  "files": [
+    {
+      "path": "environment.json",
+      "bytes": 2441,
+      "sha256": "075579bf14f8c42e4378571cc2068139117a115a724166a73db33d854691895b",
+      "producer": "scripts/issue13_pack_artifacts.py"
+    },
+    {
+      "path": "issue13_summary.json",
+      "bytes": 11409,
+      "sha256": "e46315f4444e67459cdb0c4d3a3d91b2a2590c86b14e055652980733b3bc9c45",
+      "producer": "scripts/issue13_pack_artifacts.py"
+    },
+    {
+      "path": "legacy_composition_table.json",
+      "bytes": 1711,
+      "sha256": "bddafc95a34e2c1a5948bdc8b1aaf96cb1cb108f70d0de75405a967f3dae15ab",
+      "producer": "scripts/issue13_wp3_release.py"
+    },
+    {
+      "path": "repro_command.txt",
+      "bytes": 2213,
+      "sha256": "1a0ce1056cff2631eeea4e3ebd69ed70e980c8ca571f78a33a9c102eaf47cb70",
+      "producer": "scripts/issue13_pack_artifacts.py"
+    },
+    {
+      "path": "run1-warmup5/issue13_wp3_release.py",
+      "bytes": 30214,
+      "sha256": "18972c020c42733ddfc7fc826cff37fcfe32e3fd8f02578dec651916994f1f42",
+      "producer": "scripts/issue13_wp3_release.py (run 1, sha-verified copy of the archived producer)"
+    },
+    {
+      "path": "run1-warmup5/legacy_composition_table.json",
+      "bytes": 1711,
+      "sha256": "bddafc95a34e2c1a5948bdc8b1aaf96cb1cb108f70d0de75405a967f3dae15ab",
+      "producer": "scripts/issue13_wp3_release.py (run 1, sha-verified copy of the archived producer)"
+    },
+    {
+      "path": "run1-warmup5/wp3_raw.csv",
+      "bytes": 24216,
+      "sha256": "1c9b06c1a6dda5bb80a9e3fcfdc6618b779071a8c4ecfdca21c36b344798c50e",
+      "producer": "scripts/issue13_wp3_release.py (run 1, sha-verified copy of the archived producer)"
+    },
+    {
+      "path": "run1-warmup5/wp3_release.json",
+      "bytes": 234495,
+      "sha256": "7d049c3d736aa2a5be0401603dc0194b196e7009b1270cea1e5ded11f756a588",
+      "producer": "scripts/issue13_wp3_release.py (run 1, sha-verified copy of the archived producer)"
+    },
+    {
+      "path": "run1-warmup5/wp3_sessions_raw.json",
+      "bytes": 920046,
+      "sha256": "0e0bc5d2a37af02945a7742fad08864b13f7e5f90fd33b612c0bfd882a0af303",
+      "producer": "scripts/issue13_wp3_release.py (run 1, sha-verified copy of the archived producer)"
+    },
+    {
+      "path": "selector_diff.json",
+      "bytes": 3975,
+      "sha256": "cc77e23453d36997d03054c8ed910dc65c75f8284b42e6960c3b924ddf22e779",
+      "producer": "scripts/issue13_promote_hybrid.py"
+    },
+    {
+      "path": "server_report.md",
+      "bytes": 6842,
+      "sha256": "17d2cdec468081b7eb52b8265bca152b725132b265db968fdbb3edb6cbd1fd01",
+      "producer": "hand-written server report"
+    },
+    {
+      "path": "wp1_promotion.json",
+      "bytes": 106942,
+      "sha256": "fb4747f796cedd02e182907d596c7f1ea541fd577e05f2b701959bfebeae3af7",
+      "producer": "scripts/issue13_wp1_promotion.py"
+    },
+    {
+      "path": "wp1_raw.csv",
+      "bytes": 13340,
+      "sha256": "14c952f24730854c66f96121540f06d2906dd2a6d101063e5e06c22145fb1ce6",
+      "producer": "scripts/issue13_wp1_promotion.py"
+    },
+    {
+      "path": "wp1_sessions_raw.json",
+      "bytes": 497113,
+      "sha256": "f623c5ecdcfbe6f7d173ebbbfd3be1e2bde7ab59b639567bc64c13d371f95d99",
+      "producer": "scripts/issue13_wp1_promotion.py"
+    },
+    {
+      "path": "wp3_raw.csv",
+      "bytes": 24269,
+      "sha256": "c595b3986c4e04cfeb86290d50784e572d15d98cf29bab7a061cd6ba9d84a035",
+      "producer": "scripts/issue13_wp3_release.py"
+    },
+    {
+      "path": "wp3_release.json",
+      "bytes": 234766,
+      "sha256": "d0805c84ced574a50475adf9445af2787498ee5e164cb8a0b1eee4ff039bc005",
+      "producer": "scripts/issue13_wp3_release.py"
+    },
+    {
+      "path": "wp3_sessions_raw.json",
+      "bytes": 1022834,
+      "sha256": "30fa7afff2bcaab525a48783765d881e5e97c6071794d66b1c6b2f860eb27aa9",
+      "producer": "scripts/issue13_wp3_release.py"
+    },
+    {
+      "path": "wp4_coverage.json",
+      "bytes": 517688,
+      "sha256": "43399906be1c40aabbc2fcbd91c028168bb28354a603418541818248c6e68c35",
+      "producer": "scripts/issue13_wp4_coverage.py"
+    },
+    {
+      "path": "wp4_raw.csv",
+      "bytes": 70674,
+      "sha256": "5399a4091ae240efedebf7b463d69b09102032c6e16ccef00312b5fda26e1086",
+      "producer": "scripts/issue13_wp4_coverage.py"
+    },
+    {
+      "path": "wp4_sessions_raw.json",
+      "bytes": 2792122,
+      "sha256": "61819305ceda56ccfb026f8e3167ae60bf243f902171c30643cf0479c0ae12a5",
+      "producer": "scripts/issue13_wp4_coverage.py"
+    }
+  ]
+}

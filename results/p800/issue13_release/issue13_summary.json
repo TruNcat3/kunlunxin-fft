@@ -1,0 +1,292 @@
+{
+  "claims": {
+    "bounded_acceleration": {
+      "basis": "issue #13 rule: frozen exact cells promoted into the production selector after WP1, and WP3 shows no incumbent regression on the release matrix",
+      "promoted_keys": [
+        "N2048B16:c2c_inverse",
+        "N2048B1:c2c_inverse"
+      ],
+      "supported": true,
+      "wp3_exit_conditions_pass": true,
+      "wp3_geomean_old_over_new": 1.1994472097001716,
+      "wp3_regressions": [],
+      "wp3_worst_cell": "N1024B1:c2c_forward"
+    },
+    "broad_coverage": {
+      "basis": "issue #13 rule: geomean(vendor/selector) over the vendor-supported 49-cell subset must be > 1 with every negative point published",
+      "fallback_ratio": 0.5918,
+      "geomean_vendor_over_incumbent": 0.06692744455371974,
+      "geomean_vendor_over_selector": 0.07144528518750953,
+      "losses_published": 40,
+      "supported": false,
+      "vendor_unsupported_cells_retained": 7,
+      "verdicts": {
+        "loss": 40,
+        "tie": 0,
+        "win": 2
+      }
+    }
+  },
+  "created_utc": "2026-10-26T00:35:40Z",
+  "issue": "kunlunxin-fft#13",
+  "measurements_note": "sub-ms cells carry pre-existing multi-modal card-state variance across processes (documented in server_report.md and run1-warmup5/); 10-100x fallback losses are robust to it, borderline table-resolved cells are flagged low-confidence in the report",
+  "schema": "issue13-summary/1",
+  "sessions": {
+    "WP1": [
+      {
+        "elapsed_s": 273.3,
+        "isolation": "one subprocess per (cell, path) with its own fresh TRITON_CACHE_DIR; spawn order shuffled per session",
+        "jobs_ok": 25,
+        "jobs_total": 25,
+        "role": "protocol",
+        "session": 1,
+        "spawn_order": [
+          "N2048B1:c2c-inverse:m0_reference",
+          "N1024B1:c2c-inverse:vendor",
+          "N2048B16:c2c-inverse:incumbent_entry",
+          "N2048B1:c2c-forward:hybrid_vendor_p",
+          "N2048B16:c2c-forward:hybrid_vendor_p",
+          "N2048B16:c2c-inverse:m0_reference",
+          "N2048B16:c2c-forward:incumbent_entry",
+          "N1024B1:c2c-inverse:hybrid_fused_p",
+          "N2048B16:c2c-forward:m0_reference",
+          "N1024B1:c2c-inverse:hybrid_vendor_p",
+          "N2048B1:c2c-forward:m0_reference",
+          "N2048B1:c2c-forward:vendor",
+          "N2048B16:c2c-inverse:hybrid_fused_p",
+          "N2048B1:c2c-inverse:vendor",
+          "N2048B16:c2c-inverse:hybrid_vendor_p",
+          "N2048B1:c2c-inverse:incumbent_entry",
+          "N1024B1:c2c-inverse:incumbent_entry",
+          "N2048B1:c2c-inverse:hybrid_fused_p",
+          "N2048B1:c2c-inverse:hybrid_vendor_p",
+          "N2048B16:c2c-inverse:vendor",
+          "N1024B1:c2c-inverse:m0_reference",
+          "N2048B16:c2c-forward:hybrid_fused_p",
+          "N2048B1:c2c-forward:hybrid_fused_p",
+          "N2048B16:c2c-forward:vendor",
+          "N2048B1:c2c-forward:incumbent_entry"
+        ],
+        "spawn_seed": 13102727
+      },
+      {
+        "elapsed_s": 269.8,
+        "isolation": "one subprocess per (cell, path) with its own fresh TRITON_CACHE_DIR; spawn order shuffled per session",
+        "jobs_ok": 25,
+        "jobs_total": 25,
+        "role": "protocol",
+        "session": 2,
+        "spawn_order": [
+          "N2048B16:c2c-inverse:vendor",
+          "N2048B16:c2c-forward:m0_reference",
+          "N2048B1:c2c-inverse:m0_reference",
+          "N2048B1:c2c-forward:m0_reference",
+          "N2048B16:c2c-inverse:m0_reference",
+          "N2048B16:c2c-inverse:hybrid_vendor_p",
+          "N1024B1:c2c-inverse:incumbent_entry",
+          "N2048B1:c2c-inverse:hybrid_vendor_p",
+          "N2048B16:c2c-forward:hybrid_fused_p",
+          "N2048B16:c2c-inverse:incumbent_entry",
+          "N2048B1:c2c-forward:vendor",
+          "N2048B16:c2c-forward:vendor",
+          "N2048B1:c2c-inverse:incumbent_entry",
+          "N1024B1:c2c-inverse:m0_reference",
+          "N2048B1:c2c-inverse:hybrid_fused_p",
+          "N2048B1:c2c-inverse:vendor",
+          "N1024B1:c2c-inverse:hybrid_fused_p",
+          "N2048B1:c2c-forward:incumbent_entry",
+          "N2048B1:c2c-forward:hybrid_vendor_p",
+          "N2048B16:c2c-forward:hybrid_vendor_p",
+          "N1024B1:c2c-inverse:hybrid_vendor_p",
+          "N2048B16:c2c-forward:incumbent_entry",
+          "N2048B1:c2c-forward:hybrid_fused_p",
+          "N2048B16:c2c-inverse:hybrid_fused_p",
+          "N1024B1:c2c-inverse:vendor"
+        ],
+        "spawn_seed": 13102728
+      },
+      {
+        "elapsed_s": 282.1,
+        "isolation": "one subprocess per (cell, path) with its own fresh TRITON_CACHE_DIR; spawn order shuffled per session",
+        "jobs_ok": 25,
+        "jobs_total": 25,
+        "role": "protocol",
+        "session": 3,
+        "spawn_order": [
+          "N2048B16:c2c-forward:incumbent_entry",
+          "N2048B1:c2c-inverse:vendor",
+          "N2048B1:c2c-forward:hybrid_vendor_p",
+          "N2048B1:c2c-inverse:hybrid_vendor_p",
+          "N2048B16:c2c-forward:m0_reference",
+          "N2048B16:c2c-inverse:incumbent_entry",
+          "N2048B16:c2c-forward:hybrid_vendor_p",
+          "N2048B16:c2c-forward:hybrid_fused_p",
+          "N2048B16:c2c-inverse:hybrid_fused_p",
+          "N2048B16:c2c-inverse:vendor",
+          "N1024B1:c2c-inverse:hybrid_vendor_p",
+          "N2048B1:c2c-forward:incumbent_entry",
+          "N2048B1:c2c-inverse:incumbent_entry",
+          "N2048B1:c2c-forward:m0_reference",
+          "N2048B16:c2c-inverse:m0_reference",
+          "N1024B1:c2c-inverse:hybrid_fused_p",
+          "N2048B1:c2c-inverse:m0_reference",
+          "N1024B1:c2c-inverse:m0_reference",
+          "N2048B16:c2c-inverse:hybrid_vendor_p",
+          "N1024B1:c2c-inverse:vendor",
+          "N1024B1:c2c-inverse:incumbent_entry",
+          "N2048B1:c2c-forward:vendor",
+          "N2048B16:c2c-forward:vendor",
+          "N2048B1:c2c-forward:hybrid_fused_p",
+          "N2048B1:c2c-inverse:hybrid_fused_p"
+        ],
+        "spawn_seed": 13102729
+      },
+      {
+        "elapsed_s": 277.0,
+        "isolation": "one subprocess per (cell, path) with its own fresh TRITON_CACHE_DIR; spawn order shuffled per session",
+        "jobs_ok": 25,
+        "jobs_total": 25,
+        "role": "confirmation",
+        "session": 4,
+        "spawn_order": [
+          "N2048B1:c2c-inverse:hybrid_fused_p",
+          "N2048B1:c2c-inverse:m0_reference",
+          "N2048B1:c2c-inverse:incumbent_entry",
+          "N2048B16:c2c-forward:hybrid_fused_p",
+          "N2048B1:c2c-forward:incumbent_entry",
+          "N2048B16:c2c-inverse:hybrid_fused_p",
+          "N2048B16:c2c-forward:hybrid_vendor_p",
+          "N1024B1:c2c-inverse:m0_reference",
+          "N1024B1:c2c-inverse:hybrid_fused_p",
+          "N2048B1:c2c-forward:m0_reference",
+          "N2048B1:c2c-forward:hybrid_fused_p",
+          "N2048B16:c2c-inverse:vendor",
+          "N2048B1:c2c-inverse:hybrid_vendor_p",
+          "N2048B16:c2c-forward:m0_reference",
+          "N1024B1:c2c-inverse:incumbent_entry",
+          "N2048B16:c2c-inverse:hybrid_vendor_p",
+          "N2048B16:c2c-inverse:incumbent_entry",
+          "N2048B1:c2c-inverse:vendor",
+          "N2048B16:c2c-forward:vendor",
+          "N2048B1:c2c-forward:hybrid_vendor_p",
+          "N2048B1:c2c-forward:vendor",
+          "N2048B16:c2c-forward:incumbent_entry",
+          "N1024B1:c2c-inverse:hybrid_vendor_p",
+          "N1024B1:c2c-inverse:vendor",
+          "N2048B16:c2c-inverse:m0_reference"
+        ],
+        "spawn_seed": 13102730
+      }
+    ],
+    "WP3": [
+      {
+        "elapsed_s": 946.4,
+        "isolation": "one subprocess per (cell, path) with its own fresh TRITON_CACHE_DIR; spawn order shuffled per session",
+        "jobs_ok": 64,
+        "jobs_total": 64,
+        "role": "protocol",
+        "session": 1,
+        "spawn_seed": 13103326
+      },
+      {
+        "elapsed_s": 941.1,
+        "isolation": "one subprocess per (cell, path) with its own fresh TRITON_CACHE_DIR; spawn order shuffled per session",
+        "jobs_ok": 64,
+        "jobs_total": 64,
+        "role": "protocol",
+        "session": 2,
+        "spawn_seed": 13103326
+      },
+      {
+        "elapsed_s": 939.9,
+        "isolation": "one subprocess per (cell, path) with its own fresh TRITON_CACHE_DIR; spawn order shuffled per session",
+        "jobs_ok": 64,
+        "jobs_total": 64,
+        "role": "protocol",
+        "session": 3,
+        "spawn_seed": 13103326
+      }
+    ],
+    "WP4": [
+      {
+        "elapsed_s": 5142.0,
+        "isolation": "one subprocess per (point, path) with its own fresh TRITON_CACHE_DIR; spawn order shuffled per session",
+        "jobs_ok": 164,
+        "jobs_total": 183,
+        "role": "protocol",
+        "session": 1,
+        "spawn_seed": 14103426
+      },
+      {
+        "elapsed_s": 5134.0,
+        "isolation": "one subprocess per (point, path) with its own fresh TRITON_CACHE_DIR; spawn order shuffled per session",
+        "jobs_ok": 164,
+        "jobs_total": 183,
+        "role": "protocol",
+        "session": 2,
+        "spawn_seed": 14103426
+      },
+      {
+        "elapsed_s": 5115.8,
+        "isolation": "one subprocess per (point, path) with its own fresh TRITON_CACHE_DIR; spawn order shuffled per session",
+        "jobs_ok": 164,
+        "jobs_total": 183,
+        "role": "protocol",
+        "session": 3,
+        "spawn_seed": 14103426
+      }
+    ]
+  },
+  "workpackages": {
+    "WP0": {
+      "note": "production contract & repro lock (issue13 WP0 commit)",
+      "status": "done"
+    },
+    "WP1": {
+      "artifact": "wp1_promotion.json",
+      "cells_tested": 5,
+      "promoted": [
+        "N2048B16:c2c_inverse",
+        "N2048B1:c2c_inverse"
+      ],
+      "status": "done"
+    },
+    "WP2": {
+      "note": "per-entry semantic dispatch + promoted keys stamped into the production composition table (selector_diff.json)",
+      "status": "done"
+    },
+    "WP3": {
+      "artifact": "wp3_release.json",
+      "exit_conditions_pass": true,
+      "status": "done"
+    },
+    "WP4": {
+      "artifact": "wp4_coverage.json",
+      "broad_coverage_supported": false,
+      "status": "done"
+    },
+    "WP5": {
+      "classification": {
+        "not_chosen": [
+          1,
+          2,
+          4
+        ],
+        "primary": {
+          "class": 5,
+          "evidence": "fallback_ratio=0.5918 \u2014 29/49 C2C cells resolve M0 because the dit selector table covers profiled design points only; losses at those cells are 10-100x and dwarf any measurement variance",
+          "fix_scope": "a new design-point profiling campaign (issue10-scale): N=64..512 x B=4..4096 coverage + long-size composition entries",
+          "name": "lowering / contract capability missing"
+        },
+        "secondary": {
+          "class": 3,
+          "evidence": "N64B1/N1024B1 table-resolved dit plans are ~1.6-20x slower than the vendor library's tuned small-FFT paths while being fully correct",
+          "fix_scope": "small-N kernel tuning is an open-ended core-engineering track (vendor-class small-FFT libraries are multi-year effort)",
+          "name": "local core throughput at table-resolved small-N cells"
+        }
+      },
+      "decision": "no optimization round in this issue: no class closes with a clear bounded benefit inside two implementation rounds; negative points stay published and move to future work (roadmap: design-point campaign + small-N core track), per the issue stop conditions",
+      "status": "done"
+    }
+  }
+}
