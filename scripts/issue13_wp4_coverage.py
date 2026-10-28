@@ -173,20 +173,22 @@ def worker(a) -> int:
         if p == "vendor":
             call, meta = wp3.run_vendor(xb, False)
         else:
+            from src.xpu.composition import load_composition_table
             from src.xpu.entry import execute_fft_plan, plan_fft
             from src.xpu.selector import load_table
             table = load_table(str(SELECTOR_TABLE))
             if p == "incumbent_old":
-                # pre-issue13 deployed state: monkeypatch the module-
-                # global loader composition_select resolves through
-                # (call-time lookup) so plan_fft sees the snapshot.
-                import src.xpu.composition as comp_mod
+                # pre-issue13 deployed state: the legacy composition
+                # snapshot is passed EXPLICITLY (PR #14 P1: injecting
+                # the selector table isolates plan_fft from the
+                # deployed composition table — the snapshot replaces
+                # the module-global monkeypatch this path used before).
                 legacy = json.loads(LEGACY_TABLE.read_text())
-                comp_mod.load_composition_table = (
-                    lambda path=None: legacy)
                 prof = legacy.get("profile_hash")
+                comp_table = legacy
             elif p == "selector_new":
                 prof = table.get("profile_hash")
+                comp_table = load_composition_table()
             else:  # not a WP4 path
                 raise ValueError(f"unknown path {p}")
             tp0 = time.perf_counter()
@@ -195,7 +197,8 @@ def worker(a) -> int:
                             env_hash="auto",
                             transform_type="c2c",
                             transform_direction="forward",
-                            norm="backward")
+                            norm="backward",
+                            composition_table=comp_table)
             segs["plan_fft_ms"] = (time.perf_counter() - tp0) * 1e3
             params = dict(plan.params or {})
             binding = {

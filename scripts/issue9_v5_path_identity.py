@@ -89,6 +89,7 @@ def bind_v5_fallback_provenance(table: dict, blob_sha: str = None) -> dict:
 
 def _resolve(table, n, b, sem, prof):
     """Resolve one semantic cell to its executed-plan identity."""
+    from src.xpu.composition import load_composition_table
     from src.xpu.entry import plan_fft
     import run_semantic_matrix as sm
 
@@ -98,7 +99,8 @@ def _resolve(table, n, b, sem, prof):
                     precision=table["precision"],
                     profile_hash=prof, table=table,
                     env_hash=table["env_hash"], transform_type=tt,
-                    transform_direction=tdir, norm=norm)
+                    transform_direction=tdir, norm=norm,
+                    composition_table=load_composition_table())
     params = {k: v for k, v in (plan.params or {}).items()
               if k not in _NON_EXEC_KEYS}
     return {

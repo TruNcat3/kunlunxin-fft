@@ -132,6 +132,7 @@ def _run_shape(session, n, batch, direction, trials, seed, table, out,
                profile_override=None, label=None):
     """One shape: correctness gate, then interleaved M0 vs selected."""
     import torch
+    from src.xpu.composition import load_composition_table
     from src.xpu.config import DeviceProfile
     from src.xpu.entry import run_fft
 
@@ -142,7 +143,13 @@ def _run_shape(session, n, batch, direction, trials, seed, table, out,
     ph = profile_override if profile_override is not None else \
         DeviceProfile.load().hash()
     # 1) selected path + report (this also performs the execution)
-    y_sel, report = run_fft(x, direction, profile_hash=ph, table=table)
+    # composition_table is passed explicitly per call (PR #14 P1: an
+    # injected selector table no longer reaches the deployed
+    # composition table; the incumbent path here must keep measuring
+    # production composition dispatch, loaded per call exactly like
+    # the pre-PR #14 composition_select global load).
+    y_sel, report = run_fft(x, direction, profile_hash=ph, table=table,
+                            composition_table=load_composition_table())
     sel_err = _err_vs_np(y_sel, ref)
     # 2) baseline
     y0 = _invoke_baseline(x, direction, batch)
@@ -159,7 +166,8 @@ def _run_shape(session, n, batch, direction, trials, seed, table, out,
     # 3) interleaved timing: per trial, random order of (m0, selected)
     rng = random.Random(seed * 1000003 + session)
     m0_fn = (lambda: _invoke_baseline(x, direction, batch))
-    sel_fn = (lambda: run_fft(x, direction, profile_hash=ph, table=table)[0])
+    sel_fn = (lambda: run_fft(x, direction, profile_hash=ph, table=table,
+                              composition_table=load_composition_table())[0])
     for _ in range(5):
         m0_fn()
         sel_fn()

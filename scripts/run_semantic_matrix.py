@@ -326,13 +326,15 @@ def _vendor_call(x, semantic, n, b):
 
 
 def _entry_plan(direction, n, b, semantic, profile_hash, table):
+    from src.xpu.composition import load_composition_table
     from src.xpu.entry import plan_fft
     transform_type, transform_direction = _semantic_of(semantic)
     return plan_fft(direction, n, batch=b,
                     profile_hash=profile_hash, table=table,
                     transform_type=transform_type,
                     transform_direction=transform_direction,
-                    norm=_norm_of(semantic))
+                    norm=_norm_of(semantic),
+                    composition_table=load_composition_table())
 
 
 def _attribution(executed, params=None):
@@ -658,6 +660,7 @@ def _plan_creation_row(session, case_label, semantic, xs, errs):
 def run_case(session, n, b, semantic, trials, warmup, seed, table,
              previous_table, raw, e2e_trials, one_shot_trials):
     import torch
+    from src.xpu.composition import load_composition_table
     from src.xpu.entry import execute_fft_plan, run_fft
     from src.xpu.config import DeviceProfile
 
@@ -776,7 +779,8 @@ def run_case(session, n, b, semantic, trials, warmup, seed, table,
                     x, direction_arg, profile_hash=prof_arg,
                     table=table, transform_type=transform_type,
                     transform_direction=transform_direction,
-                    norm=norm)
+                    norm=norm,
+                    composition_table=load_composition_table())
                 return y
 
             xs, out = _timed_once(

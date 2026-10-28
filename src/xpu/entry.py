@@ -302,7 +302,8 @@ def plan_fft(direction: str, n: int, batch: int = 1, precision: str = "fp32",
              env_hash: str | None = "auto",
              transform_type: str = "c2c",
              transform_direction: str | None = None,
-             norm: str = "backward") -> ExecutionPlan:
+             norm: str = "backward",
+             composition_table: dict | None = None) -> ExecutionPlan:
     """Resolve the frozen table onto a concrete plan (host-only, no torch).
 
     The semantic key is (transform_type, direction, normalization):
@@ -312,6 +313,21 @@ def plan_fft(direction: str, n: int, batch: int = 1, precision: str = "fp32",
     is one of :data:`SUPPORTED_NORMS` (``"backward"`` default, matching
     torch.fft). Defaults reproduce the historical forward, unscaled
     behaviour bit-for-bit.
+
+    Table-injection contract (PR #14 review P1): the selector and
+    composition tables are two different schemas and are injected
+    separately. Composition dispatch is consulted when
+    ``composition_table`` is explicitly provided (that exact table),
+    or when neither table is injected (``table is None`` — both
+    deployed defaults: butterfly ``config/selector_table.json`` via
+    :func:`src.xpu.selector.select` and composition
+    ``config/composition_table.json`` via
+    :func:`src.xpu.composition.composition_select`). An injected
+    ``table`` with ``composition_table=None`` ISOLATES the call from
+    the deployed composition table: rollback / offline / custom
+    selector-table runs can never silently resolve a promoted
+    composition entry, they stay on the butterfly/M0 paths of the
+    injected table. The two schemas are never forced from one object.
 
     Unsupported direction/precision/transform/norm raise ``ValueError``
     before the table query — they must never fall back onto a different
@@ -359,11 +375,18 @@ def plan_fft(direction: str, n: int, batch: int = 1, precision: str = "fp32",
     # composition_select matches per entry on the full semantic key
     # (issue #13 WP2): an entry answers only its own triple, a query
     # with no matching entry falls through to the butterfly path.
-    if transform_type == "c2c":
+    # PR #14 review P1: consult composition only with an explicit
+    # composition_table, or with both tables at their deployed
+    # defaults (table is None); an injected selector table without an
+    # explicit composition table never reaches the deployed global
+    # composition table (isolation / rollback / offline contract).
+    if transform_type == "c2c" and (composition_table is not None
+                                    or table is None):
         comp = composition_select(direction, n, batch=batch,
                                   precision=precision,
                                   profile_hash=profile_hash,
                                   env_hash=env_hash,
+                                  table=composition_table,
                                   transform_type=transform_type,
                                   transform_direction=transform_direction,
                                   normalization=norm)
@@ -778,7 +801,8 @@ def run_fft(x, direction: str, *, batch: int | None = None,
             table: dict | None = None,
             transform_type: str = "c2c",
             transform_direction: str | None = None,
-            norm: str = "backward"):
+            norm: str = "backward",
+            composition_table: dict | None = None):
     """One-shot convenience: plan + execute; return ``(y, ExecutionReport)``.
 
     Unsupported direction/precision/dtype raise before any query. A rank-2
@@ -786,6 +810,11 @@ def run_fft(x, direction: str, *, batch: int | None = None,
     output is restored to ``(1, N)``. Per-call plan/dispatch overhead is
     included here — use :func:`plan_fft` + :func:`execute_fft_plan` for
     steady-state (plan-reuse) timings.
+
+    ``table`` / ``composition_table`` follow the same two-schema
+    injection contract as :func:`plan_fft` (PR #14 review P1): an
+    injected ``table`` without ``composition_table`` never resolves
+    the deployed composition entries.
     """
     import torch  # local import: entry stays host-importable for planning
 
@@ -828,7 +857,8 @@ def run_fft(x, direction: str, *, batch: int | None = None,
     plan = plan_fft(direction, n, batch=b, precision=precision,
                     profile_hash=profile_hash, table=table,
                     transform_type=transform_type,
-                    transform_direction=transform_direction, norm=norm)
+                    transform_direction=transform_direction, norm=norm,
+                    composition_table=composition_table)
     y = execute_fft_plan(plan, x)
     if squeezed:
         y = y.unsqueeze(0)

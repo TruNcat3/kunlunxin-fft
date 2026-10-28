@@ -424,6 +424,7 @@ def verify_bundle(out: Path, env_hash: str | None,
     # agree with the direction the entry claims (the runner direction
     # dispatch derives). Covers DIT/DIF and B=1/batched via the full
     # entry loop.
+    from src.xpu.composition import load_composition_table
     from src.xpu.entry import plan_fft
 
     def _check_fallback_plan(plan, fb, note):
@@ -459,7 +460,8 @@ def verify_bundle(out: Path, env_hash: str | None,
                 transform_type=entry.get("transform_type", "c2c"),
                 transform_direction=entry.get(
                     "transform_direction", "forward"),
-                norm=entry.get("normalization", "backward"))
+                norm=entry.get("normalization", "backward"),
+                composition_table=load_composition_table())
         except Exception as e:  # noqa: BLE001
             failures.append(
                 f"verify: plan_fft(N{entry['N']}B{entry['batch']}) "
@@ -509,7 +511,8 @@ def verify_bundle(out: Path, env_hash: str | None,
                 profile_hash=table["profile_hash"], table=table,
                 env_hash=env_hash,
                 transform_type=sk[0], transform_direction=sk[1],
-                norm=sk[2])
+                norm=sk[2],
+                composition_table=load_composition_table())
         except Exception as e:  # noqa: BLE001
             failures.append(
                 f"verify: plan_fft(previous_fallbacks N{fb['N']}"

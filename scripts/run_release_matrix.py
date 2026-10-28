@@ -237,6 +237,7 @@ def run_shape(session, n, batch, direction, trials, seed, table, raw,
     """One shape: correctness gates, then interleaved plan-reuse timing."""
     import torch
     from src.xpu.config import DeviceProfile
+    from src.xpu.composition import load_composition_table
     from src.xpu.entry import execute_fft_plan, plan_fft
 
     tag = label or f"N{n}B{batch}"
@@ -245,7 +246,8 @@ def run_shape(session, n, batch, direction, trials, seed, table, raw,
     ph = profile_override if profile_override is not None else \
         DeviceProfile.load().hash()
 
-    plan = plan_fft(direction, n, batch=batch, profile_hash=ph, table=table)
+    plan = plan_fft(direction, n, batch=batch, profile_hash=ph, table=table,
+                    composition_table=load_composition_table())
     entry = _entry_for(table, n, batch, direction)
     inc_block = int((entry or {}).get("incumbent_block")
                     or (entry or {}).get("block") or 1024)
@@ -416,17 +418,20 @@ def _plan_overhead_probe(session, seed, table, raw, warmup):
     """One-shot run_fft vs plan-reuse at N=16 and N=32 (plan cost column)."""
     import torch
     from src.xpu.config import DeviceProfile
+    from src.xpu.composition import load_composition_table
     from src.xpu.entry import execute_fft_plan, plan_fft, run_fft
     ph = DeviceProfile.load().hash()
     out = []
     for n in (16, 32):
         x = _make_input(n, 1, seed)
-        plan = plan_fft("dit", n, profile_hash=ph, table=table)
+        plan = plan_fft("dit", n, profile_hash=ph, table=table,
+                        composition_table=load_composition_table())
         reuse = _median([_timed_call(
             (lambda: execute_fft_plan(plan, x)), warmup=warmup)
             for _ in range(20)])
         one_shot = _median([_timed_call(
-            (lambda: run_fft(x, "dit", profile_hash=ph, table=table)),
+            (lambda: run_fft(x, "dit", profile_hash=ph, table=table,
+                             composition_table=load_composition_table())),
             warmup=warmup) for _ in range(20)])
         overhead = one_shot - reuse
         out.append({"N": n, "plan_reuse_ms": reuse, "one_shot_ms": one_shot,

@@ -306,6 +306,7 @@ def worker(a) -> int:
         elif p in ("hybrid_vendor_p", "hybrid_fused_p"):
             call, meta = wp3.PATHS[p](xb, inverse)
         elif p in (INCUMBENT_LABEL, M0_LABEL):
+            from src.xpu.composition import load_composition_table
             from src.xpu.entry import execute_fft_plan, plan_fft
             from src.xpu.selector import load_table
             tp0 = time.perf_counter()
@@ -316,6 +317,10 @@ def worker(a) -> int:
                 # An abstain/fallback plan here means the profile-bound
                 # incumbent cannot legally resolve in this cell ->
                 # fail closed as no-go, NEVER silently replaced by M0.
+                # composition_table is explicit (PR #14 P1): injecting
+                # the selector table isolates plan_fft from the
+                # deployed composition table, and the incumbent row
+                # must keep measuring production composition dispatch.
                 prof = table.get("profile_hash")
                 plan = plan_fft(direction="dit", n=n, batch=b,
                                 profile_hash=prof, table=table,
@@ -324,7 +329,8 @@ def worker(a) -> int:
                                 transform_direction=("inverse"
                                                      if inverse
                                                      else "forward"),
-                                norm="backward")
+                                norm="backward",
+                                composition_table=load_composition_table())
             else:
                 # m0_reference: profile_hash=None abstains to M0 by the
                 # selector contract — descriptive baseline only, it is

@@ -197,6 +197,69 @@ def test_plan_fft_wires_hybrid4_entry(monkeypatch):
     assert op.selection_source != "composition"
 
 
+def test_custom_selector_table_cannot_reach_global_composition(
+        monkeypatch):
+    """PR #14 review P1: an injected selector table with no explicit
+    composition_table must never load or hit the deployed composition
+    table (isolation / rollback / offline contract); passing the
+    composition table explicitly restores composition dispatch."""
+    sel = {
+        "schema_version": 1, "kind": "butterfly-selector",
+        "precision": "fp32", "profile_hash": "p" * 16,
+        "env_hash": "e" * 16, "guard_pct": 2.0, "entries": [],
+    }
+    g = _table([_entry(variant="4step-transpose",
+                       executed="run_hybrid4")])
+
+    def _boom(path=comp.TABLE_PATH):
+        raise AssertionError(
+            "deployed composition table must not load for an "
+            "injected selector table")
+
+    monkeypatch.setattr(comp, "load_composition_table", _boom)
+
+    # isolated: the global loader is unreachable (pre-PR #14 this
+    # called load_composition_table through composition_select).
+    p = plan_fft("dit", 2048, 16, profile_hash="p" * 16,
+                 env_hash="e" * 16, table=sel)
+    assert p.selection_source != "composition"
+
+    # explicit composition_table (two separate schemas) restores it.
+    p2 = plan_fft("dit", 2048, 16, profile_hash="p" * 16,
+                  env_hash="e" * 16, table=sel,
+                  composition_table=g)
+    assert p2.selection_source == "composition"
+    assert p2.executed == "run_hybrid4"
+
+
+def test_run_fft_forwards_composition_table(monkeypatch):
+    """PR #14 review P1: run_fft passes composition_table through to
+    plan_fft (host-simulated; skips when torch is unavailable)."""
+    torch = pytest.importorskip("torch")
+    import src.xpu.entry as entry_mod
+
+    seen = {}
+
+    class _Plan:
+        def as_report(self):
+            return "report"
+
+    def _plan(*args, **kw):
+        seen.update(kw)
+        return _Plan()
+
+    monkeypatch.setattr(entry_mod, "plan_fft", _plan)
+    monkeypatch.setattr(entry_mod, "execute_fft_plan",
+                        lambda plan, x: x)
+
+    comp_t = {"entries": []}
+    _y, rep = entry_mod.run_fft(torch.zeros(8, dtype=torch.complex64),
+                                "dit", table={"entries": []},
+                                composition_table=comp_t)
+    assert seen.get("composition_table") is comp_t
+    assert rep == "report"
+
+
 def test_h4_executed_set_matches_module_mapping():
     assert _H4_EXECUTED == frozenset(EXECUTED_VARIANT)
     assert _H4_EXECUTED == {"run_hybrid4", "run_hybrid4_fused"}
