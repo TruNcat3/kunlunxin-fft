@@ -179,6 +179,7 @@ def _schedule(cells, sem_map=None):
 # same-session previous-deployed contender, not a cross-day join.
 PREVIOUS_SELECTOR_COMMIT = "54260cf9f2dfda5dc830f749c2debf4101d59d48"
 PREVIOUS_TABLE_FILE = "previous_selector_table.json"
+PREVIOUS_COMPOSITION_FILE = "previous_composition_table.json"
 PREVIOUS_CANDIDATE = "previous-deployed"
 # Cells whose PREVIOUS deployed behavior was the (now P1-B-forbidden)
 # forward-composition inheritance — pre-registered exceptions that may
@@ -325,8 +326,18 @@ def _vendor_call(x, semantic, n, b):
     return torch.fft.irfft(x, n=n, dim=-1, norm=norm)
 
 
-def _entry_plan(direction, n, b, semantic, profile_hash, table):
-    from src.xpu.composition import load_composition_table
+def _entry_plan(direction, n, b, semantic, profile_hash, table,
+                composition_table=None):
+    """plan_fft for one semantic cell; composition is opt-in.
+
+    Callers pass the composition snapshot bound to THEIR deployment
+    (PR #14 review round 2): the current selector gets the current
+    deployed table, the previous-deployed column gets its own legacy
+    snapshot, and incumbent/M0 (no profile) pass explicit ``None`` so
+    a profile-less baseline never queries composition at all. The
+    default ``None`` is fail-closed: no caller silently inherits the
+    working-tree table.
+    """
     from src.xpu.entry import plan_fft
     transform_type, transform_direction = _semantic_of(semantic)
     return plan_fft(direction, n, batch=b,
@@ -334,7 +345,7 @@ def _entry_plan(direction, n, b, semantic, profile_hash, table):
                     transform_type=transform_type,
                     transform_direction=transform_direction,
                     norm=_norm_of(semantic),
-                    composition_table=load_composition_table())
+                    composition_table=composition_table)
 
 
 def _attribution(executed, params=None):
@@ -479,10 +490,16 @@ def _declared_inventory(cases, table, oracle_mode, sessions, trials,
         for semantic in (sem_map.get((n, b), SEMANTICS) if sem_map
                          else SEMANTICS):
             label = f"N{n}B{b}:{semantic}"
-            incumbent = _entry_plan(DIRECTION, n, b, semantic, None, table)
+            # incumbent/M0: no profile, no composition query (PR #14);
+            # the winner-block selector binds the CURRENT deployed
+            # composition snapshot.
+            incumbent = _entry_plan(DIRECTION, n, b, semantic, None,
+                                    table, composition_table=None)
             if oracle_mode == "winner-block":
-                selector = _entry_plan(DIRECTION, n, b, semantic,
-                                       profile_hash, table)
+                from src.xpu.composition import load_composition_table
+                selector = _entry_plan(
+                    DIRECTION, n, b, semantic, profile_hash, table,
+                    composition_table=load_composition_table())
                 if selector.fallback:
                     raise RuntimeError(
                         "winner-block declared inventory needs a "
@@ -658,7 +675,8 @@ def _plan_creation_row(session, case_label, semantic, xs, errs):
 
 
 def run_case(session, n, b, semantic, trials, warmup, seed, table,
-             previous_table, raw, e2e_trials, one_shot_trials):
+             previous_table, raw, e2e_trials, one_shot_trials,
+             previous_composition=None):
     import torch
     from src.xpu.composition import load_composition_table
     from src.xpu.entry import execute_fft_plan, run_fft
@@ -680,8 +698,16 @@ def run_case(session, n, b, semantic, trials, warmup, seed, table,
         err_fn = _err_vs_np
 
     contenders = {}   # name -> (plan, fn)
-    incumbent = _entry_plan(direction, n, b, semantic, None, table)
-    selector = _entry_plan(direction, n, b, semantic, prof, table)
+    # PR #14 review round 2: each column binds its OWN composition
+    # snapshot — incumbent/M0 explicit None (no query), the current
+    # selector the deployed working-tree table (loaded per call, the
+    # same cost structure as the pre-review global load), the
+    # previous-deployed column the legacy snapshot handed in by the
+    # parent (None => explicit isolation, never the current table).
+    incumbent = _entry_plan(direction, n, b, semantic, None, table,
+                            composition_table=None)
+    selector = _entry_plan(direction, n, b, semantic, prof, table,
+                           composition_table=load_composition_table())
     contenders["incumbent"] = (incumbent,
                                (lambda p=incumbent: execute_fft_plan(p, x)))
     contenders["selector"] = (selector,
@@ -689,10 +715,14 @@ def run_case(session, n, b, semantic, trials, warmup, seed, table,
     if previous_table is not None:
         # Previous production selector resolved through the CURRENT
         # contracts (fail-closed: illegal old plans fall back, the
-        # banned inverse-composition path can never re-enter). Same
+        # banned inverse-composition path can never re-enter) and
+        # through ITS OWN deployment's composition snapshot — never
+        # today's promoted table (PR #14 review round 2), so old
+        # inverse cells can never inherit run_hybrid4*. Same
         # profile/env binding, interleaved by _timed_steady below.
         previous = _entry_plan(direction, n, b, semantic, prof,
-                               previous_table)
+                               previous_table,
+                               composition_table=previous_composition)
         contenders[PREVIOUS_CANDIDATE] = (
             previous, (lambda p=previous: execute_fft_plan(p, x)))
     if ORACLE_MODE == "winner-block":
@@ -774,13 +804,18 @@ def run_case(session, n, b, semantic, trials, warmup, seed, table,
             # yields the tensor so timed-path validation sees output
             prof_arg = prof if name == "selector" else None
 
-            def one_shot(prof_arg=prof_arg):
+            def one_shot(prof_arg=prof_arg, name=name):
+                # selector: current deployed composition (per-call
+                # load, same cost as pre-review); incumbent: explicit
+                # None — a profile-less baseline never queries it.
                 y, _rep = run_fft(
                     x, direction_arg, profile_hash=prof_arg,
                     table=table, transform_type=transform_type,
                     transform_direction=transform_direction,
                     norm=norm,
-                    composition_table=load_composition_table())
+                    composition_table=(
+                        load_composition_table()
+                        if name == "selector" else None))
                 return y
 
             xs, out = _timed_once(
@@ -854,7 +889,8 @@ def run_case(session, n, b, semantic, trials, warmup, seed, table,
         xs = []
         for i in range(5):
             t0 = _t.perf_counter()
-            _entry_plan(direction, n, b, semantic, prof, table)
+            _entry_plan(direction, n, b, semantic, prof, table,
+                        composition_table=load_composition_table())
             xs.append((_t.perf_counter() - t0) * 1e3)
         raw.append(_plan_creation_row(
             session, case_label, semantic, xs, errs))
@@ -870,10 +906,19 @@ def run_child(payload):
     session, cases, trials, warmup, seed, out_dir, e2e_trials, \
         one_shot_trials = payload[:8]
     previous_table_path = payload[8] if len(payload) > 8 else None
+    previous_composition_path = (payload[9]
+                                 if len(payload) > 9 else None)
+    from src.xpu.composition import load_composition_table
     from src.xpu.selector import load_table
     table = load_table(str(ROOT / "config" / "selector_table.json"))
     previous_table = (load_table(str(previous_table_path))
                       if previous_table_path else None)
+    # legacy snapshot bound to the previous deployment (PR #14 review
+    # round 2); absent => explicit None, the previous column then
+    # resolves without any composition query.
+    previous_composition = (
+        load_composition_table(str(previous_composition_path))
+        if previous_composition_path else None)
     raw_path = Path(out_dir) / f"raw_session{session}.jsonl"
     # WP1: the parent's schedule.json is the frozen exact cell set
     # (per-shape semantics); --scope stays the fallback for directly
@@ -901,7 +946,8 @@ def run_child(payload):
                     run_case(session, n, b, semantic, trials, warmup,
                              seed + session * 10007 + n * 13 + b, table,
                              previous_table, rows, e2e_trials,
-                             one_shot_trials)
+                             one_shot_trials,
+                             previous_composition=previous_composition)
                 except Exception as e:  # noqa: BLE001
                     rows.append(_row(
                         session, f"N{n}B{b}", semantic, "case", "error",
@@ -1330,6 +1376,52 @@ def _print_summary(summary, note=None):
         print(note)
 
 
+def _materialize_previous_composition(table_src, composition_src,
+                                      out_dir):
+    """Previous-deployed composition snapshot (PR #14 review round 2).
+
+    Bound to the SAME provenance as the previous selector: the fixed
+    pre-issue commit by default; an explicit file when the pairing
+    declares one (``--previous-composition-table-src``); or explicit
+    ``None`` with no snapshot file when a pairing file has no declared
+    composition — the previous column then resolves with the
+    composition query disabled instead of leaking the CURRENT promoted
+    table into the historical baseline. Returns ``(path_or_None,
+    source_record)``; the record's ``sha256`` (when a snapshot exists)
+    is bound into the manifest for replay.
+    """
+    if composition_src:
+        src_path = Path(composition_src)
+        if not src_path.is_file():
+            raise SystemExit(
+                f"--previous-composition-table-src {src_path} does "
+                "not exist")
+        data = src_path.read_bytes()
+        source = {"kind": "file", "path": str(src_path),
+                  "sha256": hashlib.sha256(data).hexdigest()}
+    elif table_src:
+        data = None
+        source = {
+            "kind": "none",
+            "reason": ("pairing file declares no composition table; "
+                       "previous column resolves without composition "
+                       "(explicit None, PR #14 isolation)"),
+        }
+    else:
+        data = subprocess.check_output(
+            ["git", "show",
+             f"{PREVIOUS_SELECTOR_COMMIT}:config/composition_table.json"],
+            cwd=ROOT)
+        source = {"kind": "commit",
+                  "commit": PREVIOUS_SELECTOR_COMMIT,
+                  "sha256": hashlib.sha256(data).hexdigest()}
+    if data is None:
+        return None, source
+    path = out_dir / PREVIOUS_COMPOSITION_FILE
+    path.write_bytes(data)
+    return path, source
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--sessions", type=int, default=3)
@@ -1375,6 +1467,18 @@ def main():
                          "this FILE instead of the fixed A1 commit "
                          "(issue #9 P1-2 v5-deployed pairing); the file "
                          "sha256 is bound into the manifest")
+    ap.add_argument("--previous-composition-table", default=None,
+                    help="path to the previous-deployed COMPOSITION "
+                         "table paired with --previous-table (child "
+                         "sessions get it from the parent); omit for "
+                         "explicit no-composition isolation")
+    ap.add_argument("--previous-composition-table-src", default=None,
+                    help="materialize the previous-deployed composition "
+                         "snapshot from this FILE (pairing runs); "
+                         "without it a --previous-table-src pairing "
+                         "records kind=none and resolves the previous "
+                         "column without composition (PR #14 review "
+                         "round 2)")
     args = ap.parse_args()
 
     global ORACLE_MODE
@@ -1419,7 +1523,8 @@ def main():
         path = run_child((args.session, cases, args.trials, args.warmup,
                           args.seed, str(out_dir), args.e2e_trials,
                           args.one_shot_trials,
-                          args.previous_table))
+                          args.previous_table,
+                          args.previous_composition_table))
         print(f"session done: {path}", flush=True)
         os._exit(0)
 
@@ -1536,6 +1641,17 @@ def main():
     previous_table_path = out_dir / PREVIOUS_TABLE_FILE
     previous_table_path.write_bytes(previous_bytes)
 
+    # PR #14 review round 2: pair the previous selector with the
+    # composition snapshot of ITS OWN deployment (same fixed commit),
+    # never today's promoted table — otherwise old inverse cells
+    # inherit run_hybrid4* and the column stops representing the old
+    # deployment. Path + sha256 (or the explicit none record) land in
+    # the manifest so the historical baseline stays replayable.
+    previous_comp_path, previous_comp_source = \
+        _materialize_previous_composition(
+            args.previous_table_src,
+            args.previous_composition_table_src, out_dir)
+
     from src.xpu.config import DeviceProfile, build_manifest, git_commit
     from src.xpu.envcheck import current_env_hash, collect
     from src.xpu.manifest_contract import declared_inventory_sha256
@@ -1561,6 +1677,11 @@ def main():
         "previous_selector_source_commit": PREVIOUS_SELECTOR_COMMIT,
         "previous_selector_source": previous_source,
         "previous_selector_sha256": previous_sha256,
+        "previous_composition_source": previous_comp_source,
+        "previous_composition_sha256": previous_comp_source.get(
+            "sha256"),
+        "previous_composition_path": (PREVIOUS_COMPOSITION_FILE
+                                      if previous_comp_path else None),
         "oracle_mode": args.oracle_mode,
         "block_sweep": (list(WINNER_BLOCK_SWEEP)
                         if args.oracle_mode == "winner-block" else None),
@@ -1620,6 +1741,9 @@ def main():
                   "--oracle-mode", args.oracle_mode,
                   "--previous-table", str(previous_table_path),
                   "--out", str(out_dir)]
+        if previous_comp_path is not None:
+            child += ["--previous-composition-table",
+                      str(previous_comp_path)]
         for s in range(args.sessions):
             cmd = [str(s) if x == "SESSION" else x for x in child]
             subprocess.run(cmd, check=True, timeout=7200)

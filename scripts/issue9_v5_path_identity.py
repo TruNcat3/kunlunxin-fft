@@ -26,7 +26,11 @@ the v5 table's OWN env/profile/precision/device identity (a
 self-binding normalization: entry geometry, params and selection
 behaviour are untouched) and records both the original blob sha and
 the bound-file sha.  The bound file is what a paired
-``--previous-table-src`` run measures against.
+``--previous-table-src`` run measures against; pair it with
+``v5_production_composition_table.json`` via
+``--previous-composition-table-src`` so the previous column binds the
+v5-era composition snapshot (PR #14 review round 2), never today's
+promoted table.
 
 Usage:
     scripts/issue9_v5_path_identity.py [--out DIR]
@@ -148,6 +152,27 @@ def main(argv=None):
     cur_path = ROOT / "config" / "selector_table.json"
     cur_sha = hashlib.sha256(cur_path.read_bytes()).hexdigest()
 
+    # PR #14 review round 2: the paired --previous-table-src run must
+    # bind the v5-era composition snapshot too (handed to
+    # run_semantic_matrix via --previous-composition-table-src) so the
+    # previous column never inherits today's promoted keys. No
+    # composition table at the frozen base => no file; the pairing
+    # then records kind=none and resolves without composition.
+    try:
+        v5_comp_bytes = subprocess.check_output(
+            ["git", "show",
+             f"{frozen}:config/composition_table.json"],
+            cwd=ROOT)
+    except subprocess.CalledProcessError:
+        v5_comp_bytes = None
+    v5_comp_path = None
+    v5_comp_sha = None
+    if v5_comp_bytes is not None:
+        v5_comp_path = (
+            out_dir / "v5_production_composition_table.json")
+        v5_comp_path.write_bytes(v5_comp_bytes)
+        v5_comp_sha = hashlib.sha256(v5_comp_bytes).hexdigest()
+
     v5_table = load_table(str(v5_bound_path))
     cur_table = load_table(str(cur_path))
     prof = DeviceProfile.load().hash()
@@ -175,6 +200,9 @@ def main(argv=None):
         "frozen_base_commit": frozen,
         "v5_table_sha256": v5_sha,
         "v5_table_bound_sha256": v5_bound_sha,
+        "v5_composition_table_sha256": v5_comp_sha,
+        "v5_composition_table_path": (v5_comp_path.name
+                                      if v5_comp_path else None),
         "v5_bound_normalization": (
             "WP0-A carry-contract binding keys stamped onto the "
             "pre-WP0-A fallback provenance, sourced from the v5 "
@@ -203,7 +231,8 @@ def main(argv=None):
 
     print(f"v5 path identity: {out_json}")
     print(f"  frozen base: {frozen[:12]}  v5 sha: {v5_sha[:12]}  "
-          f"bound: {v5_bound_sha[:12]}  current sha: {cur_sha[:12]}")
+          f"bound: {v5_bound_sha[:12]}  current sha: {cur_sha[:12]}  "
+          f"v5-comp: {(v5_comp_sha or 'none')[:12]}")
     print(f"  identical: {len(identical)}  changed: {len(changed)}  "
           f"fallback-transitions: {len(transitions)}")
     for rec in changed:

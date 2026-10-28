@@ -464,6 +464,141 @@ def test_previous_selector_source_is_pinned_commit():
     assert sm.PREVIOUS_SELECTOR_COMMIT.startswith("54260cf")
 
 
+def test_previous_composition_source_is_pinned_commit():
+    """PR #14 review round 2: the previous column binds the COMPOSITION
+    snapshot of the SAME fixed pre-issue commit (path + sha land in
+    the manifest), never the current promoted table."""
+    import hashlib
+    import subprocess
+    raw = subprocess.check_output(
+        ["git", "show",
+         f"{sm.PREVIOUS_SELECTOR_COMMIT}:config/composition_table.json"],
+        cwd=ROOT)
+    assert hashlib.sha256(raw).hexdigest() == (
+        "49e5f41b4a3a88b06d3e674cddecf579216a3539a8d774aa3d25afa4ae70a725")
+    assert sm.PREVIOUS_COMPOSITION_FILE == \
+        "previous_composition_table.json"
+
+
+def test_materialize_previous_composition_binds_own_provenance(tmp_path):
+    """commit mode pairs the fixed pre-issue commit (sha bound into
+    the returned source record for the manifest); a pairing file with
+    no declared composition records kind=none (explicit None); an
+    explicit src binds that file's bytes and sha."""
+    import hashlib
+
+    path, source = sm._materialize_previous_composition(
+        None, None, tmp_path)
+    assert path == tmp_path / sm.PREVIOUS_COMPOSITION_FILE
+    raw = path.read_bytes()
+    assert source["kind"] == "commit"
+    assert source["commit"] == sm.PREVIOUS_SELECTOR_COMMIT
+    assert source["sha256"] == hashlib.sha256(raw).hexdigest()
+    assert source["sha256"] == (
+        "49e5f41b4a3a88b06d3e674cddecf579216a3539a8d774aa3d25afa4ae70a725")
+
+    # pairing file, no declared composition -> explicit None record
+    p2, s2 = sm._materialize_previous_composition(
+        "some/pairing.json", None, tmp_path)
+    assert p2 is None
+    assert s2["kind"] == "none"
+    assert "explicit None" in s2["reason"]
+
+    # explicit pairing composition file -> that file's bytes + sha
+    src = tmp_path / "pair_comp.json"
+    src.write_text('{"x": 1}')
+    p3, s3 = sm._materialize_previous_composition(
+        "some/pairing.json", str(src), tmp_path)
+    assert p3 == tmp_path / sm.PREVIOUS_COMPOSITION_FILE
+    assert p3.read_text() == '{"x": 1}'
+    assert s3["kind"] == "file"
+    assert s3["path"] == str(src)
+    assert s3["sha256"] == hashlib.sha256(b'{"x": 1}').hexdigest()
+
+    with pytest.raises(SystemExit):
+        sm._materialize_previous_composition(
+            None, str(tmp_path / "missing.json"), tmp_path)
+
+
+def test_previous_selector_never_inherits_current_inverse_composition(
+        monkeypatch):
+    """PR #14 review round 2: at N2048/B16 the previous-deployed
+    column must never resolve to run_hybrid4_fused (today's promoted
+    inverse key) — it binds its OWN legacy composition snapshot, whose
+    legacy entry is forward-only under the current semantic gate.
+    Only the current selector with the current snapshot may hit;
+    incumbent/M0 (no profile) never queries composition at all."""
+    import subprocess
+
+    import src.xpu.composition as comp
+
+    prev_sel = json.loads(subprocess.check_output(
+        ["git", "show",
+         f"{sm.PREVIOUS_SELECTOR_COMMIT}:config/selector_table.json"],
+        cwd=ROOT))
+    prev_comp = json.loads(subprocess.check_output(
+        ["git", "show",
+         f"{sm.PREVIOUS_SELECTOR_COMMIT}:config/composition_table.json"],
+        cwd=ROOT))
+    # pin env to the snapshot so the composition gate is decided by
+    # SEMANTICS on every host (CI included), never by env probing.
+    monkeypatch.setattr(
+        "src.xpu.envcheck.current_env_hash",
+        lambda: prev_comp["env_hash"])
+
+    p_prev = sm._entry_plan(sm.DIRECTION, 2048, 16, "c2c-inverse",
+                            prev_comp["profile_hash"], prev_sel,
+                            composition_table=prev_comp)
+    assert p_prev.selection_source != "composition"
+    assert p_prev.executed != "run_hybrid4_fused"
+
+    # current snapshot (synthetic binding, CI-safe) may hit the
+    # promoted inverse key — for the current selector only.
+    cur_comp = {
+        "schema_version": 1, "kind": comp.KIND, "precision": "fp32",
+        "profile_hash": "p" * 16, "env_hash": "e" * 16,
+        "guard_pct": 2.0, "entries": [{
+            "N": 2048, "batch": 16, "direction": "dit",
+            "precision": "fp32", "tile": 64, "core": "vendor",
+            "flow_id": "hybrid4-inv",
+            "flow_realization": "decomposition-composition",
+            "processing_unit": "vendor-subfft-host-composition",
+            "candidate_ms": 0.1, "incumbent_ms": 1.0,
+            "guard_pct": 90.0, "guard_pass": True,
+            "reason": "test cell",
+            "evidence": {
+                "artifact": "r.json", "artifact_sha256": "c" * 64,
+                "commit": "a" * 40, "sessions": 1, "trials": 1,
+                "confirmation_session": True, "err_max": 1e-5,
+                "p50_ms": 0.1, "mad_ms": 0.0, "p95_ms": 0.1},
+            "executed": "run_hybrid4_fused",
+            "transform_type": "c2c", "transform_direction": "inverse",
+            "normalization": "backward",
+        }],
+    }
+    cur_sel = {"schema_version": 1, "kind": "butterfly-selector",
+               "precision": "fp32", "profile_hash": "p" * 16,
+               "env_hash": "e" * 16, "guard_pct": 2.0, "entries": []}
+    monkeypatch.setattr("src.xpu.envcheck.current_env_hash",
+                        lambda: "e" * 16)
+    p_cur = sm._entry_plan(sm.DIRECTION, 2048, 16, "c2c-inverse",
+                           "p" * 16, cur_sel,
+                           composition_table=cur_comp)
+    assert p_cur.selection_source == "composition"
+    assert p_cur.executed == "run_hybrid4_fused"
+
+    # incumbent/M0 (no profile): explicit None, the composition table
+    # is never even loaded (pre-review it went through the global
+    # loader for every plan_fft call).
+    def _boom(path=None):
+        raise AssertionError("incumbent must not load composition")
+
+    monkeypatch.setattr(comp, "load_composition_table", _boom)
+    inc = sm._entry_plan(sm.DIRECTION, 2048, 16, "c2c-inverse",
+                         None, cur_sel)
+    assert inc.selection_source != "composition"
+
+
 # ------------- P2 aggregate replay over gzip snapshots (review4 一.2) -----
 
 def test_aggregate_replays_released_gzip_snapshot(tmp_path):

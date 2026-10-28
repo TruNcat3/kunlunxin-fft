@@ -353,6 +353,7 @@ def _probe_case(case: dict, trials: int, warmup: int) -> dict:
         "_smm_helpers", SCRIPTS / "run_semantic_matrix.py")
     smm = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(smm)
+    from src.xpu.composition import load_composition_table
     from src.xpu.config import DeviceProfile
     from src.xpu.entry import execute_fft_plan
     from src.xpu.selector import load_table
@@ -361,7 +362,8 @@ def _probe_case(case: dict, trials: int, warmup: int) -> dict:
     direction = "dit"   # matrix direction for every semantic
     table = load_table()
     prof = DeviceProfile.load().hash()
-    plan = smm._entry_plan(direction, n, b, sem, prof, table)
+    plan = smm._entry_plan(direction, n, b, sem, prof, table,
+                           composition_table=load_composition_table())
     x = smm._make_input("random", n, b, sem, 1234)
 
     def sync():
@@ -423,7 +425,8 @@ def _probe_case(case: dict, trials: int, warmup: int) -> dict:
     # plan creation cost (host plan resolution, measured)
     t0 = time.perf_counter()
     for _ in range(5):
-        smm._entry_plan(direction, n, b, sem, prof, table)
+        smm._entry_plan(direction, n, b, sem, prof, table,
+                        composition_table=load_composition_table())
     plan_creation_ms = (time.perf_counter() - t0) * 1e3 / 5
 
     sel = samples["selector"]
