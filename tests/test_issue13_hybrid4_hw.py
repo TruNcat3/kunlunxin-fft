@@ -17,15 +17,21 @@ import importlib.util
 import sys
 from pathlib import Path
 
-import numpy as np
 import pytest
+
+np = pytest.importorskip("numpy")
+
+try:
+    import torch
+    import torch_xmlir  # noqa: F401
+except Exception as e:  # pragma: no cover - absent in ordinary CI
+    pytest.skip(f"vendor xpytorch stack unavailable: {e}",
+                allow_module_level=True)
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 pytestmark = pytest.mark.hardware
-
-import torch  # noqa: E402
 
 import src.xpu.composition as comp  # noqa: E402
 from src.xpu.entry import (  # noqa: E402
