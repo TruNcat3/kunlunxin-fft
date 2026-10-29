@@ -84,7 +84,9 @@ future work. The issue converges on the bounded-acceleration claim.
    noise and are robust; borderline table-resolved cells (e.g.
    N2048B1) can flip verdict band under different card state and are
    flagged low-confidence here. WP3 gates are unaffected: they are
-   old-vs-new comparisons inside the same process/session.
+   old-vs-new comparisons in the same session, in independently
+   isolated subprocesses, with shuffled order and adaptive
+   steady-state warmup.
 4. **Heavy-cell downshift (WP4 only).** Cells with ≥ 30 ms/call
    (M0-fallback long rows, e.g. 4096×4096 at ~1.6 s/call) use a
    bounded protocol variant (64–96 warmup calls, 3×32 sync-per-trial

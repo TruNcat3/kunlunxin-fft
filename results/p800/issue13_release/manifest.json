@@ -57,7 +57,7 @@
   },
   "note": "artifacts are committed after this pack run; SHA256SUMS additionally covers manifest.json.",
   "n_files": 20,
-  "total_bytes": 6519021,
+  "total_bytes": 6519109,
   "files": [
     {
       "path": "environment.json",
@@ -121,8 +121,8 @@
     },
     {
       "path": "server_report.md",
-      "bytes": 6842,
-      "sha256": "17d2cdec468081b7eb52b8265bca152b725132b265db968fdbb3edb6cbd1fd01",
+      "bytes": 6930,
+      "sha256": "6e05b1d7f54839113428e7de5c2345023c8b17c292535d8c5836d5627d573d1b",
       "producer": "hand-written server report"
     },
     {

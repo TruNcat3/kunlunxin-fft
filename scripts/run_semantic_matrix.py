@@ -1288,7 +1288,8 @@ def _write_snapshot(out_dir, release_id, manifest, env, args, cases):
             f.write(name.read_bytes())
     for name in ("summary.json", "summary.csv",
                  "regression_vs_previous.csv", "speedup_vs_vendor.png",
-                 "server_report.md", PREVIOUS_TABLE_FILE):
+                 "server_report.md", PREVIOUS_TABLE_FILE,
+                 PREVIOUS_COMPOSITION_FILE):
         src = Path(out_dir) / name
         if src.is_file():
             (snap / name).write_bytes(src.read_bytes())
@@ -1571,6 +1572,13 @@ def main():
                 shutil.copy2(src, write_dir / src.name)
         if (out_dir / "cases.json").is_file():
             shutil.copy2(out_dir / "cases.json", write_dir / "cases.json")
+        # the previous_* provenance keys the manifest inherits must
+        # still resolve INSIDE the replay dir (the strict gate checks
+        # the declared composition snapshot's presence + sha) -- the
+        # baseline files are evidence bytes like the raw sessions
+        for name in (PREVIOUS_TABLE_FILE, PREVIOUS_COMPOSITION_FILE):
+            if (out_dir / name).is_file():
+                shutil.copy2(out_dir / name, write_dir / name)
         # source vs evidence identity: commit/env/hashes stay the
         # RUN's; the replay block names what re-derived the analysis
         man["replay"] = {
