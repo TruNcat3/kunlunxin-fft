@@ -207,3 +207,31 @@ def test_entry_meta_records_shape_and_contract():
     shapes = {p: H._entry_meta(p, Fake1D(), 1)["input_shape"]
               for p in H.PATHS}
     assert len({tuple(v) for v in shapes.values()}) == 1
+
+
+def test_session_contract_gate_is_all_paths_never_any():
+    """issue #13 WP0: the per-session contract gate must require EVERY
+    executed path — one stamped row may never mask a missing one."""
+    rows = {p: {"contract": "C-sel-grade"} for p in H.PATHS}
+    ok, c = H._session_contract_gate(rows)
+    assert ok is True and c == "C-sel-grade"
+
+    # any-path would pass here (4/5 stamped) — all-path must fail
+    partial = dict(rows)
+    partial["m0_reference"] = {"contract": None}
+    ok2, c2 = H._session_contract_gate(partial)
+    assert ok2 is False and c2 == "C-sel-grade"
+
+    # no contract at all
+    empty = {p: {"contract": None} for p in H.PATHS}
+    ok3, c3 = H._session_contract_gate(empty)
+    assert ok3 is False and c3 is None
+
+    # missing path row entirely counts as missing contract
+    ok4, _ = H._session_contract_gate({"vendor": {"contract": "C"}})
+    assert ok4 is False
+
+    # explicit path subset: only the paths that will be executed
+    ok5, _ = H._session_contract_gate(
+        {"vendor": {"contract": "C"}}, paths=("vendor",))
+    assert ok5 is True

@@ -97,11 +97,13 @@ python3 scripts/issue10_wp3_ablation.py
 # package: logs/ + environment.json + repro_command.txt + manifest.json
 # + SHA256SUMS  (RUN LAST, AFTER the producer scripts are committed:
 # manifest.json records evidence_source_commit = HEAD and per-producer
-# git blob shas; the packaging commit is its child — see manifest note)
+# git blob shas; commit the pack output, then seal packaging_commit in
+# that commit's child — see manifest note)
 python3 scripts/issue10_pack_artifacts.py
 
-# verify
-sha256sum -c SHA256SUMS
+# verify (issue #13 WP0: SHA256SUMS lives IN the evidence directory,
+# so the check must run from there — never from the repo root)
+cd results/p800/issue10_capability && sha256sum -c SHA256SUMS
 """
 
 
@@ -203,18 +205,23 @@ def main() -> int:
         "packaging_commit": None,
         "packaging_commit_seal": (
             "fill packaging_commit with the sha of the commit that "
-            "adds this manifest.json (git log --diff-filter=A -- "
-            "results/p800/issue10_capability/manifest.json), then "
-            "update the manifest.json line in SHA256SUMS in the same "
-            "seal commit — non-self-referencing (the field names the "
-            "packaging commit, the seal commit only records it)"),
+            "added or last updated THIS manifest.json — i.e. the pack "
+            "commit (run `git log -1 -- results/p800/issue10_capability/"
+            "manifest.json` BEFORE editing the field; do not use "
+            "--diff-filter=A, which pins the first add and goes stale "
+            "on every repack), then update the manifest.json line in "
+            "SHA256SUMS in the same seal commit — non-self-referencing "
+            "(the field names the pack commit, the seal commit only "
+            "records it)"),
         "packaging_commit_note": (
             "evidence_source_commit is the commit to check out for the "
             "exact producer scripts (run pack after committing "
             "producers; see producer_dirty_at_pack), each producer is "
             "pinned by git blob sha in producer_blobs, and "
             "producer_dependencies records transitive script imports "
-            "(holdout/ablation import wp3_perf)"),
+            "(holdout/ablation import wp3_perf); verify with "
+            "`cd results/p800/issue10_capability && sha256sum -c "
+            "SHA256SUMS` (from the evidence directory, issue #13 WP0)"),
         "producer_dirty_at_pack": (dirty or None),
         "producer_blobs": producer_blobs,
         "producer_dependencies": {

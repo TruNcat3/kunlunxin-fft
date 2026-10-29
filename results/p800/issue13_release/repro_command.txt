@@ -1,0 +1,47 @@
+issue #13 reproduction commands (Kunlunxin P800, single card,
+from repo root; conda env python310_torch29_cuda — torch 2.9 +
+torch_xmlir + triton 3.0.0 XPU fork; runtime lock in environment.json)
+
+export CUDA_VISIBLE_DEVICES=2   # visible card 2 is the working card
+                                # (other cards hang on context init)
+
+# WP1 stability-gate promotion (writes wp1_promotion.json, wp1_raw.csv,
+# wp1_sessions_raw.json; 5 frozen cells x 4 sessions, bootstrap
+# CI-low > 1.02 vs vendor AND incumbent + session spread <= 10%)
+python3 scripts/issue13_wp1_promotion.py
+
+# WP2 promotion wiring: stamp the WP1-stable inverse keys into the
+# production composition table + regenerate selector_diff
+# (config/composition_table.json is the committed wiring; re-check the
+# diff against the committed selector_diff.json)
+python3 scripts/issue13_promote_hybrid.py --dry-run
+
+# WP3 release matrix (writes wp3_release.json, wp3_raw.csv,
+# wp3_sessions_raw.json + regenerates legacy_composition_table.json;
+# 16 cells x 4 paths x 3 sessions, adaptive steady-state warmup, exit
+# conditions incl. promoted dual-baseline gates)
+python3 scripts/issue13_wp3_release.py
+
+# WP3 run 1 (holdout warmup=5 only — archived for the protocol-fix
+# trail; run with the archived producer)
+cp results/p800/issue13_release/run1-warmup5/issue13_wp3_release.py /tmp/wp3_run1.py
+python3 /tmp/wp3_run1.py --resume   # re-aggregates from run1 checkpoint
+
+# WP4 coverage (writes wp4_coverage.json, wp4_raw.csv,
+# wp4_sessions_raw.json; 49 forward-C2C cells + 12 long points,
+# vendor-unsupported points retained explicitly; heavy cells
+# downshift to the bounded protocol variant)
+python3 scripts/issue13_wp4_coverage.py
+
+# host test suite (selector/plan/runner + all WP contract tests)
+PYTHONPATH=/tmp/opencode/no_torch python3 -m pytest -q \
+    --ignore=tests/test_issue13_hybrid4_hw.py \
+    --ignore=tests/test_composition_hw.py \
+    --ignore=tests/test_ledger_hw.py \
+    --ignore=tests/test_real_flow_hw.py
+
+# pack (RUN LAST, after producers are committed)
+python3 scripts/issue13_pack_artifacts.py
+
+# verify from inside the evidence directory (never the repo root)
+cd results/p800/issue13_release && sha256sum -c SHA256SUMS

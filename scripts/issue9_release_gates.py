@@ -20,7 +20,12 @@ Usage:
 
 * RELEASE_DIR   -- immutable snapshot (validate phase output)
 * --v5-pair     -- paired run of the changed cells with
-                   --previous-table-src v5 bound table
+                   --previous-table-src v5 bound table and
+                   --previous-composition-table-src
+                   v5_production_composition_table.json (PR #14
+                   review round 2: the previous column binds the
+                   v5-era composition snapshot, never the current
+                   promoted table)
 * --identity    -- issue9_v5_path_identity.json report
 * --reports     -- issue9_release_reports.py output dir (label-set
                    equality gates vs the frozen config domains)

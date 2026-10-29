@@ -745,6 +745,44 @@ def validate_benchmark_output(summary_or_dir, strict: bool = False
                     f"{summary_path.name}: cases_sha256 mismatch "
                     f"(manifest {stamp[:12]}… != payload "
                     f"{cases_sha256(cases)[:12]}…)")
+        # PR #14 review round 3 P2: a manifest that declares a
+        # previous-deployed composition snapshot must carry the file
+        # with the declared bytes -- snapshots/replays are released as
+        # self-contained dirs and the manifest may never point at a
+        # missing file. kind=none is the explicit no-snapshot record
+        # (pairing file without a declared composition) and has no
+        # file to check. Presence + sha256 only: raw evidence hashes
+        # above stay byte-compared.
+        prev_src = _get(manifest, "previous_composition_source")
+        if isinstance(prev_src, dict) and prev_src.get("kind") != "none":
+            prev_path = _get(manifest, "previous_composition_path")
+            want = (_get(manifest, "previous_composition_sha256")
+                    or prev_src.get("sha256"))
+            if not prev_path:
+                failures.append(
+                    f"{summary_path.name}: previous_composition_source "
+                    f"kind={prev_src.get('kind')!r} but "
+                    "previous_composition_path is missing")
+            else:
+                f_prev = Path(base) / str(prev_path)
+                if not f_prev.is_file():
+                    failures.append(
+                        f"{base.name}: declared previous composition "
+                        f"snapshot missing: {prev_path}")
+                elif want:
+                    try:
+                        got_prev = hashlib.sha256(
+                            f_prev.read_bytes()).hexdigest()
+                    except OSError as e:
+                        failures.append(
+                            f"{base.name}: previous composition "
+                            f"snapshot unreadable: {e}")
+                        got_prev = None
+                    if got_prev is not None and got_prev != str(want):
+                        failures.append(
+                            f"{base.name}: previous composition "
+                            f"sha256 mismatch (manifest {str(want)[:12]}"
+                            f"… != file {got_prev[:12]}…)")
     return failures
 
 

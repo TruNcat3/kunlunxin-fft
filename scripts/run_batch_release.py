@@ -296,6 +296,7 @@ def _m0_rank1_loop(x, direction, block):
 def _build_candidates(x, n, batch, direction, block, table, ph,
                       protocol=PROTOCOL_ID, full_space=False):
     """name -> (callable, attribution dict incl. P1.1 axes)."""
+    from src.xpu.composition import load_composition_table
     from src.xpu.entry import execute_fft_plan, plan_fft
     from src.xpu import runner
 
@@ -304,7 +305,8 @@ def _build_candidates(x, n, batch, direction, block, table, ph,
         m.update(extra or {})
         return m
 
-    plan = plan_fft(direction, n, batch=batch, profile_hash=ph, table=table)
+    plan = plan_fft(direction, n, batch=batch, profile_hash=ph, table=table,
+                    composition_table=load_composition_table())
     _batch_fn = runner.fft_dit_batch if direction == "dit" \
         else runner.fft_dif_batch
     _m2_fn = runner.fft_dit_matrix_batch if direction == "dit" \
@@ -512,10 +514,12 @@ def run_shape(session, n, batch, direction, trials, seed, table, raw,
                                         ph))
 
     # plan creation cost (diagnostic; not part of interleaved timing)
+    from src.xpu.composition import load_composition_table
     from src.xpu.entry import plan_fft
     t0 = time.perf_counter()
     plan_again = plan_fft(direction, n, batch=batch, profile_hash=ph,
-                          table=table)
+                          table=table,
+                          composition_table=load_composition_table())
     plan_create_ms = (time.perf_counter() - t0) * 1e3
     del plan_again  # keep the first plan for execute_fft_plan timing
 

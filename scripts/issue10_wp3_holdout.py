@@ -306,6 +306,7 @@ def worker(a) -> int:
         elif p in ("hybrid_vendor_p", "hybrid_fused_p"):
             call, meta = wp3.PATHS[p](xb, inverse)
         elif p in (INCUMBENT_LABEL, M0_LABEL):
+            from src.xpu.composition import load_composition_table
             from src.xpu.entry import execute_fft_plan, plan_fft
             from src.xpu.selector import load_table
             tp0 = time.perf_counter()
@@ -316,6 +317,10 @@ def worker(a) -> int:
                 # An abstain/fallback plan here means the profile-bound
                 # incumbent cannot legally resolve in this cell ->
                 # fail closed as no-go, NEVER silently replaced by M0.
+                # composition_table is explicit (PR #14 P1): injecting
+                # the selector table isolates plan_fft from the
+                # deployed composition table, and the incumbent row
+                # must keep measuring production composition dispatch.
                 prof = table.get("profile_hash")
                 plan = plan_fft(direction="dit", n=n, batch=b,
                                 profile_hash=prof, table=table,
@@ -324,7 +329,8 @@ def worker(a) -> int:
                                 transform_direction=("inverse"
                                                      if inverse
                                                      else "forward"),
-                                norm="backward")
+                                norm="backward",
+                                composition_table=load_composition_table())
             else:
                 # m0_reference: profile_hash=None abstains to M0 by the
                 # selector contract — descriptive baseline only, it is
@@ -677,15 +683,29 @@ def _cell_passes(flags: dict) -> bool:
 
     A cell only feeds eligibility when EVERY session had all path rows
     present, no fail_closed row (incl. profile-bound incumbent no-go),
-    all paths correct, the selector-grade input contract, and one
-    uniform entry shape across the five paths (round-4: B=1 must be
-    the same (N,) contract everywhere).
+    all paths correct, every executed path carrying the selector-grade
+    input contract (all-paths, issue #13 WP0), and one uniform entry
+    shape across the five paths (round-4: B=1 must be the same (N,)
+    contract everywhere).
     """
     return bool(flags.get("all_paths_present")
                 and flags.get("no_fail_closed")
                 and flags.get("correct_all_sessions")
                 and flags.get("contract_all_sessions")
                 and flags.get("entry_shape_uniform"))
+
+
+def _session_contract_gate(rows: dict, paths=PATHS) -> tuple[bool, str | None]:
+    """Per-session contract gate: EVERY executed path must carry the
+    selector-grade input contract (issue #13 WP0: never any-path).
+    Returns ``(all_present, first_contract)`` — ``first_contract`` is
+    a representative contract string for reporting only (None when no
+    path carries one); eligibility uses ``all_present`` alone, so a
+    single path missing its contract fails the session.
+    """
+    found = [rows.get(p, {}).get("contract") for p in paths]
+    all_present = bool(paths) and all(bool(c) for c in found)
+    return all_present, next((c for c in found if c), None)
 
 
 def _entry_shape_uniform(shapes) -> bool:
@@ -944,9 +964,10 @@ def main() -> int:
                 fail_closed.append(f"{label}/s{s}: {bad}")
                 flags["no_fail_closed"] = False
                 continue
-            contract = next((rows[p].get("contract") for p in PATHS
-                             if rows[p].get("contract")), None)
-            if not contract:
+            # issue #13 WP0: ALL executed paths must carry the contract
+            # (any-path would let one stamped row mask a missing one).
+            contract_ok, contract = _session_contract_gate(rows)
+            if not contract_ok:
                 flags["contract_all_sessions"] = False
             # round-4: raw per-path entry shapes (missing record fails
             # the uniformity flag via the "__missing__" sentinel)

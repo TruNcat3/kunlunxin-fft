@@ -113,12 +113,15 @@ def analyze_cell(case: dict, summary_cases: list[dict], trials: int,
         return block
 
     import torch
+    from src.xpu.composition import load_composition_table
     from src.xpu.config import DeviceProfile
     from src.xpu.selector import load_table
     smm = _smm()
     table = load_table()
     prof = DeviceProfile.load().hash()
-    plan = smm._entry_plan("dit", n, b, sem, prof, table)
+    plan = smm._entry_plan("dit", n, b, sem, prof, table,
+                           composition_table=load_composition_table())
+    # incumbent/M0: no profile, no composition query (PR #14 default)
     inc = smm._entry_plan("dit", n, b, sem, None, table)
     x = smm._make_input("random", n, b, sem, 1234)
 
@@ -140,10 +143,12 @@ def analyze_cell(case: dict, summary_cases: list[dict], trials: int,
 
 def _plan_creation(plan, smm, n, b, sem, prof, table) -> dict:
     import time
+    from src.xpu.composition import load_composition_table
     xs = []
     for _ in range(5):
         t0 = time.perf_counter()
-        smm._entry_plan("dit", n, b, sem, prof, table)
+        smm._entry_plan("dit", n, b, sem, prof, table,
+                        composition_table=load_composition_table())
         xs.append((time.perf_counter() - t0) * 1e3)
     return {"mean_ms": sum(xs) / len(xs), "reps": len(xs)}
 

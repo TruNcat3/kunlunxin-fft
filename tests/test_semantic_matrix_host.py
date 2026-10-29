@@ -6,6 +6,7 @@ host logic over synthetic rows.
 """
 
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -20,6 +21,26 @@ from src.xpu.manifest_contract import (  # noqa: E402
     validate_benchmark_output,
     validate_manifest,
 )
+
+# PR #14 review round 3 P3: summary metrics must reproduce exactly
+# EXCEPT the geomean field derived through math.log/exp -- its last
+# bit may follow the runtime's libm across Python versions (~1e-16),
+# which is runtime math-library noise, not evidence drift. Raw
+# evidence and hashes stay byte-compared; the derived float gets this
+# explicit strict tolerance instead of ==.
+_DERIVED_GEOMEAN_TOL = {"rel_tol": 1e-12, "abs_tol": 0.0}
+
+
+def _assert_metrics_equal(regen, orig):
+    assert set(regen) == set(orig), (sorted(regen), sorted(orig))
+    for key, want in orig.items():
+        got = regen[key]
+        if (key == "geomean_speedup_vs_vendor"
+                and isinstance(want, float) and isinstance(got, float)):
+            assert math.isclose(got, want, **_DERIVED_GEOMEAN_TOL), \
+                (key, got, want)
+        else:
+            assert got == want, (key, got, want)
 
 
 def _row(label, candidate, tier, api_ms=None, status="ok", **kw):
@@ -224,6 +245,120 @@ def test_snapshot_manifest_passes_strict_contract(tmp_path, monkeypatch):
     with _gz.open(snap / "raw_session0.jsonl.gz", "rb") as f:
         assert f.read() == (out / "raw_session0.jsonl").read_bytes()
     assert len(stamped["result_sha256"]) == 64
+
+
+def _stamped_strict_out(tmp_path, previous=None):
+    """Minimal strict-passing run dir with PR #14 previous-baseline
+    provenance (review round 3 P2 fixture): 30 steady rows for the
+    declared trial census, aggregate + both-manifest hash stamping.
+    ``previous=None`` = legacy manifest without the keys,
+    ``"none"`` = pairing file with no declared composition (selector
+    file materialized, composition explicitly absent), ``"pair"`` =
+    both historical files materialized and bound (commit kind)."""
+    import hashlib as _hl
+
+    out = tmp_path / "out"
+    out.mkdir(exist_ok=True)
+    with open(out / "raw_session0.jsonl", "w") as f:
+        for trial in range(30):
+            f.write(json.dumps(_row("N64B1:c2c-forward", "selector",
+                                    "steady", 0.1, trial=trial)) + "\n")
+    man = {
+        "commit": "a" * 40, "dirty": False, "device": "d",
+        "driver": "515.58", "profile_hash": "p" * 16,
+        "env_hash": "e" * 16, "toolchain": "python",
+        "protocol_id": sm.PROTOCOL_ID,
+        "timing_scope": sm.TIMING_SCOPE,
+        "selection_semantics": "correctness-first",
+        "warmup": 5, "trials": 30, "sessions": 1, "seed_base": 1234,
+        "candidates": ["incumbent", "selector", "oracle:*", "vendor"],
+        "shapes": ["N64B1:c2c-forward"], "error_threshold": 1e-4,
+        "repro_command": "python scripts/run_semantic_matrix.py",
+        "gm_bytes_kind": "analytical estimate only",
+        "kernel_time_status": "not collected",
+        "source_hash": "b" * 40,
+    }
+    sel = (b'{"schema_version": 1, "kind": "butterfly-selector", '
+           b'"entries": []}')
+    comp = b'{"schema_version": 1, "kind": "composition", "entries": []}'
+    if previous is not None:
+        (out / sm.PREVIOUS_TABLE_FILE).write_bytes(sel)
+        man["previous_selector_source"] = {
+            "kind": "commit", "commit": "a" * 40,
+            "sha256": _hl.sha256(sel).hexdigest()}
+        man["previous_selector_sha256"] = _hl.sha256(sel).hexdigest()
+        if previous == "pair":
+            (out / sm.PREVIOUS_COMPOSITION_FILE).write_bytes(comp)
+            man["previous_composition_source"] = {
+                "kind": "commit", "commit": "a" * 40,
+                "sha256": _hl.sha256(comp).hexdigest()}
+            man["previous_composition_sha256"] = \
+                _hl.sha256(comp).hexdigest()
+            man["previous_composition_path"] = \
+                sm.PREVIOUS_COMPOSITION_FILE
+        else:   # "none": pairing file with no declared composition
+            man["previous_composition_source"] = {
+                "kind": "none",
+                "reason": "pairing file declares no composition table"}
+            man["previous_composition_sha256"] = None
+            man["previous_composition_path"] = None
+    summary = sm._aggregate(out, [(64, 1)], 3, 5, 1, manifest=man)
+    res = sm.result_sha256(out)
+    man["result_sha256"] = res
+    summary["manifest"]["result_sha256"] = res
+    man["cases_sha256"] = summary["manifest"]["cases_sha256"]
+    (out / "manifest.json").write_text(json.dumps(man))
+    (out / "summary.json").write_text(json.dumps(summary))
+    return out, man, sel, comp
+
+
+def test_snapshot_carries_previous_baseline_pair(tmp_path, monkeypatch):
+    """PR #14 review round 3 P2: a release snapshot must carry BOTH
+    historical baseline files its manifest's previous_* keys name --
+    the published manifest may never point at a missing file; deleting
+    the composition snapshot or corrupting its bytes must fail the
+    strict gate."""
+    monkeypatch.setattr(sm, "ROOT", tmp_path)
+    import hashlib as _hl
+
+    out, man, sel, comp = _stamped_strict_out(tmp_path, previous="pair")
+    snap = sm._write_snapshot(out, "rid-prev", man, {}, None, ["N64B1"])
+    # both declared files land in the snapshot next to the manifest
+    assert (snap / sm.PREVIOUS_TABLE_FILE).read_bytes() == sel
+    assert (snap / sm.PREVIOUS_COMPOSITION_FILE).read_bytes() == comp
+    stamped = json.loads((snap / "manifest.json").read_text())
+    assert stamped["previous_composition_path"] == \
+        sm.PREVIOUS_COMPOSITION_FILE
+    assert stamped["previous_composition_sha256"] == \
+        _hl.sha256(comp).hexdigest()
+    assert validate_benchmark_output(snap, strict=True) == []
+    # dropping the file the manifest declares must fail validation
+    (snap / sm.PREVIOUS_COMPOSITION_FILE).unlink()
+    fails = validate_benchmark_output(snap, strict=True)
+    assert any("previous composition snapshot missing" in f
+               for f in fails), fails
+    # restoring with different bytes must fail the declared sha binding
+    (snap / sm.PREVIOUS_COMPOSITION_FILE).write_bytes(comp + b"x")
+    fails = validate_benchmark_output(snap, strict=True)
+    assert any("previous composition sha256 mismatch" in f
+               for f in fails), fails
+
+
+def test_snapshot_kind_none_needs_no_composition_file(tmp_path,
+                                                      monkeypatch):
+    """kind=none is the explicit no-snapshot record (pairing file
+    without a declared composition): the strict gate must not demand
+    a file the manifest never promised -- the previous column then
+    resolves with the composition query disabled (PR #14 isolation)."""
+    monkeypatch.setattr(sm, "ROOT", tmp_path)
+    out, man, sel, _ = _stamped_strict_out(tmp_path, previous="none")
+    snap = sm._write_snapshot(out, "rid-none", man, {}, None, ["N64B1"])
+    assert (snap / sm.PREVIOUS_TABLE_FILE).read_bytes() == sel
+    assert not (snap / sm.PREVIOUS_COMPOSITION_FILE).exists()
+    stamped = json.loads((snap / "manifest.json").read_text())
+    assert stamped["previous_composition_source"]["kind"] == "none"
+    assert stamped["previous_composition_path"] is None
+    assert validate_benchmark_output(snap, strict=True) == []
 
 
 def test_dispersion_sessions_and_figure(tmp_path):
@@ -464,6 +599,141 @@ def test_previous_selector_source_is_pinned_commit():
     assert sm.PREVIOUS_SELECTOR_COMMIT.startswith("54260cf")
 
 
+def test_previous_composition_source_is_pinned_commit():
+    """PR #14 review round 2: the previous column binds the COMPOSITION
+    snapshot of the SAME fixed pre-issue commit (path + sha land in
+    the manifest), never the current promoted table."""
+    import hashlib
+    import subprocess
+    raw = subprocess.check_output(
+        ["git", "show",
+         f"{sm.PREVIOUS_SELECTOR_COMMIT}:config/composition_table.json"],
+        cwd=ROOT)
+    assert hashlib.sha256(raw).hexdigest() == (
+        "49e5f41b4a3a88b06d3e674cddecf579216a3539a8d774aa3d25afa4ae70a725")
+    assert sm.PREVIOUS_COMPOSITION_FILE == \
+        "previous_composition_table.json"
+
+
+def test_materialize_previous_composition_binds_own_provenance(tmp_path):
+    """commit mode pairs the fixed pre-issue commit (sha bound into
+    the returned source record for the manifest); a pairing file with
+    no declared composition records kind=none (explicit None); an
+    explicit src binds that file's bytes and sha."""
+    import hashlib
+
+    path, source = sm._materialize_previous_composition(
+        None, None, tmp_path)
+    assert path == tmp_path / sm.PREVIOUS_COMPOSITION_FILE
+    raw = path.read_bytes()
+    assert source["kind"] == "commit"
+    assert source["commit"] == sm.PREVIOUS_SELECTOR_COMMIT
+    assert source["sha256"] == hashlib.sha256(raw).hexdigest()
+    assert source["sha256"] == (
+        "49e5f41b4a3a88b06d3e674cddecf579216a3539a8d774aa3d25afa4ae70a725")
+
+    # pairing file, no declared composition -> explicit None record
+    p2, s2 = sm._materialize_previous_composition(
+        "some/pairing.json", None, tmp_path)
+    assert p2 is None
+    assert s2["kind"] == "none"
+    assert "explicit None" in s2["reason"]
+
+    # explicit pairing composition file -> that file's bytes + sha
+    src = tmp_path / "pair_comp.json"
+    src.write_text('{"x": 1}')
+    p3, s3 = sm._materialize_previous_composition(
+        "some/pairing.json", str(src), tmp_path)
+    assert p3 == tmp_path / sm.PREVIOUS_COMPOSITION_FILE
+    assert p3.read_text() == '{"x": 1}'
+    assert s3["kind"] == "file"
+    assert s3["path"] == str(src)
+    assert s3["sha256"] == hashlib.sha256(b'{"x": 1}').hexdigest()
+
+    with pytest.raises(SystemExit):
+        sm._materialize_previous_composition(
+            None, str(tmp_path / "missing.json"), tmp_path)
+
+
+def test_previous_selector_never_inherits_current_inverse_composition(
+        monkeypatch):
+    """PR #14 review round 2: at N2048/B16 the previous-deployed
+    column must never resolve to run_hybrid4_fused (today's promoted
+    inverse key) — it binds its OWN legacy composition snapshot, whose
+    legacy entry is forward-only under the current semantic gate.
+    Only the current selector with the current snapshot may hit;
+    incumbent/M0 (no profile) never queries composition at all."""
+    import subprocess
+
+    import src.xpu.composition as comp
+
+    prev_sel = json.loads(subprocess.check_output(
+        ["git", "show",
+         f"{sm.PREVIOUS_SELECTOR_COMMIT}:config/selector_table.json"],
+        cwd=ROOT))
+    prev_comp = json.loads(subprocess.check_output(
+        ["git", "show",
+         f"{sm.PREVIOUS_SELECTOR_COMMIT}:config/composition_table.json"],
+        cwd=ROOT))
+    # pin env to the snapshot so the composition gate is decided by
+    # SEMANTICS on every host (CI included), never by env probing.
+    monkeypatch.setattr(
+        "src.xpu.envcheck.current_env_hash",
+        lambda: prev_comp["env_hash"])
+
+    p_prev = sm._entry_plan(sm.DIRECTION, 2048, 16, "c2c-inverse",
+                            prev_comp["profile_hash"], prev_sel,
+                            composition_table=prev_comp)
+    assert p_prev.selection_source != "composition"
+    assert p_prev.executed != "run_hybrid4_fused"
+
+    # current snapshot (synthetic binding, CI-safe) may hit the
+    # promoted inverse key — for the current selector only.
+    cur_comp = {
+        "schema_version": 1, "kind": comp.KIND, "precision": "fp32",
+        "profile_hash": "p" * 16, "env_hash": "e" * 16,
+        "guard_pct": 2.0, "entries": [{
+            "N": 2048, "batch": 16, "direction": "dit",
+            "precision": "fp32", "tile": 64, "core": "vendor",
+            "flow_id": "hybrid4-inv",
+            "flow_realization": "decomposition-composition",
+            "processing_unit": "vendor-subfft-host-composition",
+            "candidate_ms": 0.1, "incumbent_ms": 1.0,
+            "guard_pct": 90.0, "guard_pass": True,
+            "reason": "test cell",
+            "evidence": {
+                "artifact": "r.json", "artifact_sha256": "c" * 64,
+                "commit": "a" * 40, "sessions": 1, "trials": 1,
+                "confirmation_session": True, "err_max": 1e-5,
+                "p50_ms": 0.1, "mad_ms": 0.0, "p95_ms": 0.1},
+            "executed": "run_hybrid4_fused",
+            "transform_type": "c2c", "transform_direction": "inverse",
+            "normalization": "backward",
+        }],
+    }
+    cur_sel = {"schema_version": 1, "kind": "butterfly-selector",
+               "precision": "fp32", "profile_hash": "p" * 16,
+               "env_hash": "e" * 16, "guard_pct": 2.0, "entries": []}
+    monkeypatch.setattr("src.xpu.envcheck.current_env_hash",
+                        lambda: "e" * 16)
+    p_cur = sm._entry_plan(sm.DIRECTION, 2048, 16, "c2c-inverse",
+                           "p" * 16, cur_sel,
+                           composition_table=cur_comp)
+    assert p_cur.selection_source == "composition"
+    assert p_cur.executed == "run_hybrid4_fused"
+
+    # incumbent/M0 (no profile): explicit None, the composition table
+    # is never even loaded (pre-review it went through the global
+    # loader for every plan_fft call).
+    def _boom(path=None):
+        raise AssertionError("incumbent must not load composition")
+
+    monkeypatch.setattr(comp, "load_composition_table", _boom)
+    inc = sm._entry_plan(sm.DIRECTION, 2048, 16, "c2c-inverse",
+                         None, cur_sel)
+    assert inc.selection_source != "composition"
+
+
 # ------------- P2 aggregate replay over gzip snapshots (review4 一.2) -----
 
 def test_aggregate_replays_released_gzip_snapshot(tmp_path):
@@ -497,7 +767,7 @@ def test_aggregate_replays_released_gzip_snapshot(tmp_path):
     assert strip(regen["cases"]) == strip(orig["cases"])
     assert all(c["selector_previous_fallback"] is False
                for c in regen["cases"])   # no fallbacks deployed in v4
-    assert regen["metrics"] == orig["metrics"]
+    _assert_metrics_equal(regen["metrics"], orig["metrics"])
     assert regen["failures"] == orig["failures"]
     assert regen["raw_sha256"] == orig["raw_sha256"]
     # the shared-keys analysis hashes to the released cases_sha256
@@ -739,7 +1009,7 @@ def test_replay_regenerates_released_analysis_verbatim(tmp_path,
 
     regen = json.loads((replay / "summary.json").read_text())
     assert regen["cases"] == orig["cases"]
-    assert regen["metrics"] == orig["metrics"]
+    _assert_metrics_equal(regen["metrics"], orig["metrics"])
     assert regen["failures"] == orig["failures"]
     assert regen["raw_sha256"] == orig["raw_sha256"]
     # evidence identity (commit, hashes) is the RUN's, preserved
@@ -934,7 +1204,7 @@ def test_filtered_schedule_snapshot_and_replay_roundtrip(tmp_path,
     regen = json.loads((replay / "summary.json").read_text())
     assert regen["cases"] == orig["cases"]
     assert [c["label"] for c in regen["cases"]] == ["N1024B256:r2c"]
-    assert regen["metrics"] == orig["metrics"]
+    _assert_metrics_equal(regen["metrics"], orig["metrics"])
     assert validate_benchmark_output(replay, strict=True) == []
 
 

@@ -1,0 +1,35 @@
+{
+  "cards": "Kunlunxin P800 OAM x8; measurements pin visible card 2 (CUDA_VISIBLE_DEVICES=2) \u2014 other cards hang on context init in this driver stack",
+  "note": "runtime lock captured at measurement time by the WP3/WP4 producers (assert_current_environment gates every run; values below are copied from the run artifacts, never re-derived at pack time)",
+  "schema": "issue13-environment/1",
+  "software": "conda env python310_torch29_cuda: torch 2.9 + torch_xmlir (XPU) + triton 3.0.0 XPU fork",
+  "wp3": {
+    "composition_table_sha256": "bc20b62bfc8630dcfea925421dbb7e7d1478390994ea4a5e8fd49d6c32b16ea4",
+    "env_hash_live": "6b50bd316032c0fe",
+    "legacy_table_sha256": "bddafc95a34e2c1a5948bdc8b1aaf96cb1cb108f70d0de75405a967f3dae15ab",
+    "producer_sha256": {
+      "scripts/issue13_wp3_release.py": "1d05457a8147c96be28c5b3436a29438cedb7463166960b30f23fa8548961515",
+      "src/xpu/composition.py": "bc22da5b5fd0674e0caed30141f4fc30428b38b63fe2847898081d230e236b4c",
+      "src/xpu/entry.py": "65390f690cefa1154ff250b7b369498268c8bcb73e7f39a68e9f545cbc9cbe72",
+      "src/xpu/hybrid4.py": "9c04fbfea01c5e277b242addc8cb42d0a005c624b97da7107df51641bd836071",
+      "src/xpu/selector.py": "695ae9221b6410464f322081e958013ba0b02caee097f24257a541176e68fa8c"
+    },
+    "profile_hash": "a78b86793c7142a0",
+    "selector_table_sha256": "7c2282ed0c295f2e5179c358f75a7d73051f21cbaaf7caf04c281dcb8efe88fd"
+  },
+  "wp4": {
+    "composition_table_sha256": "bc20b62bfc8630dcfea925421dbb7e7d1478390994ea4a5e8fd49d6c32b16ea4",
+    "env_hash_live": "6b50bd316032c0fe",
+    "legacy_table_sha256": "bddafc95a34e2c1a5948bdc8b1aaf96cb1cb108f70d0de75405a967f3dae15ab",
+    "producer_sha256": {
+      "scripts/issue13_wp3_release.py": "1d05457a8147c96be28c5b3436a29438cedb7463166960b30f23fa8548961515",
+      "scripts/issue13_wp4_coverage.py": "574db86e4611ed77912b563b71674fc194b1cb8050ef515786f99c4c793fc1f7",
+      "src/xpu/composition.py": "bc22da5b5fd0674e0caed30141f4fc30428b38b63fe2847898081d230e236b4c",
+      "src/xpu/entry.py": "65390f690cefa1154ff250b7b369498268c8bcb73e7f39a68e9f545cbc9cbe72",
+      "src/xpu/hybrid4.py": "9c04fbfea01c5e277b242addc8cb42d0a005c624b97da7107df51641bd836071",
+      "src/xpu/selector.py": "695ae9221b6410464f322081e958013ba0b02caee097f24257a541176e68fa8c"
+    },
+    "profile_hash": "a78b86793c7142a0",
+    "selector_table_sha256": "7c2282ed0c295f2e5179c358f75a7d73051f21cbaaf7caf04c281dcb8efe88fd"
+  }
+}

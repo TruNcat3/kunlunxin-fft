@@ -43,5 +43,6 @@ python3 scripts/issue10_wp3_ablation.py
 # git blob shas; the packaging commit is its child — see manifest note)
 python3 scripts/issue10_pack_artifacts.py
 
-# verify
-sha256sum -c SHA256SUMS
+# verify (issue #13 WP0: SHA256SUMS lives in this evidence
+# directory — run the check from HERE, never from the repo root)
+cd results/p800/issue10_capability && sha256sum -c SHA256SUMS
